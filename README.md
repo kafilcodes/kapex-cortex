@@ -8,7 +8,7 @@
 
 A local add-on for **Claude Code** (CLI and Desktop) with an **OpenCode** fallback. It works *with* Claude Code's own memory, never beside it.
 
-![version](https://img.shields.io/badge/version-3.4.2-10B981)
+![version](https://img.shields.io/badge/version-3.4.3-10B981)
 ![license](https://img.shields.io/badge/license-MIT-10B981)
 ![deps](https://img.shields.io/badge/runtime%20deps-0-8b949e)
 ![tokens added per message](https://img.shields.io/badge/tokens%20added%20per%20message-0-10B981)

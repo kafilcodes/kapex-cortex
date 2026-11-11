@@ -38,7 +38,7 @@ test("v3.4 park: writes Claude Code's own per-project switch, keeps the file's o
   assert.deepEqual(after.projects[p.root].allowedTools, ["Bash"]);
   assert.deepEqual(after.projects["/other"], cfg.projects["/other"]);
   assert.equal(after.oauthAccount.emailAddress, "x");
-  assert.equal(statSync(claudeJson()).mode & 0o777, 0o600, "same permissions");
+  if (process.platform !== "win32") assert.equal(statSync(claudeJson()).mode & 0o777, 0o600, "same permissions"); // Windows has no Unix modes
   assert.equal(parkView(p).servers[0]?.tokens, 2400);
   assert.match(unpark(p, ["plugin:figma:figma"]), /^Back on from your next chat/);
   assert.deepEqual(parkView(p).disabled, ["claude.ai Slack"]);
