@@ -69,8 +69,8 @@ test("v3 native memory: Claude Code's files in load order, with paths-scoped rul
   assert.equal(by("memory/topic.md").loads, "on-demand");
   assert.ok(nativeSummary(p.root).alwaysTokens > 0);
   // Claude Code's folder name: the absolute path with every other character as "-" (on Windows the drive comes first: D--Users-…)
-  assert.equal(projectSlug("/Users/me/Claude Projects/app"), resolve("/Users/me/Claude Projects/app").replace(/[^A-Za-z0-9]/g, "-"));
-  if (process.platform !== "win32") assert.equal(projectSlug("/Users/me/Claude Projects/app"), "-Users-you-Claude-Projects-app");
+  assert.equal(projectSlug("/Users/you/Claude Projects/app"), resolve("/Users/you/Claude Projects/app").replace(/[^A-Za-z0-9]/g, "-"));
+  if (process.platform !== "win32") assert.equal(projectSlug("/Users/you/Claude Projects/app"), "-Users-you-Claude-Projects-app"); // "you": the public export rewrites -Users-<name>- to it
   assert.deepEqual(frontmatterPaths("---\npaths: [\"a/**\", 'b/*.ts']\n---\n"), ["a/**", "b/*.ts"]);
   assert.equal(frontmatterPaths("---\ndescription: x\n---\n"), undefined);
   const ents = entries("f", "f", "---\npaths: x\n---\n# H\n- one\n  continued\n- two\n\n```\n- not an entry\n```\nA paragraph\nthat wraps.\n");

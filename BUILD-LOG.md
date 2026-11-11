@@ -329,3 +329,4 @@ From Kafil's screenshots of v3.0.0 in the app:
   - the context card no longer says Cortex puts memories back
 - 13 core tests, 11 panel tests; Stop hook p95 101 ms.
 - v3.1.1: a Windows-only test fix (a `/Users/…` path gets a drive letter there, so Claude Code's folder name starts `D--`); v3.0.0's CI had failed on it, so it had no release binaries.
+- v3.1.2: a test used `/Users/me/…`, which the public export's privacy rewrite turned into `-Users-you-` on one side only; the public repo's first CI run failed on it. The test now uses `/Users/you/…`.
