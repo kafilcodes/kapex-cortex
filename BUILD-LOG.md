@@ -381,3 +381,4 @@ From Kafil's screenshots of v3.0.0 in the app:
 - 20 core tests, 14 panel tests (new: mood order and the bounded cache).
 - v3.5.1: the Settings page's opening line says "Preferences" (the tab already says Settings), and the Dream page's "Nothing to fix" / "All decided" / "No Dream yet" drawings are centered.
 - v3.5.2: Timeline kind badges without a second icon (the tile already has one); Costs ranks tools and skills with rounded progress bars (no end dot); Overview Savings adds "tokens this chat used so far" (this chat's transcript, subagents included) and "tokens saved by Cortex so far", the same counts the Costs page uses.
+- v3.5.3: Overview Savings is five compact rows again (the card is as tall as its neighbours, so the row no longer grows); in a half-width pane each Costs tool row drops its bar and uses shorter badges, so its Turn off / Turn on button stays on the same line at its normal size.

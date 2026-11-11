@@ -1,6 +1,6 @@
 {
   "name": "kapex-cortex",
-  "version": "3.5.2",
+  "version": "3.5.3",
   "description": "Human-lossless context for AI coding harnesses: invariants survive compaction, handoffs survive rate limits.",
   "license": "MIT",
   "type": "module",

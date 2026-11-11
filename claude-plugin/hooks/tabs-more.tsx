@@ -28,6 +28,8 @@ export function detailsBody($: Dollar, o: Ctx, t: Tiles): JSX.Element {
   const label = (x: { kind: string; name: string }) => `${x.kind === 'mcp' ? 'MCP' : 'Skills'} · ${x.name.replace(/^plugin_/, '')}`
   const idle = lo.filter(x => !usedHere(x))
   const maxLo = Math.max(1, ...lo.map(x => x.loaded))
+  // a half-width pane: no bar, shorter badges, so each row (and its button) stays on one line
+  const narrow = o.px < 900
   const line = (key: string, left: string, right: string, color: string = K.label, ic = '') => (
     <Box key={key} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>{ic ? u.tag(`${key}-t`, ic, color === K.amber ? K.amber : K.silver, left, color) : <Text size="caption" color={color}>{left}</Text>}<Text size="caption" tabular color={K.text}>{right}</Text></Box>
   )
@@ -64,11 +66,11 @@ export function detailsBody($: Dollar, o: Ctx, t: Tiles): JSX.Element {
           const used = usedHere(x)
           const n = x.kind === 'mcp' ? usage?.mcp[x.name] ?? 0 : Object.entries(usage?.skills ?? {}).filter(([n2]) => n2.startsWith(`${x.name}:`) || (x.names ?? []).includes(n2.split(':').pop()!)).reduce((a, [, v]) => a + v, 0)
           return (
-            <Box key={`lo-${x.kind}-${x.name}`} flexDirection="row" alignItems="center" columnGap={1} flexWrap="wrap">
-              <Box width="34%" minWidth={16} flexShrink={1}>{u.tag(`lot-${x.kind}-${x.name}`, x.kind === 'mcp' ? 'link' : 'spark', used ? K.emerald : K.amber, label(x), K.text)}</Box>
-              <Box flexGrow={1} minWidth={10}>{u.graphic(`log-${x.kind}-${x.name}`, lollipop({ share: x.loaded / maxLo, width: Math.max(60, w * 0.42), color: used ? K.emerald : K.amber, animate: animateFor(`lo-${x.name}`, String(x.loaded)) }), `${k(x.loaded)} tokens`)}</Box>
+            <Box key={`lo-${x.kind}-${x.name}`} flexDirection="row" alignItems="center" columnGap={1} flexWrap="nowrap">
+              <Box {...(narrow ? { flexGrow: 1 } : { width: '34%' })} minWidth={12} flexShrink={1}>{u.tag(`lot-${x.kind}-${x.name}`, x.kind === 'mcp' ? 'link' : 'spark', used ? K.emerald : K.amber, label(x), K.text)}</Box>
+              {narrow ? null : <Box flexGrow={1} minWidth={10}>{u.graphic(`log-${x.kind}-${x.name}`, lollipop({ share: x.loaded / maxLo, width: Math.max(60, w * 0.42), color: used ? K.emerald : K.amber, animate: animateFor(`lo-${x.name}`, String(x.loaded)) }), `${k(x.loaded)} tokens`)}</Box>}
               <Text size="caption" tabular weight="semibold" color={K.text}>{k(x.loaded)}</Text>
-              {t.badge(`lob-${x.kind}-${x.name}`, usage ? (used ? `used ×${n}` : 'unused lately') : 'use unknown', used ? K.emerald : K.amber, used ? 'check' : 'pending')}
+              {t.badge(`lob-${x.kind}-${x.name}`, usage ? (used ? (narrow ? `×${n}` : `used ×${n}`) : (narrow ? 'unused' : 'unused lately')) : 'use unknown', used ? K.emerald : K.amber, narrow ? undefined : used ? 'check' : 'pending')}
               {parkButton($, o.els, s, x)}
             </Box>
           )

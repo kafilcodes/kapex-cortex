@@ -12,6 +12,7 @@ export function kit(els: ElementTable, surface: string) {
   const Svg = surface === 'terminal' ? undefined : (els as unknown as { Svg?: (p: SvgProps) => JSX.Element }).Svg
   const size = (svg: string, d: 'width' | 'height') => Number(new RegExp(`${d}="(\\d+)"`).exec(svg)?.[1] ?? 0)
   return {
+    els,
     Svg,
     /** a drawing, or its words where drawings can't show (the terminal) */
     graphic: (key: string, svg: string, alt: string, interactive = false) =>
