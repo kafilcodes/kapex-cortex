@@ -2,10 +2,12 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { rotateJsonl } from "../util/atomic.ts";
 import { tryLock } from "../util/lock.ts";
-import { autoDreamDue, spawnDream } from "../core/dream-spawn.ts";
+import { autoDreamDue, cliFromHook, spawnDream, spawnQuick } from "../core/dream-spawn.ts";
+import { quickDue } from "../core/quick.ts";
 import { accumulate, finalize } from "../core/episodes.ts";
 import { saveExchange } from "../core/exchanges.ts";
 import { migrateV2 } from "../core/migrate.ts";
+import { refreshOwnSkills } from "../skills.ts";
 import type { RepoPaths } from "../core/paths.ts";
 import { previousInput, refreshState, stampHandoffReady, stateAgeNotice } from "../core/state.ts";
 import { claudeNewTurns, readCursor } from "../core/transcript.ts";
@@ -19,6 +21,7 @@ import { readTurns, storeTurns } from "../core/turns.ts";
  *   StopFailure   the same, keeping the last good reply; on a usage limit, the handoff is stamped ready
  *   PreCompact    a handoff snapshot (with a git WIP ref) before Claude summarizes the chat
  *   SessionEnd    a Dream, only if you switched on "Dream by itself" and one is due
+ *   (Stop also starts the free Quick check in the background when a memory file or the code changed)
  */
 export interface ClaudeHookInput {
   session_id?: string; transcript_path?: string; cwd?: string; hook_event_name?: string; source?: string; trigger?: string;
@@ -40,9 +43,9 @@ function capture(p: RepoPaths, input: ClaudeHookInput): void {
   }
 }
 
-function updateState(p: RepoPaths, input: ClaudeHookInput, snapshot = false): void {
+function updateState(p: RepoPaths, input: ClaudeHookInput, snapshot = false) {
   const session = input.session_id ?? "unknown";
-  refreshState(p, {
+  return refreshState(p, {
     harness: "claude-code", session,
     lastUser: readTurns(p, session).at(-1)?.text,
     lastAssistant: input.last_assistant_message,
@@ -61,6 +64,7 @@ export function handleClaude(event: string, p: RepoPaths, input: ClaudeHookInput
   switch (event) {
     case "sessionstart": {
       migrateV2(p); // once, for a project that still has a v2 ledger
+      try { refreshOwnSkills(); } catch { /* never break the hook */ }
       capture(p, input);
       if (input.source === "compact") return ""; // Claude Code re-reads CLAUDE.md and rules after a compaction by itself
       const notice = stateAgeNotice(p).trim();
@@ -74,7 +78,10 @@ export function handleClaude(event: string, p: RepoPaths, input: ClaudeHookInput
       rotateJsonl(join(p.priv, "episodes.jsonl"), 5 * 1024 * 1024, 3_000);
       rotateJsonl(p.turns, 10 * 1024 * 1024, 5_000);
       if (input.last_assistant_message) saveExchange(p, session, readTurns(p, session).at(-1)?.text ?? "", input.last_assistant_message);
-      updateState(p, input);
+      if (!input.session_id) return ""; // no session to write a handoff for (it would win as "newest" over a real one)
+      const gi = updateState(p, input);
+      // the free Quick check, in the background and only when a memory file or the code changed since the last one
+      if (quickDue(p, `${gi?.branch ?? ""}|${gi?.diffStat ?? ""}`)) spawnQuick(p, cliFromHook());
       return "";
     }
     case "stopfailure": {
@@ -95,7 +102,7 @@ export function handleClaude(event: string, p: RepoPaths, input: ClaudeHookInput
       updateState(p, input, true); // a compaction is a handoff moment: snapshot the working tree
       return "";
     case "sessionend":
-      if (autoDreamDue(p)) spawnDream(p, process.argv[1] ?? "");
+      if (autoDreamDue(p)) spawnDream(p, cliFromHook());
       return "";
     default:
       return ""; // v2 events (UserPromptSubmit, PostCompact, PostToolUseFailure) from an older install: nothing to do

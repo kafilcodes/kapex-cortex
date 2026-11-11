@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { freshLimits } from '../hooks/data'
 import { tipFor } from '../hooks/tips'
 
 const PANE = {
@@ -13,7 +14,7 @@ const FINDINGS = [
   { id: 'C1', kind: 'false', severity: 'high', by: 'check', file: '/mem/MEMORY.md', label: 'memory/MEMORY.md', line: 2, end: 2, entry: '- `npm test` is broken, skip it.', why: 'It says `npm test` doesn\'t work, but it ran successfully once after this note was written.', evidence: ['E1'], action: { op: 'delete' } },
   { id: 'C2', kind: 'stale', severity: 'medium', by: 'check', file: '/demo/CLAUDE.md', label: 'CLAUDE.md', line: 4, end: 4, entry: '- Cards use #111315.', why: '#111315 isn\'t used anywhere in the project any more.', evidence: [], action: { op: 'none' } },
 ]
-const DREAM = { id: '01JD0000000000000000000001', ts: '2026-11-10T10:00:00Z', status: 'proposed', ms: 900, model: 'claude · sonnet', transcripts: 10, evidenceCount: 63, entryCount: 40, findings: FINDINGS, evidence: [{ id: 'E1', kind: 'run', ts: '2026-11-10T09:55:00Z', session: 's1', text: '`npm test` succeeded', cmd: 'npm test', ok: true }], files: [] }
+const DREAM = { id: '01JD0000000000000000000001', ts: '2026-11-10T10:00:00Z', status: 'proposed', ms: 900, model: 'claude · sonnet', transcripts: 10, evidenceCount: 63, entryCount: 40, findings: FINDINGS, evidence: [{ id: 'E1', kind: 'run', ts: '2026-11-10T09:55:00Z', session: 's1', text: '`npm test` succeeded', cmd: 'npm test', ok: true }], files: [{ path: '/mem/MEMORY.md', label: 'memory/MEMORY.md', hash: 'a' }, { path: '/demo/CLAUDE.md', label: 'CLAUDE.md', hash: 'b' }] }
 const STATUS = {
   project: 'demo', root: '/demo',
   handoff: { exists: true, ageMinutes: 5, ready: false, from: 'claude-code', preview: { exchanges: 3, files: 2, openItems: 1, tokens: 1800, lastCheck: 'npm run check passed, 5 min ago' } },
@@ -29,11 +30,12 @@ const STATUS = {
   history: { states: [{ session: 's1', at: '2026-11-08T10:00:00Z', from: 'claude-code', goal: 'Ship the parser refactor' }], wips: [{ session: 's1', sha: 'abc1234', at: '2026-11-08T10:00:00Z' }] },
   usage: { chats: 20, skills: { 'cortex-resume': 2 }, mcp: { cortex: 5 }, tools: { Bash: 90 } },
   prefs: { tokenMode: 'balanced', greeting: true, name: '', dreamBackend: 'claude', dreamModel: 'sonnet', dreamApi: 'anthropic', dreamUrl: '', dreamTranscripts: 10, autoDream: false, overridden: [], tokens: { handoff: 1800 } },
+  memHealth: { files: [{ label: 'CLAUDE.md', lines: 40, limit: 200 }, { label: 'memory/MEMORY.md', lines: 170, limit: 200 }], scopedTokens: 150, alwaysTokens: 875, open: 2, checks: 4, clean: 3 },
   stateAt: '2026-11-08T10:00:00Z',
   health: 'attention',
 }
 
-function engine(on: any, status: object = STATUS, extra: object = {}, calls?: string[]) {
+function engine(on: any, status: object = STATUS, extra: object = {}, calls?: string[], size = { tokens: 84_000, percent: 42 }) {
   on('settings.read', () => ({ value: {} }))
   on('env.get', (_: unknown, e: any) => ({ value: e?.name === 'HOME' ? '/home/test' : undefined }))
   on('command.register', () => ({ value: { command: 'kc' } }))
@@ -46,11 +48,11 @@ function engine(on: any, status: object = STATUS, extra: object = {}, calls?: st
   on('session.usage', () => ({
     value: {
       startedAt: 0, version: 'x',
-      context: { tokens: 84_000, window: 200_000, percent: 42, breakdown: { categories: [
+      context: { tokens: size.tokens, window: 200_000, percent: size.percent, breakdown: { categories: [
         { name: 'System prompt', tokens: 20_000, isDeferred: false }, { name: 'Skills', tokens: 6_400, isDeferred: false }, { name: 'Messages', tokens: 64_000, isDeferred: false },
         { name: 'Free space', tokens: 83_000, isDeferred: false }, { name: 'Autocompact buffer', tokens: 33_000, isDeferred: false },
       ], maxTokens: 200_000, ...extra } },
-      rateLimits: [{ kind: 'five_hour', percentUsed: 23, resetsAt: '2026-11-08T15:00:00Z' }, { kind: 'seven_day', percentUsed: 41 }],
+      rateLimits: [{ kind: 'five_hour', percentUsed: 23, resetsAt: new Date(Date.now() + 2 * 3_600_000).toISOString() }, { kind: 'seven_day', percentUsed: 41 }],
     },
   }))
 }
@@ -62,8 +64,9 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
   await $.command.run({ command: 'kc' } as any)
   let ui: any = await $.ui.mount({ ...PANE, surface: 'desktop' })
   for (const t of ['Opus 5.5', 'main', /^875 memory tokens$/, 'OpenCode ready']) expect(await ui.find({ type: 'Text', text: t })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '1 to review' })).toBeDefined() // the Dream's one change waiting
-  expect(await ui.find({ type: 'Text', text: /^A new chat with \/cortex-resume will know:$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '2 to review' })).toBeDefined() // the Dream's change and the note that's yours to decide
+  expect(await ui.find({ type: 'Text', text: /^A new chat with \/cortex-resume gets, in three parts:$/ })).toBeDefined()
+  expect(await ui.find({ key: 'sw-yes' })).toBeUndefined() // 42% full: no hand-off question
   expect(await ui.find({ type: 'Text', text: /^last exchanges, word for word$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^≈1\.8k tokens to start$/ })).toBeDefined()
   expect(await ui.find({ key: 'kc-refresh' })).toBeDefined()
@@ -87,7 +90,10 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
     await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-dream' })
     expect(await ui.find({ type: 'Text', text: /^Not true$/ })).toBeDefined()
     expect(await ui.find({ key: 'kc-dream-apply' })).toBeDefined()
-    expect((await ui.find({ key: 'kc-dream-apply' }))?.text).toBe('Apply 1')
+    expect((await ui.find({ key: 'kc-dream-apply' }))?.text).toBe('Apply all 1')
+    expect(await ui.find({ key: 'fr-C2' })).toBeDefined() // yours to decide: Remove line, Ask Claude, Keep
+    expect(await ui.find({ key: 'fc-C2' })).toBeDefined()
+    expect(await ui.find({ key: 'fk-C2' })).toBeDefined()
     await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-files' })
     expect(await ui.find({ type: 'Text', text: /^only for src\/api\/\*\*$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^every session \(first 200 lines\)$/ })).toBeDefined()
@@ -103,8 +109,8 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
     expect(await ui.find({ key: 'sel-tokenMode' })).toBeDefined()
     await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-details' })
     expect(await ui.find({ type: 'Text', text: /92 ms of 150 ms · 40 runs/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Used in your last 20 chats here: skills cortex-resume ×2 · MCP servers cortex ×5/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /use minimize/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Loaded into every message$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /minimize it/ })).toBeDefined()
     await ui.press({ key: 'tab-overview' })
     await ui.unmount()
   }
@@ -196,7 +202,9 @@ test('before anything has loaded it shows a quiet loading view, never a blank pa
 })
 
 test('details: each MCP server and plugin skill set with its cost; ones unused in recent chats are flagged', async ($, on) => {
-  engine(on, STATUS, {
+  const calls: string[] = []
+  const T = { input: 10, output: 5_000, cacheRead: 900_000, cacheWrite: 20_000, replies: 40 }
+  engine(on, { ...STATUS, parked: { servers: [], keepOn: ['figma'], disabled: [] }, spend: { today: T, week: T, all: T, since: '2026-11-08', chats: 3, resumed: 1, resumedContext: 600_000 } }, {
     mcpTools: [
       { name: 'mcp__figma__get_file', serverName: 'figma', tokens: 2_500, isLoaded: true },
       { name: 'mcp__figma__get_node', serverName: 'figma', tokens: 1_700, isLoaded: true },
@@ -208,16 +216,24 @@ test('details: each MCP server and plugin skill set with its cost; ones unused i
       { name: 'vercel:env', source: 'plugin', pluginName: 'vercel', tokens: 500 },
       { name: 'cortex-resume', source: 'plugin', pluginName: 'kapex-cortex', tokens: 300 },
     ] },
-  })
+  }, calls)
   await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-details' })
-  expect(await ui.find({ type: 'Text', text: /MCP · figma · unused lately/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^MCP · figma$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^unused lately$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^used ×5$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^MCP · cortex$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Not used in your last 20 chats here: MCP · figma, Skills · vercel \(about 5\.3k tokens/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^2 unused · about 5\.3k tokens of context in every message$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Skills · kapex-cortex$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /linear/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Tokens this project used$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^600k$/ })).toBeDefined() // context a resumed chat didn't re-read
+  expect(calls.some(c => c.startsWith('park add'))).toBe(false) // you turned figma back on: never auto-parked
+  await ui.press({ key: 'park-figma' })
+  expect(calls).toContain('park add figma')
+  expect(await ui.find({ key: 'park-cortex' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -230,7 +246,7 @@ test('status strip: context ring, cache countdown, plan, handoff and waiting cou
   const band = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: {} } as any)
   const strip: any = ((await band.findAll({ type: 'Svg' })) as any[]).find(x => /cache/.test(String(x.props?.alt)))
   expect(strip).toBeDefined()
-  expect(String(strip.props.alt)).toMatch(/^context 42% · cache till .* · 5h 23% · week 41% · 1 to review$/)
+  expect(String(strip.props.alt)).toMatch(/^context 42% · cache till .* · 5h 23% · week 41% · 2 to review$/)
   expect(String(strip.props.source)).toMatch(/<animate attributeName="width"/)
   await band.unmount()
   const term = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'terminal', props: {} } as any)
@@ -263,10 +279,14 @@ test('timeline tiles and the Dream page: leave a finding out, apply, undo, dream
   expect(await ui.find({ type: 'Text', text: 'Dream: 2 findings to review' })).toBeDefined()
   expect(((await ui.findAll({ type: 'Svg' })) as any[]).some(x => /1 dreams/.test(String(x.props?.alt)))).toBe(true)
   await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-dream' })
-  await ui.press({ key: `fs-${DREAM.id}-C1` })
-  expect(calls).toContain(`dream skip ${DREAM.id} C1`)
+  await ui.press({ key: 'fa-C1' })
+  expect(calls).toContain(`dream decide ${DREAM.id} C1 apply`)
+  await ui.press({ key: 'fk-C2' })
+  expect(calls).toContain(`dream decide ${DREAM.id} C2 keep`)
+  await ui.press({ key: 'fr-C2' })
+  expect(calls).toContain(`dream decide ${DREAM.id} C2 remove`)
   await ui.press({ key: 'kc-dream-apply' })
-  expect(calls).toContain(`dream apply ${DREAM.id}`)
+  expect(calls).toContain(`dream decide ${DREAM.id} all apply`)
   await ui.press({ key: `kc-undo-${applied.id}` })
   expect(calls).toContain(`dream undo ${applied.id}`)
   await ui.press({ key: 'kc-dream' })
@@ -310,6 +330,35 @@ test('stress: every button on every page and sub-page presses without breaking t
     }
   }
   expect(pressed).toBeGreaterThan(20)
-  for (const c of ['status --json', 'dream', 'dream run --no-model', `dream apply ${DREAM.id}`, `dream discard ${DREAM.id}`, 'dream undo 01JC0000000000000000000009', 'h']) expect(calls).toContain(c)
+  for (const c of ['status --json', 'dream', 'dream run --no-model', `dream decide ${DREAM.id} all apply`, `dream discard ${DREAM.id}`, 'dream undo 01JC0000000000000000000009', 'h']) expect(calls).toContain(c)
+  await ui.unmount()
+})
+
+test('plan limits: a window whose reset time has passed starts again at 0%, never shows the old number', () => {
+  const now = Date.parse('2026-11-11T13:03:00Z')
+  const [five, week] = freshLimits([{ kind: 'five_hour', percentUsed: 99, resetsAt: '2026-11-11T11:40:00Z' }, { kind: 'seven_day', percentUsed: 85, resetsAt: '2026-11-13T04:00:00Z' }], now)
+  expect(five).toEqual({ kind: 'five_hour', percentUsed: 0, resetsAt: '2026-11-11T11:40:00Z', rolled: true })
+  expect(week?.percentUsed).toBe(85)
+  expect(week?.rolled).toBeUndefined()
+})
+
+test('hand-off: at 82% the Overview asks; flagged memory is checked first; Yes saves the handoff and copies /cortex-resume', async ($, on) => {
+  const calls: string[] = []
+  const copied: string[] = []
+  engine(on, STATUS, {}, calls, { tokens: 164_000, percent: 82 })
+  on('ui.copy', (_: unknown, e: any) => { copied.push(String(e?.text)); return { value: { isCopied: true } } })
+  await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
+  const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 160 } })
+  expect(await ui.find({ type: 'Text', text: /^Context 82% full: continue in a fresh chat\?$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^2 memory notes to check first$/ })).toBeDefined() // the fixture Dream has 2 open findings
+  await ui.press({ key: 'sw-yes' })
+  expect(await ui.find({ key: 'sw-review' })).toBeDefined()
+  await ui.press({ key: 'sw-anyway' })
+  expect(calls).toContain('handoff')
+  expect(copied).toEqual(['/cortex-resume'])
+  expect(await ui.find({ type: 'Text', text: /^Handoff saved and \/cortex-resume copied\./ })).toBeDefined()
+  await ui.press({ key: 'sw-done' })
+  expect(await ui.find({ key: 'sw-yes' })).toBeUndefined() // "Done" waits 30 minutes or 5 more points
   await ui.unmount()
 })

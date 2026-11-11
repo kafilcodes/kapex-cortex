@@ -44,12 +44,34 @@ export function filesBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
           {t.metric('nfm-l', 'rule', n.alwaysLines > 200 ? K.amber : K.silver, String(n.alwaysLines), 'lines in every session', '26%')}
           {t.metric('nfm-f', 'file', K.silver, String(n.files.length), 'memory files', '26%')}
         </Box>,
-        u.muted('nf-how', 'CLAUDE.md files and rules without paths load in every chat; rules with paths load only when Claude touches those files; auto memory loads its first 200 lines. Shorter is followed better. Cortex itself adds nothing to your messages.'),
+        u.muted('nf-how', 'Rules without paths load in every chat, rules with paths only for their files, auto memory its first 200 lines.'),
       ])}
+      {s.memHealth ? (() => {
+        const mh = s.memHealth
+        const worst = [...mh.files].sort((a, b) => b.lines / b.limit - a.lines / a.limit)
+        const share = mh.scopedTokens + mh.alwaysTokens ? Math.round((100 * mh.scopedTokens) / (mh.scopedTokens + mh.alwaysTokens)) : 0
+        return u.card('nf-health', '100%', [
+          u.head('nfh-h', 'Memory health', 'each measured on its own'),
+          <Box key="nfh-m" flexDirection="row" gap={1} flexWrap="wrap">
+            {t.metric('nfh-b', 'rule', worst.some(f => f.lines > f.limit) ? K.rose : worst.some(f => f.lines > f.limit * 0.8) ? K.amber : K.emerald, `${mh.files.filter(f => f.lines <= f.limit).length}/${mh.files.length}`, 'files under 200 lines', '20%')}
+            {t.metric('nfh-s', 'move', share ? K.sage : K.silver, `${share}%`, 'of rules load only for their files', '20%')}
+            {t.metric('nfh-o', 'alert', mh.open ? K.amber : K.emerald, String(mh.open), mh.open === 1 ? 'note flagged, not fixed' : 'notes flagged, not fixed', '20%')}
+            {t.metric('nfh-c', 'test', K.silver, mh.checks ? `${mh.clean}/${mh.checks}` : '–', 'recent Quick checks found nothing', '20%')}
+          </Box>,
+          ...worst.slice(0, 4).map(f => (
+            <Box key={`nfh-f-${f.label}`} flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
+              <Box width="34%" minWidth={14}><Text size="caption" color={K.label} wrap="truncate-end">{f.label}</Text></Box>
+              {u.graphic(`nfh-g-${f.label}`, micro({ share: Math.min(1, f.lines / f.limit), width: Math.min(300, px * 0.4), color: f.lines > f.limit ? K.rose : f.lines > f.limit * 0.8 ? K.amber : K.emerald, animate: false }), `${f.lines} of ${f.limit} lines`)}
+              <Text size="caption" tabular color={K.muted}>{`${f.lines} / ${f.limit} lines`}</Text>
+            </Box>
+          )),
+          u.muted('nfh-why', 'Keep each under 200 lines; move folder-only rules to .claude/rules/ with paths:. Dream proposes both.'),
+        ])
+      })() : null}
       {t.groupHead('nf-ah', 'spark', K.emerald, 'In every session', String(always.length))}
-      {t.railed('nf-al', always.map(f => ({ tile: tile(f) })))}
+      {t.stack('nf-al', always.map(f => tile(f)))}
       {later.length ? t.groupHead('nf-lh', 'pending', K.silver, 'Only when needed', String(later.length)) : null}
-      {later.length ? t.railed('nf-ll', later.map(f => ({ tile: tile(f) }))) : null}
+      {later.length ? t.stack('nf-ll', later.map(f => tile(f))) : null}
       {s.migrated ? u.tag('nf-mig', 'save', K.silver, `Your Cortex v2 memories are kept in ${s.migrated}: copy what you still want into CLAUDE.md, or let a Dream sort it.`, K.muted) : null}
     </Box>
   )

@@ -70,11 +70,18 @@ export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView
         be === 'api' ? text('dreamModel', 'Model name', pr.dreamModel ?? '', 'e.g. claude-sonnet-5-5') : null,
         be === 'api' && pr.dreamApi === 'openai' ? text('dreamUrl', 'Endpoint', pr.dreamUrl ?? '', 'https://openrouter.ai/api/v1') : null,
         field('dreamTranscripts', 'Chats to read', [['5', 'The last 5'], ['10', 'The last 10'], ['20', 'The last 20']], String(pr.dreamTranscripts ?? 10), 'More chats find more, and cost a little more with a model.'),
+        field('quickCheck', 'Quick check after every turn', ONOFF, pr.quickCheck === false ? 'off' : 'on', pr.quickCheck === false ? 'Off: Quick check runs only when you press it.' : 'On: checks your memory in the background when files change. Free.', 'It looks for lines over the limit, broken links, files and colours that are gone, and duplicates, then shows what it found here with Apply / Keep buttons. The Stop hook only compares file times, so turns stay fast.'),
         field('autoDream', 'Dream by itself', ONOFF, pr.autoDream ? 'on' : 'off', pr.autoDream ? 'After a session ends, at most once a day, after 3 new chats. It only proposes: you still Apply.' : 'Off: Dreams run only when you press Dream now.', 'An automatic Dream never changes a file. It saves its findings, and the strip shows how many wait for you.'),
       ])}
       {sec('sec-hand', 'link', 'Handoff', 'What a new chat reads with /cortex-resume', [
         field('tokenMode', 'Handoff size', MODES, pr.tokenMode, MODE_HELP[pr.tokenMode] ?? ''),
-        <Text key="st-cost" size="caption" color={K.label}>{`Saved after every reply. The current handoff is about ${(pr.tokens?.handoff ?? 0).toLocaleString()} tokens. Cortex adds nothing to your other messages.`}</Text>,
+        field('handoffAt', 'Offer a fresh chat at', [['70', '70% full'], ['80', '80% full (recommended)'], ['90', '90% full']], String(pr.handoffAt ?? 80), `Asks at ${pr.handoffAt ?? 80}% (${(pr.handoffAt ?? 80) - 10}% with a cold cache). You confirm.`, 'Yes saves the handoff and copies /cortex-resume for you to paste in a new chat. Later waits 30 minutes or 5 more points.'),
+        field('autoPark', 'Turn off unused MCP servers (disable)', ONOFF, pr.autoPark === false ? 'off' : 'on', pr.autoPark === false ? 'Off: turn them off yourself in Costs.' : 'On: unused in your last 10+ chats here → off in new chats. Turn on again anytime.', 'Uses Claude Code\'s own per-project switch (the one /mcp writes). Never the Claude app\'s own servers. Each parked server stops loading its tool names and instructions into every message.'),
+        ...((s.parked?.servers ?? []).length ? [<Box key="st-pk" flexDirection="row" gap={1} flexWrap="wrap" alignItems="center">
+          <Text size="caption" color={K.label}>{`Off here: ${s.parked!.servers.map(x => x.name).join(', ')}`}</Text>
+          <Button key="st-unpark" variant="secondary" onPress={() => { void act($, 'Back on', ['park', 'remove', ...s.parked!.servers.map(x => x.name)]) }}>Turn all back on</Button>
+        </Box>] : []),
+        <Text key="st-cost" size="caption" color={K.label}>{`The current handoff is about ${(pr.tokens?.handoff ?? 0).toLocaleString()} tokens, saved after every reply.`}</Text>,
       ])}
       {sec('sec-you', 'star', 'You', 'Greeting and name', [
         field('greeting', 'Greeting', ONOFF, pr.greeting === false ? 'off' : 'on', pr.greeting === false ? 'Off: the panel shows the project name.' : `On: ${s.name ? `"${(h => (h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'))(new Date().getHours())}, ${s.name}"` : 'no name found yet; set one below'}.`, 'The name comes from your setting below, else your computer account\'s full name (first word). It stays on this computer, in ~/.cortex, never in your project.'),

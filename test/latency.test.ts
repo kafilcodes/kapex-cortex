@@ -4,8 +4,11 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { cliFromHook } from "../src/core/dream-spawn.ts";
 import { cortexInit } from "../src/init.ts";
 import { CLI, userLine } from "./helpers.ts";
+
+const HOOK = join(import.meta.dirname, "..", "claude-plugin", "cortex", "hook.mjs");
 
 const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1];
 
@@ -22,7 +25,8 @@ test("A8: hook latency on this machine (p95 of 50 runs, full process spawn)", ()
   writeFileSync(transcript, Array.from({ length: 200 }, (_, i) => userLine(`u${i}`, `message ${i}: don't break the build`)).join(""));
   const time = (name: string, input: object) => {
     const t0 = performance.now();
-    const r = spawnSync(process.execPath, [CLI, "hook", name], { input: JSON.stringify(input) });
+    // what the plugin runs: the pre-built hook file, not the TypeScript CLI
+    const r = spawnSync(process.execPath, [HOOK, name, "--plugin"], { input: JSON.stringify(input) });
     assert.equal(r.status, 0);
     return performance.now() - t0;
   };
@@ -40,4 +44,10 @@ test("A8: hook latency on this machine (p95 of 50 runs, full process spawn)", ()
   if (process.env.CI) return; // shared CI runners are 3-5x slower and noisy: report there, enforce on a dev machine
   assert.ok(s < 150, `Stop p95 ${s.toFixed(1)} ms ≥ 150`);
   assert.ok(ss < 150, `SessionStart p95 ${ss.toFixed(1)} ms ≥ 150`);
+});
+
+test("hooks start the CLI, not themselves: the auto-Dream launched from hook.mjs runs cortex/src/cli.ts", () => {
+  assert.equal(cliFromHook("/p/claude-plugin/cortex/hook.mjs"), join("/p/claude-plugin/cortex", "src", "cli.ts"));
+  assert.equal(cliFromHook("/p/src/hook.ts"), join("/p/src", "cli.ts"));
+  assert.equal(cliFromHook("/p/src/cli.ts"), "/p/src/cli.ts");
 });

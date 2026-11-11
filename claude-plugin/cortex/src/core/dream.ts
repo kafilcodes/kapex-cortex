@@ -12,7 +12,8 @@ import { autoMemory } from "./home.ts";
 import { entries, nativeFiles, type Entry } from "./native.ts";
 import type { RepoPaths } from "./paths.ts";
 import { readPrefs } from "./prefs.ts";
-import { buildAfter } from "./dream-apply.ts";
+import { decide, isKept, readKept } from "./dream-decide.ts";
+import { writeMemoryCheck } from "./tiers.ts";
 
 /**
  * A Dream (after Anthropic's "dreaming"): read Claude Code's own memory files next to what really happened
@@ -35,6 +36,8 @@ export interface DreamReport {
   applied?: { at: string; files: DreamFile[] };
   undone?: string;
   error?: string;
+  /** findings left out because you kept those notes before */
+  kept?: number;
 }
 
 const dir = (p: RepoPaths) => join(p.vault, "dreams");
@@ -42,13 +45,13 @@ const reportPath = (p: RepoPaths, id: string) => join(dir(p), id, "report.json")
 export const runningPath = (p: RepoPaths) => join(dir(p), "running.json");
 export const hash = (s: string | null) => (s === null ? null : createHash("sha256").update(s).digest("hex").slice(0, 16));
 const read = (f: string): string | null => { try { return readFileSync(f, "utf8"); } catch { return null; } };
-const snap = (p: RepoPaths, id: string, which: "before" | "after", i: number) => join(dir(p), id, which, `${i}.md`);
+export const dreamSnap = (p: RepoPaths, id: string, which: "before" | "after", i: number) => join(dir(p), id, which, `${i}.md`);
 
 export function readDream(p: RepoPaths, id: string): DreamReport | null {
   if (!/^[0-9A-Z]{26}$/.test(id)) return null;
   try { return JSON.parse(readFileSync(reportPath(p, id), "utf8")) as DreamReport; } catch { return null; }
 }
-function save(p: RepoPaths, r: DreamReport): void { mkdirSync(join(dir(p), r.id), { recursive: true }); atomicWriteIfChanged(reportPath(p, r.id), JSON.stringify(r, null, 1)); }
+export function saveDream(p: RepoPaths, r: DreamReport): void { mkdirSync(join(dir(p), r.id), { recursive: true }); atomicWriteIfChanged(reportPath(p, r.id), JSON.stringify(r, null, 1)); }
 
 /** Every Dream, newest first. */
 export function listDreams(p: RepoPaths, max = 20): DreamReport[] {
@@ -89,7 +92,11 @@ export async function runDream(p: RepoPaths, o: { model?: boolean; now?: Date } 
       // without a model, the folder hints become low-key proposals of their own
       judged = hints.map(({ entry: e, dir: d }) => ({ kind: "scope" as const, severity: "low" as const, by: "check" as const, file: e.file, label: e.label, line: e.line, end: e.end, entry: e.text, why: `It only names files under ${d}/, so it could load only when Claude works there.`, evidence: [], action: { op: "move" as const, to: `.claude/rules/${d.toLowerCase().replace(/[^a-z0-9-]+/g, "-")}.md`, paths: [`${d}/**`] } }));
     }
-    r.findings = [...found, ...judged.map((f, i) => ({ ...f, id: `M${i + 1}` }))];
+    // notes you already said are right stay quiet until their text changes
+    const kept = readKept(p);
+    const all = [...found, ...judged.map((f, i) => ({ ...f, id: `M${i + 1}` }))];
+    r.findings = all.filter((f) => !isKept(kept, f));
+    r.kept = all.length - r.findings.length;
     const cited = new Set(r.findings.flatMap((f) => f.evidence));
     r.evidence = ev.filter((e) => cited.has(e.id));
     r.evidenceCount = ev.length;
@@ -99,7 +106,7 @@ export async function runDream(p: RepoPaths, o: { model?: boolean; now?: Date } 
     const touched = targets(p, r.findings);
     r.files = touched.map((path, i) => {
       const text = read(path);
-      if (text !== null) { mkdirSync(join(dir(p), r.id, "before"), { recursive: true }); writeFileSync(snap(p, r.id, "before", i), text); }
+      if (text !== null) { mkdirSync(join(dir(p), r.id, "before"), { recursive: true }); writeFileSync(dreamSnap(p, r.id, "before", i), text); }
       return { path, label: files.find((f) => f.path === path)?.label ?? labelOf(p, path), hash: hash(text) };
     });
   } catch (err) {
@@ -108,8 +115,9 @@ export async function runDream(p: RepoPaths, o: { model?: boolean; now?: Date } 
   } finally {
     r.ms = Date.now() - t0;
     // a newer Dream replaces any older one still waiting: its line numbers would no longer match anyway
-    if (r.status === "proposed") for (const old of listDreams(p, 50)) if (old.status === "proposed" && old.id !== r.id) { old.status = "replaced"; save(p, old); }
-    save(p, r);
+    if (r.status === "proposed") for (const old of listDreams(p, 50)) if (old.status === "proposed" && old.id !== r.id) { old.status = old.applied ? "applied" : "replaced"; saveDream(p, old); }
+    saveDream(p, r);
+    if (r.status === "proposed") writeMemoryCheck(p, r.findings, now);
     rmSync(runningPath(p), { force: true });
     release();
   }
@@ -121,7 +129,7 @@ function targets(p: RepoPaths, fs: Finding[]): string[] {
   const out = new Set<string>();
   const mem = autoMemory(p.root).dir;
   for (const f of fs) {
-    if (f.action.op === "none") continue;
+    if (f.action.op === "none") { if (f.file && f.line) out.add(f.file); continue; } // "Remove line" stays possible
     if (f.file) out.add(f.file);
     if (f.action.op === "move" && f.action.to) out.add(resolve(p.root, f.action.to));
     if (f.action.op === "add-lesson") { out.add(join(mem, "verified-lessons.md")); out.add(join(mem, "MEMORY.md")); }
@@ -136,7 +144,7 @@ export function skipFinding(p: RepoPaths, id: string, fid: string, skip: boolean
   const f = r?.findings.find((x) => x.id === fid);
   if (!r || !f || r.status !== "proposed") return false;
   f.skip = skip;
-  save(p, r);
+  saveDream(p, r);
   return true;
 }
 
@@ -145,45 +153,29 @@ export function discardDream(p: RepoPaths, id: string): string {
   if (!r) return "No such Dream.";
   if (r.status !== "proposed") return `This Dream is ${r.status}; only a proposed one can be discarded.`;
   r.status = "discarded";
-  save(p, r);
+  saveDream(p, r);
+  writeMemoryCheck(p, []);
   return "Discarded. Nothing changed.";
 }
 
-/** Write the proposed changes. All or nothing: if any file changed since the Dream, nothing is written. */
+/** Apply every open change of a Dream. Refused if a file changed since the Dream. */
 export function applyDream(p: RepoPaths, id: string, now = new Date()): string {
-  const r = readDream(p, id);
-  if (!r) return "No such Dream.";
-  if (r.status !== "proposed") return `This Dream is ${r.status}; only a proposed one can be applied.`;
-  const changed = r.files.filter((f) => hash(read(f.path)) !== f.hash);
-  if (changed.length) return `Not applied: ${changed.map((f) => f.label).join(", ")} changed since this Dream. Run a new Dream.`;
-  const before = r.files.map((f, i) => (f.hash === null ? null : read(snap(p, id, "before", i))));
-  const after = buildAfter(p.root, r, before, autoMemory(p.root).dir, now);
-  const out: DreamFile[] = [];
-  mkdirSync(join(dir(p), id, "after"), { recursive: true });
-  r.files.forEach((f, i) => {
-    const text = after[i] ?? null;
-    if (text !== null && text !== before[i]) { mkdirSync(dirname(f.path), { recursive: true }); atomicWriteIfChanged(f.path, text); writeFileSync(snap(p, id, "after", i), text); }
-    out.push({ ...f, hash: hash(text === null ? before[i] ?? null : text) });
-  });
-  r.status = "applied";
-  r.applied = { at: now.toISOString(), files: out };
-  save(p, r);
-  const n = r.findings.filter((f) => !f.skip && f.action.op !== "none").length;
-  return `Applied ${n} change${n === 1 ? "" : "s"} to ${out.filter((f, i) => f.hash !== r.files[i]!.hash).length} file(s). Undo puts them back.`;
+  return decide(p, id, "all", "apply", now);
 }
 
 /** Put every file back as it was before Apply. All or nothing: refused if a file changed after Apply. */
 export function undoDream(p: RepoPaths, id: string, now = new Date()): string {
   const r = readDream(p, id);
+  if (r?.findings.some((f) => f.done)) return decide(p, id, "all", "undo", now); // decided one by one
   if (!r || r.status !== "applied" || !r.applied) return "Only an applied Dream can be undone.";
   const changed = r.applied.files.filter((f) => hash(read(f.path)) !== f.hash);
   if (changed.length) return `Not undone: ${changed.map((f) => f.label).join(", ")} changed after Apply. Edit it by hand, or run a new Dream.`;
   r.files.forEach((f, i) => {
     if (f.hash === null) rmSync(f.path, { force: true }); // the Dream created it
-    else { const t = read(snap(p, id, "before", i)); if (t !== null) atomicWriteIfChanged(f.path, t); }
+    else { const t = read(dreamSnap(p, id, "before", i)); if (t !== null) atomicWriteIfChanged(f.path, t); }
   });
   r.status = "undone";
   r.undone = now.toISOString();
-  save(p, r);
+  saveDream(p, r);
   return "Undone: every file is back as it was.";
 }

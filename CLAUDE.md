@@ -13,6 +13,7 @@ Cortex adds what Claude Code doesn't have: a Desktop status strip and cost/cache
 - A Dream never changes a file until the user presses Apply, and every Apply can be undone.
 
 ## Facts
+- The plugin's hooks run `claude-plugin/cortex/hook.mjs`, one JS file `npm run bundle` builds from `src/hook.ts` (Node's TypeScript stripping cost ~30 ms per hook launch). Edit `src/`, then bundle.
 - OpenCode commands use shell includes, not `@file` includes, because `@file` does not expand on the server.
 
 ## Tried and failed (do this instead)

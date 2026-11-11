@@ -1,8 +1,9 @@
 import type { Hook } from 'claude-code'
 
 import { cacheState, clock } from './charts'
-import { lastLimits, openPane, readFail, refresh, refreshNow, refreshSoon, setSub, setTab, snapshot, statusOrSaved, toReview, type Dollar } from './data'
+import { openPane, planLimits, readFail, refresh, refreshNow, refreshSoon, setSub, setTab, snapshot, statusOrSaved, toReview, type Dollar } from './data'
 import type { Tip } from './tips'
+import { switchDue } from './switch'
 import { tipFor } from './tips'
 import { iconPaths } from './icons'
 import { kit } from './kit'
@@ -72,7 +73,7 @@ export function stripParts(o: Strip, tip: Tip | null = null): { main: string; si
 }
 
 export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) => unknown): Promise<unknown> {
-  const { l, cv } = await snapshot($)
+  const { l, cv, vw } = await snapshot($)
   const s = await statusOrSaved($) // after a restart or an app update: the last good status at once, refreshed behind it
   const failed = await readFail($)
   const els = $.ui.resolve(e)
@@ -101,7 +102,7 @@ export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) =
   const buffer = rows.find(r => /autocompact/i.test(r.name))?.tokens ?? 0
   const ttlMs = cv.ttl === '1h' ? 3_600_000 : 300_000
   const cs = cacheState(cv.lastAt, ttlMs)
-  const limits = l?.limits.length ? l.limits : (await lastLimits($))?.limits ?? []
+  const { limits } = await planLimits($, l)
   const tip = tipFor(s, l, cv, limits)
   const parts = stripParts({
     ctx: l?.context.percent ?? null, compactAt: buffer ? (win - buffer) / win : undefined,
@@ -111,6 +112,8 @@ export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) =
     plan: limits.find(x => x.kind === 'five_hour')?.percentUsed ?? null, week: limits.find(x => x.kind === 'seven_day')?.percentUsed ?? null,
     handoff: s.handoff.ready ? 'ready' : s.handoff.exists ? 'saved' : 'none', waiting,
   }, tip)
+  // big chat (or cold cache): one button that opens the panel's hand-off question
+  const sw = switchDue(s, l, cv, vw)
   const openLabel = <Text>{'Open Cortex'}{waiting ? <Text color={K.amber} weight="semibold">{` · ${waiting}`}</Text> : null}</Text>
   if (!u.Svg) return <Box flexDirection="row" gap={1} alignItems="center" justifyContent="space-between"><Text size="caption" color={waiting || tip?.level === 'warn' ? K.amber : undefined}>{`Cortex · ${tip ? `${tip.text} · ` : ''}${parts.words}`}</Text><Box flexDirection="row" gap={1}><Button key="kc-refresh" plain onPress={() => { void refreshNow($) }}>↻</Button><Button key="kc-open" plain onPress={open}>Open Cortex</Button></Box></Box>
   const Svg = u.Svg
@@ -123,6 +126,7 @@ export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) =
         {draw('kc-side', parts.side, tip ? `${tip.text}. ${tip.detail}` : parts.words)}
       </Box>
       <Box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
+        {sw ? <Button key="kc-switch" variant="primary" onPress={() => { void setTab($, 'overview'); void openPane($) }}>New chat…</Button> : null}
         <Button key="kc-refresh" variant="secondary" onPress={() => { void refreshNow($) }}>{failed ? 'Retry' : '↻'}</Button>
         <Button key="kc-open" variant="secondary" onPress={open}>{openLabel}</Button>
       </Box>

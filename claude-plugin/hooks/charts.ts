@@ -1,6 +1,6 @@
 // Small formatting helpers for the panel (numbers, model names, cache clock). The charts are in viz.ts.
 
-export const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n))
+export const k = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n))
 
 /** "claude-opus-5-5[1m]" → "Opus 5.5"; other ids are shown as given. */
 export function prettyModel(id: string): string {

@@ -2,7 +2,7 @@ import type { Hook } from 'claude-code'
 
 import type { StatusView, Tab } from '../types'
 import { k, prettyModel } from './charts'
-import { act, chooseProject, lastLimits, readFail, readOff, refresh, refreshNow, refreshSoon, setSub, setTab, snapshot, statusOrSaved, toReview, type Dollar } from './data'
+import { act, chooseProject, planLimits, readFail, readOff, refresh, refreshNow, refreshSoon, setSub, setTab, snapshot, statusOrSaved, toReview, type Dollar } from './data'
 import { healthRing } from './icons'
 import { kit } from './kit'
 import { LOGO_SIZE, LOGO_SVG } from './logo'
@@ -64,8 +64,7 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
     ])
   }
 
-  const saved = await lastLimits($)
-  const limits = l?.limits.length ? l.limits : saved?.limits ?? []
+  const { limits, at: limitsAt } = await planLimits($, l)
   const tip = tipFor(s, l, cv, limits)
   const legacy = LEGACY[snap.chosen as Tab]
   const page: Tab = legacy ? legacy[0] : (snap.chosen as Tab) || 'overview'
@@ -83,7 +82,7 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
   const body = page === 'timeline' ? timelinePage($, els, u, s, vw, px)
     : page === 'data' ? dataPage($, { els, u, s, l, current: page, wip: s.git?.wip, five: limits.find(x => x.kind === 'five_hour'), px, vw })
     : page === 'settings' ? settingsBody($, els, u, s, cols >= 120)
-    : overviewPage($, els, u, { s, l, cv, hist, ph, vw, limits, limitsAt: l?.limits.length ? null : saved?.at ?? null, tip, cols, px })
+    : overviewPage($, els, u, { s, l, cv, hist, ph, vw, limits, limitsAt, tip, cols, px })
 
   return (
     <Box flexDirection="column" gap={2} padding={1}>
@@ -109,7 +108,7 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
 
       {body}
 
-      {u.muted('tip', 'Tip: to hide the panel, use minimize. Closing it while maximized leaves a blank screen (a Claude Desktop bug the panel cannot work around).')}
+      {u.muted('tip', 'To hide the panel, minimize it (closing it while maximized leaves a blank screen).')}
     </Box>
   )
 }

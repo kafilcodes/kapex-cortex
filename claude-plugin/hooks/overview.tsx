@@ -7,6 +7,7 @@ import type { Kit } from './kit'
 import { lastTurnCard, readyToSwitch, savingsCard } from './cards'
 import { K, levelColor, RESUME } from './theme'
 import { tiles } from './tiles'
+import { switchCard, switchDue } from './switch'
 import { unusedTools, type Tip } from './tips'
 import { arcGauge, area, capsules, drain, micro } from './viz'
 
@@ -35,7 +36,7 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
   const grow = hist.length > 2 ? (hist[hist.length - 1]! - hist[Math.max(0, hist.length - 6)]!) / Math.min(5, hist.length - 1) : 0
   const turnsLeft = compactAt && grow > 0.2 && pct < compactAt * 100 ? Math.max(1, Math.round((compactAt * 100 - pct) / grow)) : null
   const five = limits.find(x => x.kind === 'five_hour'), week = limits.find(x => x.kind === 'seven_day')
-  const stale = !l?.limits.length && o.limitsAt ? ` · last seen ${ago(minsSince(new Date(o.limitsAt).toISOString()))}` : ''
+  const stale = o.limitsAt ? ` · last seen ${ago(minsSince(new Date(o.limitsAt).toISOString()))}` : ''
   const planRate = ph.length > 1 ? (ph[ph.length - 1]!.p - ph[0]!.p) / Math.max(1, (ph[ph.length - 1]!.t - ph[0]!.t) / 60_000) : 0
   const ttlMs = cv.ttl === '1h' ? 3_600_000 : 300_000
   const cs = cacheState(cv.lastAt, ttlMs)
@@ -56,9 +57,11 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
   const unused = unusedTools(s, l, 200)
   const waste = unused.reduce((a, x) => a + x.loaded, 0)
   const usedRows = rows.filter(r => !/messages|free space|autocompact/i.test(r.name) && r.tokens > 0).sort((a, b) => b.tokens - a.tokens)
+  const sw = switchDue(s, l, cv, vw)
   return (
     <Box flexDirection="column" gap={1}>
-      {tip ? u.card('tip', '100%', [
+      {sw ? switchCard($, els, u, s, sw, vw) : null}
+      {tip && !sw ? u.card('tip', '100%', [
         <Box key="tip-r" flexDirection="row" gap={1} alignItems="center" justifyContent="space-between" flexWrap="wrap">
           <Box flexDirection="row" gap={1} alignItems="center" flexShrink={1}>{u.node('tip-n', tip.icon, tip.color)}<Text weight="semibold" color={tip.color === K.rose ? K.rose : K.text}>{tip.text}</Text></Box>
           {/resume/.test(tip.text) ? <Button key="tip-go" variant="primary" onPress={() => { void $.prompt.submit({ text: RESUME }) }}>Resume</Button> : <Button key="tip-go" onPress={() => { void setTab($, 'data'); void setSub($, 'handoff') }}>What a new chat knows</Button>}
@@ -81,16 +84,16 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
             </Box>
           ) : u.tag('ctx-wait', 'pending', K.silver, 'Shows after Claude\'s first reply in this chat.'),
           hist.length > 1 ? u.graphic('g-trend', area({ values: hist, width: Math.min(cardPx, 320), height: 36, max: 100, limit: compactAt ? compactAt * 100 : undefined, animate: animateFor('trend', hist.join(',')) }), 'Context over recent turns') : null,
-          l ? u.line('ctx-c', 'Claude summarizes the chat at the amber mark. The handoff keeps your last exchanges word for word.', false, K.muted, 'caption') : null,
+          l ? u.line('ctx-c', 'Claude summarizes the chat at the amber mark.', false, K.muted, 'caption') : null,
         ])}
         {u.card('kpi', wKpi, [
           u.head('kpi-h', 'Plan, cache and handoff', hit !== null ? `${hit}% of the last reply cached` : undefined),
           <Box key="cells" flexDirection="row" flexWrap="wrap" gap={1}>
             {cell('c5', 'pending', '5-hour plan', five ? `${five.percentUsed}%` : '–', five ? levelColor(five.percentUsed / 100, 0.7, 0.9) : K.muted,
               five ? u.graphic('g5', micro({ share: five.percentUsed / 100, width: cellPx, animate: animateFor('p5', `${five.percentUsed}`) }), `${five.percentUsed}% used`) : null,
-              five ? `${five.resetsAt ? `resets ${clock(Date.parse(five.resetsAt))}` : ''}${planRate > 0.01 && five.percentUsed < 100 ? ` · limit ≈${clock(Date.now() + ((100 - five.percentUsed) / planRate) * 60_000)}` : ''}${stale}` : 'appears after a reply')}
+              five ? (five.rolled ? `new window since ${clock(Date.parse(five.resetsAt!))} · updates after a reply` : `${five.resetsAt ? `resets ${clock(Date.parse(five.resetsAt))}` : ''}${planRate > 0.01 && five.percentUsed < 100 ? ` · limit ≈${clock(Date.now() + ((100 - five.percentUsed) / planRate) * 60_000)}` : ''}${stale}`) : 'appears after a reply')}
             {cell('c7', 'decision', 'This week', week ? `${week.percentUsed}%` : '–', week ? levelColor(week.percentUsed / 100, 0.7, 0.9) : K.muted,
-              week ? u.graphic('g7', micro({ share: week.percentUsed / 100, width: cellPx, animate: animateFor('p7', `${week.percentUsed}`) }), `${week.percentUsed}% used`) : null, `7-day window${stale}`)}
+              week ? u.graphic('g7', micro({ share: week.percentUsed / 100, width: cellPx, animate: animateFor('p7', `${week.percentUsed}`) }), `${week.percentUsed}% used`) : null, week?.rolled ? 'new week started · updates after a reply' : `7-day window${week?.resetsAt ? ` · resets ${new Date(week.resetsAt).toLocaleDateString(undefined, { weekday: 'short' })} ${clock(Date.parse(week.resetsAt))}` : ''}${stale}`)}
             {cell('cc', 'spark', 'Cache', cs.state === 'unknown' ? 'Idle' : cs.state === 'cold' ? 'Cold' : `${cs.leftMin} min`, { warm: K.sage, cooling: K.amber, cold: K.rose, unknown: K.muted }[cs.state],
               cs.state === 'unknown' ? null : u.graphic('gc', drain({ share: cs.leftMin / (ttlMs / 60_000), seconds: 0, width: cellPx }), `${cs.leftMin} minutes of cache left`),
               cs.until ? (cs.state === 'cold' ? 'expired: the next reply re-reads everything' : `warm until ${clock(cs.until)}`) : 'warms up with your next reply')}
@@ -117,7 +120,7 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
           )),
           <Box key="mem-d" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap">
             {u.tag('mem-dl', 'dream', waiting ? K.amber : K.emerald, s.dream.running ? 'Dreaming…' : lastDream ? `Last Dream ${ago(minsSince(lastDream.ts))}${waiting ? ` · ${waiting} to review` : ''}` : 'No Dream yet', K.label)}
-            <Button key="ov-dream" plain onPress={() => { void setTab($, 'data'); void setSub($, 'dream') }}><Text size="caption" color={K.label}>{waiting ? 'Review' : 'Open'}</Text></Button>
+            <Button key="ov-dream" variant={waiting ? 'primary' : 'secondary'} onPress={() => { void setTab($, 'data'); void setSub($, 'dream') }}>{waiting ? `Review ${waiting}` : 'Open'}</Button>
           </Box>,
         ])}
         {savingsCard(u, t, s, hit, waste, w3)}

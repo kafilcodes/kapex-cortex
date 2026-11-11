@@ -1,11 +1,15 @@
 import { applyDream, discardDream, dreaming, listDreams, readDream, runDream, skipFinding, undoDream, type DreamReport } from "./core/dream.ts";
+import { decide, type Decision } from "./core/dream-decide.ts";
 import { spawnDream } from "./core/dream-spawn.ts";
+import { quickCheck } from "./core/dream-quick.ts";
 import type { RepoPaths } from "./core/paths.ts";
 
 /**
  *   kc dream                      start one in the background (returns at once; the panel shows it when done)
  *   kc dream run [--no-model]     run now and print what it found
  *   kc dream show [id] · list · apply <id> · discard <id> · undo <id> · skip <id> <finding> [off]
+ *   kc dream quick                the free check the Stop hook starts when a memory file or the code changed
+ *   kc dream decide <id> <finding|all> apply|remove|keep|undo   one finding at a time (the panel's buttons)
  */
 const ago = (iso: string) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60_000); return m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 
@@ -17,7 +21,7 @@ export function printDream(r: DreamReport): string {
   if (!r.findings.length && !r.error) lines.push("  Nothing to fix: your memory matches what happened.");
   const ev = new Map(r.evidence.map((e) => [e.id, e]));
   for (const f of r.findings) {
-    lines.push(`  ${f.skip ? "[skipped] " : ""}${f.id} ${f.kind.toUpperCase()} ${f.label}${f.line ? `:${f.line}` : ""}  →  ${f.action.op === "none" ? "for you to decide" : f.action.op === "move" ? `move to ${f.action.to} (${(f.action.paths ?? []).join(", ")})` : f.action.op === "replace" ? `rewrite: "${f.action.text}"` : f.action.op === "add-lesson" ? `add lesson: "${f.action.text}"` : f.action.op}`);
+    lines.push(`  ${f.done ? `[${f.done}] ` : f.skip ? "[skipped] " : ""}${f.id} ${f.kind.toUpperCase()} ${f.label}${f.line ? `:${f.line}` : ""}  →  ${f.action.op === "none" ? "for you to decide" : f.action.op === "move" ? `move to ${f.action.to} (${(f.action.paths ?? []).join(", ")})` : f.action.op === "replace" ? `rewrite: "${f.action.text}"` : f.action.op === "add-lesson" ? `add lesson: "${f.action.text}"` : f.action.op}`);
     if (f.entry) lines.push(`      "${f.entry.replace(/\s+/g, " ").slice(0, 140)}"`);
     lines.push(`      why: ${f.why}`);
     for (const id of f.evidence) { const e = ev.get(id); if (e) lines.push(`      ${id} ${e.ts.slice(0, 16).replace("T", " ")}: ${e.text}`); }
@@ -42,6 +46,8 @@ export async function dreamCommand(args: string[], p: RepoPaths, self: string, n
         return r.status === "failed" ? 1 : 0;
       } catch (err) { console.error(String((err as Error).message ?? err)); return 1; }
     }
+    case "quick":
+      try { console.log(await quickCheck(p)); return 0; } catch (err) { console.error(String((err as Error).message ?? err)); return 1; }
     case "list":
       for (const r of listDreams(p)) console.log(`${r.id}  ${r.status.padEnd(9)} ${String(r.findings.length).padStart(2)} findings  ${ago(r.ts)}`);
       return 0;
@@ -51,6 +57,12 @@ export async function dreamCommand(args: string[], p: RepoPaths, self: string, n
       return r ? 0 : 1;
     }
     case "apply": console.log(applyDream(p, a ?? "")); return 0;
+    case "decide": {
+      if (!["apply", "remove", "keep", "undo"].includes(c ?? "")) { console.error("kc dream decide <id> <finding|all> apply|remove|keep|undo"); return 2; }
+      const out = decide(p, a ?? "", b ?? "", c as Decision);
+      console.log(out);
+      return /^(Applied|Removed|Kept|Undone)/.test(out) ? 0 : 1;
+    }
     case "discard": console.log(discardDream(p, a ?? "")); return 0;
     case "undo": console.log(undoDream(p, a ?? "")); return 0;
     case "skip": {
@@ -59,7 +71,7 @@ export async function dreamCommand(args: string[], p: RepoPaths, self: string, n
       return ok ? 0 : 1;
     }
     default:
-      console.log("kc dream [run|list|show|apply|discard|undo|skip]");
+      console.log("kc dream [run|list|show|apply|discard|undo|skip|decide]");
       return 2;
   }
 }

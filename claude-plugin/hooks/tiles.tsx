@@ -43,7 +43,7 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[]) 
     const line = `<path d="M7 0 V${last ? 18 : ht}" /><path d="M7 18 Q7 24 13 24 H18" />`
     return u.Svg ? <u.Svg key={key} source={`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="${ht}" viewBox="0 0 18 ${ht}" fill="none" stroke="${K.ink}" stroke-opacity="0.55" stroke-width="1.5" stroke-linecap="round">${line}</svg>`} alt="connector" width={18} height={ht} /> : null
   }
-  /** a list of tiles joined by a rail on the left, like a tree; `lines` estimates each tile's text lines so the rail
+  /** the Timeline's list: tiles joined by a rail on the left (one day's events in order); `lines` estimates each tile's text lines so the rail
    * is at least as tall as its tile (a taller rail only adds space; a shorter one would leave a gap) */
   const railed = (key: string, items: { tile: JSX.Element; lines?: number }[]) => (
     <Box key={key} flexDirection="column" gap={0}>
@@ -55,6 +55,8 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[]) 
       ))}
     </Box>
   )
+  /** a flat list of tiles: no connectors, because nothing in it is a child of anything else */
+  const stack = (key: string, items: JSX.Element[]) => <Box key={key} flexDirection="column" gap={1}>{items}</Box>
   /** an icon, a value and what it counts, side by side */
   const metric = (key: string, icon: string, color: string, value: string, label: string, width = '30%') => (
     <Box key={key} {...(width === '100%' ? {} : { width })} flexGrow={1} minWidth={14} flexDirection="row" gap={1} alignItems="center" backgroundColor={K.pill} paddingX={1} paddingY={1}>
@@ -115,5 +117,5 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[]) 
       {right ?? null}
     </Box>
   )
-  return { badge, metric, seg, tile, groupHead, railed }
+  return { badge, metric, seg, tile, groupHead, railed, stack }
 }

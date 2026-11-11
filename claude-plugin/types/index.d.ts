@@ -5,13 +5,15 @@ export type FindingView = {
   file: string; label: string; line: number; end: number; entry: string; why: string; evidence: string[]
   action: { op: 'delete' | 'replace' | 'move' | 'add-index' | 'add-lesson' | 'none'; text?: string; to?: string; paths?: string[] }
   skip?: boolean
+  done?: 'applied' | 'kept'
+  was?: string
 }
 export type EvidenceView = { id: string; kind: 'run' | 'you' | 'note' | 'commit'; ts: string; session: string; text: string; cmd?: string; ok?: boolean }
 export type DreamView = {
   id: string; ts: string; status: 'proposed' | 'applied' | 'discarded' | 'undone' | 'failed' | 'replaced'; ms: number
   model: string | null; modelError?: string; dropped?: number; rejected?: string[]; transcripts: number; evidenceCount: number; entryCount: number
   findings: FindingView[]; evidence: EvidenceView[]; files: { path: string; label: string; hash: string | null }[]
-  applied?: { at: string }; undone?: string; error?: string
+  applied?: { at: string }; undone?: string; error?: string; kept?: number
 }
 export type StatusView = {
   project: string
@@ -19,7 +21,7 @@ export type StatusView = {
   name?: string
   episodes?: EpisodeView[]
   timeline?: TimelineEventView[]
-  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string } }
+  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal?: string; next?: string; instructions?: number; decisions?: number; trail?: number; commits?: number; flagged?: number } }
   native: { files: NativeFileView[]; alwaysTokens: number; alwaysLines: number; autoMemory: { dir: string; enabled: boolean } }
   dream: { running: { since: string } | null; recent: DreamView[] }
   git: { branch: string; dirty: number; untracked: number; wip: { ref: string; sha: string; at: string } | null } | null
@@ -28,6 +30,9 @@ export type StatusView = {
   history?: HistoryView
   prefs?: PrefsView
   usage?: { chats: number; skills: Record<string, number>; mcp: Record<string, number>; tools: Record<string, number> }
+  spend?: { today: TokensView; week: TokensView; all: TokensView; since: string | null; chats: number; resumed: number; resumedContext: number }
+  parked?: { servers: { name: string; at: string; auto: boolean; tokens: number }[]; keepOn: string[]; disabled: string[] }
+  memHealth?: { files: { label: string; lines: number; limit: number }[]; scopedTokens: number; alwaysTokens: number; open: number; checks: number; clean: number }
   migrated?: string
   stateAt: string | null
   health: 'good' | 'attention'
@@ -38,7 +43,8 @@ export type HistoryView = {
   wips: { session: string; sha: string; at: string }[]
 }
 /** Settings in force here, and what the handoff costs. */
-export type PrefsView = { tokenMode: string; greeting?: boolean; name?: string; dreamBackend: string; dreamModel: string; dreamApi: string; dreamUrl: string; dreamTranscripts: number; autoDream: boolean; overridden: string[]; tokens: { handoff: number } }
+export type TokensView = { input: number; output: number; cacheRead: number; cacheWrite: number; replies: number }
+export type PrefsView = { tokenMode: string; greeting?: boolean; name?: string; dreamBackend: string; dreamModel: string; dreamApi: string; dreamUrl: string; dreamTranscripts: number; autoDream: boolean; quickCheck?: boolean; handoffAt?: number; autoPark?: boolean; overridden: string[]; tokens: { handoff: number } }
 /** `kc status --json` in a folder without Cortex: which child folders have it. */
 export type OffView = { cwd: string; nearby: string[]; error?: string }
 /** What Claude Code itself reports (no estimates). */
@@ -46,16 +52,17 @@ export type LiveView = {
   model: string
   turns: number
   context: { tokens?: number; window: number; percent?: number; rows: { name: string; tokens: number }[] }
-  limits: { kind: string; percentUsed: number; resetsAt?: string }[]
+  limits: { kind: string; percentUsed: number; resetsAt?: string; rolled?: boolean }[]
   costUsd?: number
   /** MCP servers and skill sets loaded in this chat, by what they cost (from Claude Code's own /context numbers) */
-  loadout?: { kind: 'mcp' | 'skills'; name: string; tokens: number; loaded: number; items: number; names?: string[] }[]
+  loadout?: { kind: 'mcp' | 'skills'; name: string; tokens: number; loaded: number; items: number; names?: string[]; server?: string }[]
+  startedAt?: number
 }
 /** The panel's pages; Dream & Memory has its own sub-pages (ViewState.sub). Old values still load (mapped to a page). */
 export type Tab = 'overview' | 'timeline' | 'data' | 'settings' | 'waiting' | 'rules' | 'failed' | 'handoff' | 'compactions' | 'details'
 export type TimelineEventView = { id: string; ts: string; kind: string; title: string; detail?: string; tags: string[]; tone: 'ok' | 'warn' | 'bad' | 'info' }
 /** The Memory and Timeline tabs' list state. */
-export type ViewState = { collapsed: string[]; more: Record<string, number>; editing: string; expanded: string[]; sub: string }
+export type ViewState = { collapsed: string[]; more: Record<string, number>; editing: string; expanded: string[]; sub: string; flow?: '' | 'confirm' | 'copied'; snooze?: { until: number; pct: number } }
 /** One turn of the session journal. */
 export type EpisodeView = {
   id: string; session: string; start: string; end: string; ask: string

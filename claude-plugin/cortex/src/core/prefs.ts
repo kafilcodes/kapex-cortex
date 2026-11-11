@@ -13,6 +13,9 @@ import type { RepoPaths } from "./paths.ts";
  *   dreamModel       the model it uses (claude: haiku, sonnet or opus)
  *   dreamTranscripts how many recent chats a Dream reads
  *   autoDream        dream by itself after a session ends (at most once a day): off until you switch it on
+ *   quickCheck       the free Quick check after every turn, in the background, only when a memory file or the code changed: on
+ *   handoffAt        context % at which the panel offers a fresh chat from the handoff (lower with a cold cache): 80
+ *   autoPark         park MCP servers and plugins unused in your recent chats here, from the next chat on: on
  */
 export const TOKEN_MODES = ["lean", "balanced", "rich"] as const;
 export const DREAM_BACKENDS = ["claude", "opencode", "api", "off"] as const;
@@ -23,10 +26,12 @@ export interface Prefs {
   greeting: boolean; name: string;
   dreamBackend: DreamBackend; dreamModel: string; dreamApi: "anthropic" | "openai"; dreamUrl: string;
   dreamTranscripts: number; autoDream: boolean;
+  quickCheck: boolean; handoffAt: number; autoPark: boolean;
 }
 export const DEFAULT_PREFS: Prefs = {
   tokenMode: "balanced", greeting: true, name: "",
   dreamBackend: "claude", dreamModel: "sonnet", dreamApi: "anthropic", dreamUrl: "", dreamTranscripts: 10, autoDream: false,
+  quickCheck: true, handoffAt: 80, autoPark: true,
 };
 
 /** The handoff packet's size in characters (~4 per token), and whether it carries the assistant's last reply. */
@@ -52,6 +57,9 @@ function clean(raw: Record<string, unknown>): Partial<Prefs> {
   if (typeof raw.dreamUrl === "string" && raw.dreamUrl.length <= 300) out.dreamUrl = raw.dreamUrl;
   if (typeof raw.dreamTranscripts === "number" && raw.dreamTranscripts >= 1 && raw.dreamTranscripts <= 50) out.dreamTranscripts = Math.round(raw.dreamTranscripts);
   if (typeof raw.autoDream === "boolean") out.autoDream = raw.autoDream;
+  if (typeof raw.quickCheck === "boolean") out.quickCheck = raw.quickCheck;
+  if (typeof raw.autoPark === "boolean") out.autoPark = raw.autoPark;
+  if (typeof raw.handoffAt === "number" && raw.handoffAt >= 50 && raw.handoffAt <= 95) out.handoffAt = Math.round(raw.handoffAt);
   return out;
 }
 
@@ -77,6 +85,8 @@ export function parsePref(key: string, value: string): { key: keyof Prefs; value
   switch (key) {
     case "tokenMode": return TOKEN_MODES.includes(value as TokenMode) ? { key, value: value as TokenMode } : `tokenMode must be one of ${TOKEN_MODES.join(", ")}`;
     case "greeting":
+    case "quickCheck":
+    case "autoPark":
     case "autoDream": { const b = bool(value); return b === null ? `${key} must be on or off` : { key, value: b }; }
     case "name": return /^[\p{L}' -]{0,40}$/u.test(value) ? { key, value: value.trim() } : "a name is letters and spaces, up to 40";
     case "dreamBackend": return DREAM_BACKENDS.includes(value as DreamBackend) ? { key, value: value as DreamBackend } : `dreamBackend must be one of ${DREAM_BACKENDS.join(", ")}`;
@@ -84,7 +94,8 @@ export function parsePref(key: string, value: string): { key: keyof Prefs; value
     case "dreamApi": return value === "anthropic" || value === "openai" ? { key, value } : "dreamApi must be anthropic or openai";
     case "dreamUrl": return value === "" || /^https?:\/\//.test(value) ? { key, value } : "dreamUrl must be a web address";
     case "dreamTranscripts": { const n = Number(value); return Number.isInteger(n) && n >= 1 && n <= 50 ? { key, value: n } : "dreamTranscripts must be a whole number from 1 to 50"; }
-    default: return `unknown setting "${key}" (tokenMode, greeting, name, dreamBackend, dreamModel, dreamApi, dreamUrl, dreamTranscripts, autoDream)`;
+    case "handoffAt": { const n = Number(value); return Number.isInteger(n) && n >= 50 && n <= 95 ? { key, value: n } : "handoffAt must be a whole number from 50 to 95"; }
+    default: return `unknown setting "${key}" (tokenMode, greeting, name, dreamBackend, dreamModel, dreamApi, dreamUrl, dreamTranscripts, autoDream, quickCheck, handoffAt, autoPark)`;
   }
 }
 

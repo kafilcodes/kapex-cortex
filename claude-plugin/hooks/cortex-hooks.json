@@ -7,8 +7,7 @@
             "type": "command",
             "command": "node",
             "args": [
-              "${CLAUDE_PLUGIN_ROOT}/cortex/src/cli.ts",
-              "hook",
+              "${CLAUDE_PLUGIN_ROOT}/cortex/hook.mjs",
               "claude.sessionstart",
               "--plugin"
             ],
@@ -24,8 +23,7 @@
             "type": "command",
             "command": "node",
             "args": [
-              "${CLAUDE_PLUGIN_ROOT}/cortex/src/cli.ts",
-              "hook",
+              "${CLAUDE_PLUGIN_ROOT}/cortex/hook.mjs",
               "claude.stop",
               "--plugin"
             ],
@@ -41,8 +39,7 @@
             "type": "command",
             "command": "node",
             "args": [
-              "${CLAUDE_PLUGIN_ROOT}/cortex/src/cli.ts",
-              "hook",
+              "${CLAUDE_PLUGIN_ROOT}/cortex/hook.mjs",
               "claude.stopfailure",
               "--plugin"
             ],
@@ -58,8 +55,7 @@
             "type": "command",
             "command": "node",
             "args": [
-              "${CLAUDE_PLUGIN_ROOT}/cortex/src/cli.ts",
-              "hook",
+              "${CLAUDE_PLUGIN_ROOT}/cortex/hook.mjs",
               "claude.precompact",
               "--plugin"
             ],
@@ -75,8 +71,7 @@
             "type": "command",
             "command": "node",
             "args": [
-              "${CLAUDE_PLUGIN_ROOT}/cortex/src/cli.ts",
-              "hook",
+              "${CLAUDE_PLUGIN_ROOT}/cortex/hook.mjs",
               "claude.sessionend",
               "--plugin"
             ],

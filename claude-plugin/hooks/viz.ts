@@ -136,3 +136,24 @@ export function lanes(o: { lanes: { label: string; color: string; dots: { t: num
   })
   return svg(W, H, ticks.join('') + rows.join(''))
 }
+
+/** Composition: one bar split into a segment per category (share of the whole), a 2px gap between segments. */
+export function stacked(o: { items: { value: number; color: string; label: string }[]; width: number; animate: boolean }): string {
+  const items = o.items.filter((i) => i.value > 0)
+  const W = Math.round(o.width), H = 14, total = items.reduce((a, i) => a + i.value, 0)
+  if (!total) return svg(W, H, `<rect width="${W}" height="${H}" rx="7" fill="${K.pill}"/>`)
+  let x = 0
+  const segs = items.map((i) => {
+    const w = Math.max(3, (i.value / total) * W - 2)
+    const r = `<rect x="${x.toFixed(1)}" width="${w.toFixed(1)}" height="${H}" rx="3" fill="${i.color}"><title>${esc(i.label)}</title>${o.animate ? `<animate attributeName="opacity" from="0" to="1" dur="0.6s" fill="freeze"/>` : ''}</rect>`
+    x += w + 2
+    return r
+  })
+  return svg(W, H, `<clipPath id="sc"><rect width="${W}" height="${H}" rx="7"/></clipPath><g clip-path="url(#sc)">${segs.join('')}</g>`)
+}
+
+/** Ranking: a thin stem from zero to the value (share of the largest) with a dot at the end. */
+export function lollipop(o: { share: number; width: number; color: string; animate: boolean }): string {
+  const W = Math.round(o.width), s = Math.max(0, Math.min(1, o.share)), x = Math.max(5, s * (W - 6))
+  return svg(W, 10, `<rect y="4" width="${W}" height="2" rx="1" fill="${K.pill}"/><rect y="4" width="${x.toFixed(1)}" height="2" rx="1" fill="${o.color}">${grow(o.animate, 'width', x.toFixed(1))}</rect><circle cx="${x.toFixed(1)}" cy="5" r="4" fill="${o.color}"/>`)
+}

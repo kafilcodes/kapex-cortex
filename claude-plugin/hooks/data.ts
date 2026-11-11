@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { Hook } from 'claude-code'
 
 import type { CacheView, LiveView, OffView, StatusView, Tab, ViewState } from '../types'
+import { unusedTools } from './tips'
 
 // Kapex Cortex panel state and refresh. Data: Claude Code's own numbers ($.session.usage/model/turns, turn.complete usage)
 // plus `kc status --json`. No timer: refreshes on turn end, button press or panel open, writes state only
@@ -99,6 +100,7 @@ export async function refresh($: Dollar): Promise<void> {
       context: { tokens: u.context.tokens, window: u.context.breakdown?.maxTokens ?? u.context.window, percent: u.context.percent, rows: (u.context.breakdown?.categories ?? []).filter(c => !c.isDeferred).map(c => ({ name: c.name, tokens: c.tokens })) },
       limits: u.rateLimits.map(x => ({ kind: x.kind, percentUsed: x.percentUsed, resetsAt: x.resetsAt })),
       costUsd: u.cost?.usd,
+      startedAt: (u as { startedAt?: number }).startedAt,
       loadout: loadout(u.context.breakdown),
     }
     const t = await cacheTtl($, u.rateLimits.some(x => x.kind === 'five_hour'))
@@ -109,6 +111,7 @@ export async function refresh($: Dollar): Promise<void> {
   const lj = JSON.stringify(l)
   if (sj !== lastJson.s) { lastJson.s = sj; await update($, status, () => s) }
   if (lj !== lastJson.l) { lastJson.l = lj; await update($, live, () => l) }
+  if (s && l) void autoPark($, s, l)
   // plan use is only reported after a reply: keep the last known numbers across chats instead of an empty card
   if (l?.limits.length) void $.store.set(STORE_LIMITS, { at: Date.now(), limits: l.limits }).catch(() => undefined)
   const fiveNow = l?.limits.find(x => x.kind === 'five_hour')?.percentUsed
@@ -148,25 +151,26 @@ export async function stampCache($: Dollar, u?: { input_tokens: number; cache_re
   await update($, cache, c => ({ ...c, lastAt: Date.now(), ...(u ? { read: u.cache_read_input_tokens, write: u.cache_creation_input_tokens, input: u.input_tokens } : {}) }))
 }
 
-type Breakdown = { mcpTools?: readonly { name: string; tokens: number; isLoaded: boolean }[]; skills?: { skillFrontmatter?: readonly { name: string; pluginName?: string; tokens: number }[] } }
+type Breakdown = { mcpTools?: readonly { name: string; serverName?: string; tokens: number; isLoaded: boolean }[]; skills?: { skillFrontmatter?: readonly { name: string; pluginName?: string; tokens: number }[] } }
 /** What each MCP server and each plugin's skills cost here. Server keys match tool names (mcp__<server>__tool), as usage.ts counts them. */
 function loadout(b: Breakdown | undefined): LiveView['loadout'] {
   if (!b) return undefined
-  const m = new Map<string, { kind: 'mcp' | 'skills'; name: string; tokens: number; loaded: number; items: number; names?: string[] }>()
-  const add = (kind: 'mcp' | 'skills', name: string, tokens: number, loaded: boolean, item?: string) => {
+  const m = new Map<string, { kind: 'mcp' | 'skills'; name: string; tokens: number; loaded: number; items: number; names?: string[]; server?: string }>()
+  const add = (kind: 'mcp' | 'skills', name: string, tokens: number, loaded: boolean, item?: string, server?: string) => {
     const k = `${kind}:${name}`
-    const x = m.get(k) ?? { kind, name, tokens: 0, loaded: 0, items: 0 }
+    const x = m.get(k) ?? { kind, name, tokens: 0, loaded: 0, items: 0, ...(server ? { server } : {}) }
     x.tokens += tokens; x.items += 1; if (loaded) x.loaded += tokens
     if (item) x.names = [...(x.names ?? []), item.split(':').pop()!]
     m.set(k, x)
   }
-  for (const t of b.mcpTools ?? []) add('mcp', t.name.split('__')[1] ?? t.name, t.tokens, t.isLoaded)
+  // serverName is the name /mcp shows: the one Claude Code's own disabledMcpServers list takes
+  for (const t of b.mcpTools ?? []) add('mcp', t.name.split('__')[1] ?? t.name, t.tokens, t.isLoaded, undefined, t.serverName)
   for (const sk of b.skills?.skillFrontmatter ?? []) add('skills', sk.pluginName ?? (sk.name.includes(':') ? sk.name.split(':')[0]! : 'your own'), sk.tokens, true, sk.name)
   return [...m.values()].sort((a, b2) => b2.loaded - a.loaded)
 }
 
 /** Changes the newest Dream proposes and you haven't looked at yet (it must still be "proposed"). */
-export const toReview = (s: StatusView | null | undefined) => { const d = s?.dream?.recent?.[0]; return d && d.status === 'proposed' ? d.findings.filter(f => !f.skip && f.action.op !== 'none').length : 0 }
+export const toReview = (s: StatusView | null | undefined) => { const d = s?.dream?.recent?.[0]; return d && d.status === 'proposed' ? d.findings.filter(f => !f.skip && !f.done).length : 0 }
 
 export async function readView($: Dollar): Promise<ViewState> { return read($, view) }
 export async function toggleGroup($: Dollar, g: string): Promise<void> {
@@ -180,6 +184,19 @@ export async function setEditing($: Dollar, id: string): Promise<void> { await u
 /** Plan numbers last seen (any chat), for the cards and strip before this chat's first reply. */
 export async function lastLimits($: Dollar): Promise<{ at: number; limits: LiveView['limits'] } | null> {
   try { return ((await $.store.get(STORE_LIMITS)) as { at: number; limits: LiveView['limits'] } | undefined) ?? null } catch { return null }
+}
+/**
+ * The plan numbers to draw. Claude Code reports plan use only with a reply, so in a quiet chat (or from another chat's
+ * saved copy) the numbers can be from before the window reset: a window whose reset time has passed starts again at 0%.
+ */
+export function freshLimits(limits: LiveView['limits'], now = Date.now()): LiveView['limits'] {
+  return limits.map(x => (x.resetsAt && Date.parse(x.resetsAt) <= now ? { ...x, percentUsed: 0, rolled: true } : x))
+}
+/** This chat's plan numbers, else the last ones seen in any chat; either way aged past their reset time. */
+export async function planLimits($: Dollar, l: LiveView | null): Promise<{ limits: LiveView['limits']; at: number | null }> {
+  if (l?.limits.length) return { limits: freshLimits(l.limits), at: null }
+  const saved = await lastLimits($)
+  return { limits: freshLimits(saved?.limits ?? []), at: saved?.at ?? null }
 }
 /** The status the strip and panel draw: this chat's, else the last good one saved (instant after a restart). */
 export async function statusOrSaved($: Dollar): Promise<StatusView | null> {
@@ -202,3 +219,41 @@ export async function toggleExpanded($: Dollar, id: string): Promise<void> {
   await update($, view, v => ({ ...v, expanded: v.expanded.includes(id) ? v.expanded.filter(x => x !== id) : [...v.expanded.slice(-40), id] }))
 }
 export async function setSub($: Dollar, sub: string): Promise<void> { await update($, view, v => ({ ...v, sub })) }
+
+/** The handoff flow's step (Overview banner) and "Later". */
+export async function setFlow($: Dollar, flow: '' | 'confirm' | 'copied'): Promise<void> { await update($, view, v => ({ ...v, flow })) }
+export async function snoozeSwitch($: Dollar, pct: number): Promise<void> {
+  await update($, view, v => ({ ...v, flow: '', snooze: { until: Date.now() + 30 * 60_000, pct } }))
+}
+/** What you paste in the new chat: typed by you, so a slash command is fine (the panel itself can't send one). */
+export const RESUME_COMMAND = '/cortex-resume'
+/** Hand off: save the handoff with a snapshot of the working tree, then put /cortex-resume on the clipboard. */
+export async function handOff($: Dollar): Promise<void> {
+  await update($, note, () => 'Saving the handoff…')
+  const r = await kc($, ['handoff'])
+  let copied = false
+  try { copied = !!(await $.ui.copy({ text: RESUME_COMMAND })).isCopied } catch { /* no clipboard on this surface */ }
+  await refresh($)
+  await update($, view, v => ({ ...v, flow: 'copied' }))
+  await update($, note, () => (r.ok ? (copied ? 'Handoff saved · /cortex-resume copied' : 'Handoff saved') : `Handoff: ${(r.out.split('\n')[0] ?? '').slice(0, 120)}`))
+}
+export async function copyResume($: Dollar): Promise<void> {
+  let copied = false
+  try { copied = !!(await $.ui.copy({ text: RESUME_COMMAND })).isCopied } catch { /* no clipboard */ }
+  await update($, note, () => (copied ? '/cortex-resume copied' : 'Couldn\'t copy here: type /cortex-resume in the new chat'))
+}
+
+/** Auto-park: MCP servers that load into every message here but went unused in your recent chats (at least 10 of
+ * them), from the next chat on. Never the Claude app's own servers, never one you turned back on, once per server per
+ * app session. Undo is one press on the Costs page or in Settings. */
+const tried = new Set<string>()
+async function autoPark($: Dollar, s: StatusView, l: LiveView): Promise<void> {
+  if (s.prefs?.autoPark === false || !s.usage || s.usage.chats < 10 || !s.parked) return
+  const pick = unusedTools(s, l, 500).filter(x => x.kind === 'mcp' && x.server && !s.parked!.disabled.includes(x.server) && !s.parked!.keepOn.includes(x.server) && !tried.has(x.server))
+  if (!pick.length) return
+  for (const x of pick) tried.add(x.server!)
+  const r = await kc($, ['park', 'add', ...pick.map(x => x.server!), '--auto', ...pick.flatMap(x => ['--tokens', `${x.server}=${x.loaded}`])])
+  await update($, note, () => (r.ok ? `Turned off unused: ${pick.map(x => x.name).join(', ')} (new chats). Undo in Costs` : 'Couldn\'t turn off unused servers'))
+  await refresh($)
+}
+export async function setParked($: Dollar, servers: string[], on: boolean): Promise<void> { await act($, on ? 'Turned off for new chats' : 'Turned on for new chats', ['park', on ? 'add' : 'remove', ...servers]) }

@@ -7,6 +7,7 @@ import type { Kit } from './kit'
 import { dreamBody } from './dream-tab'
 import { filesBody } from './files-tab'
 import { detailsBody } from './tabs-more'
+import { illoHandoff } from './illos'
 import { K, RESUME } from './theme'
 import { tiles } from './tiles'
 
@@ -56,21 +57,21 @@ export function dataPage($: Dollar, o: Ctx): JSX.Element {
               {t.metric('hg-w', 'save', wip ? K.emerald : K.silver, wip ? wip.sha.slice(0, 7) : '–', wip ? `snapshot ${ago(minsSince(wip.at))}` : 'no snapshot yet', '26%')}
             </Box>
           ) : u.muted('h-nogit', 'Not a git repo.'),
-          u.muted('h3', 'Hit a usage limit? In OpenCode, type /cortex-resume. It works on the free models.'),
+          u.muted('h3', 'Usage limit? Type /cortex-resume in OpenCode (free models work).'),
         ])}
-        {!hv || (!hv.states.length && !hv.wips.length) ? u.muted('hh-none', 'No earlier handoffs yet. Each session that ends here leaves one.') : (
+        {!hv || (!hv.states.length && !hv.wips.length) ? u.illo('hh-none', illoHandoff(170), 'No handoffs yet', [<Text key="hh-none-t" weight="semibold" color={K.text}>No earlier handoffs yet</Text>, u.muted('hh-none-d', 'Each chat that ends here leaves one.')]) : (
           <Box key="hh" flexDirection="column" gap={1}>
             {t.groupHead('hh-t', 'link', K.emerald, 'Recent handoffs', String(hv.states.length))}
-            {t.railed('hh-l', hv.states.map((x, i) => ({ lines: 1 + Math.ceil((x.goal || '').length / 55), tile: t.tile({
+            {t.stack('hh-l', hv.states.map((x, i) => t.tile({
               id: `hs-${x.session}`, icon: 'link', color: i === 0 ? K.emerald : K.silver, title: x.goal || 'No goal written down', time: ago(minsSince(x.at)), wrap: true,
               badges: [[x.from || 'unknown tool'], i === 0 ? ['latest', K.emerald] : null, hv.wips.find(w => w.session === x.session) ? [`snapshot ${hv.wips.find(w => w.session === x.session)!.sha.slice(0, 7)}`] : null],
               body: [<Text key={`hss-${x.session}`} size="caption" color={K.muted}>{`Session ${x.session.slice(0, 12)}`}</Text>],
-            }) })))}
+            })))}
           </Box>
         )}
       </Box>
     )
-  } else if (sub === 'details') body = detailsBody($, o)
+  } else if (sub === 'details') body = detailsBody($, o, t)
   else body = filesBody($, o.els, u, s, vw, o.px)
   return <Box flexDirection="column" gap={1}>{nav}{body}</Box>
 }

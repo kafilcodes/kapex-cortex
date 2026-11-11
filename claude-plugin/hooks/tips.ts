@@ -16,34 +16,43 @@ export function tipFor(s: StatusView, l: LiveView | null, cv: CacheView, limits:
   const ttlMs = cv.ttl === '1h' ? 3_600_000 : 300_000
   const cs = cacheState(cv.lastAt, ttlMs)
   const switchTokens = s.handoff.preview?.tokens ?? 0
-  const ready = s.handoff.exists ? ` The handoff is saved: a new chat starts with about ${k(switchTokens || 2000)} tokens and already knows the last exchanges, the active files and the last check (CLAUDE.md and auto memory load by themselves).` : ''
+  const ready = s.handoff.exists ? ` Handoff saved: a new chat starts with about ${k(switchTokens || 2000)} tokens.` : ''
 
   // 1. a cold cache on a big chat: the next message re-reads everything at full price
   if (cs.state === 'cold' && ctx > 150_000) {
-    return { level: 'warn', icon: 'alert', color: K.rose, text: `Cold cache: next message re-reads ${k(ctx)}`, detail: `The prompt cache expired, so your next message makes Claude read all ${k(ctx)} tokens of this chat again at full price.${ready} Type /cortex-resume in a new chat to switch.` }
+    return { level: 'warn', icon: 'alert', color: K.rose, text: `Cold cache: next message re-reads ${k(ctx)}`, detail: `Your next message re-reads all ${k(ctx)} tokens at full price.${ready}` }
   }
   // 2. the cache is about to cool: reply now or wrap up
   if (cs.state === 'cooling' && ctx > 50_000) {
-    return { level: 'warn', icon: 'pending', color: K.amber, text: `Cache cools at ${clock(cs.until!)}`, detail: `Claude keeps this chat cached until ${clock(cs.until!)}. Reply before then, or save the handoff and start fresh later, so you don't pay to re-read ${k(ctx)} tokens.` }
+    return { level: 'warn', icon: 'pending', color: K.amber, text: `Cache cools at ${clock(cs.until!)}`, detail: `Reply before then, or hand off, to avoid re-reading ${k(ctx)} tokens.` }
   }
   // 3. close to compaction
   if (pct / 100 >= compactAt - 0.2 && ctx > 100_000) {
-    return { level: 'info', icon: 'link', color: K.amber, text: `${pct}% full: a new chat is ready`, detail: `Claude will summarize this chat near ${Math.round(compactAt * 100)}%. Claude Code reloads CLAUDE.md either way, but a new chat is lighter and faster.${ready}` }
+    return { level: 'info', icon: 'link', color: K.amber, text: `${pct}% full: a new chat is ready`, detail: `Claude summarizes this chat near ${Math.round(compactAt * 100)}%.${ready}` }
   }
   // 4. the 5-hour plan is nearly used
   const five = limits.find(x => x.kind === 'five_hour')?.percentUsed ?? 0
   if (five >= 85) {
-    return { level: 'warn', icon: 'alert', color: K.amber, text: `5-hour plan at ${five}%`, detail: `You're close to the 5-hour limit. The handoff is saved after every reply, so you can continue in OpenCode (free models) with /cortex-resume, or wait for the reset.` }
+    return { level: 'warn', icon: 'alert', color: K.amber, text: `5-hour plan at ${five}%`, detail: `Continue in OpenCode (free models) with /cortex-resume, or wait for the reset.` }
   }
   // 5. a brand-new chat with a recent handoff from another session
   if ((l?.turns ?? 0) <= 1 && s.handoff.exists && s.handoff.ageMinutes !== null && s.handoff.ageMinutes < 3 * 24 * 60) {
     return { level: 'ok', icon: 'link', color: K.emerald, text: 'Continue: type /cortex-resume', detail: `A handoff from ${s.handoff.from || 'your last session'} is saved.${ready}` }
   }
-  // 6. paying every message for tools nobody uses
+  // 6. the last turn filled this chat with tool output: a subagent would have kept it out (measured from the journal)
+  const [e0, e1] = s.episodes ?? []
+  if (e0 && e1 && e0.session === e1.session && Date.now() - Date.parse(e0.end) < 30 * 60_000) {
+    const grew = e0.contextTokens - e1.contextTokens
+    const reads = ['Read', 'Grep', 'Glob', 'Bash', 'WebFetch'].reduce((a, n) => a + (e0.tools[n] ?? 0), 0)
+    if (grew >= 40_000 && reads >= 12) {
+      return { level: 'info', icon: 'spark', color: K.sage, text: `Last turn added ~${k(grew)} to this chat`, detail: `Mostly tool output (${reads} reads and commands). For big searches or test runs, ask for a subagent: only its summary lands here (its tokens still count toward your plan).` }
+    }
+  }
+  // 7. paying every message for tools nobody uses
   const unused = unusedTools(s, l, 500)
   const waste = unused.reduce((a, x) => a + x.loaded, 0)
   if (waste >= 5000) {
-    return { level: 'info', icon: 'spark', color: K.sage, text: `Save ~${k(waste)} tokens a message`, detail: `${[...new Set(unused.map(toolName))].join(', ').replace('a connector', 'claude.ai connectors')} load into every message but weren't used in your recent chats. Turn them off: a plugin with claude plugin disable <name>, an MCP server in /mcp, a connector in Claude's Settings → Connectors.` }
+    return { level: 'info', icon: 'spark', color: K.sage, text: `Save ~${k(waste)} tokens a message`, detail: `${[...new Set(unused.map(toolName))].join(', ').replace('a connector', 'claude.ai connectors')} load into every message but weren't used in your recent chats. Turn them off in Costs (new chats only; one press turns them back on). Plugin skills: /plugin or Desktop → Customize.` }
   }
   return null
 }

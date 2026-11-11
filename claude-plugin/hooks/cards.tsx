@@ -2,8 +2,9 @@ import type { ElementTable } from 'claude-code'
 
 import type { EpisodeView, LiveView, StatusView, ViewState } from '../types'
 import { k } from './charts'
-import { act, ago, minsSince, setSub, setTab, toggleExpanded, type Dollar } from './data'
+import { act, ago, handOff, minsSince, setFlow, setSub, setTab, toggleExpanded, toReview, type Dollar } from './data'
 import type { Kit } from './kit'
+import { illoHandoff } from './illos'
 import { K } from './theme'
 import { preview, type Tiles } from './tiles'
 
@@ -42,7 +43,10 @@ export function lastTurnCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: 
   if (!e) return u.card('last', width, [u.head('last-h', 'Last turn'), u.tag('last-none', 'turn', K.silver, 'Each reply adds a turn here: what you asked, what changed, how it went.')])
   const open = vw.expanded.includes(`last-${e.id}`)
   const res = outcome(e)
-  const ask = e.ask || 'Follow-up turn (no new message from you)'
+  // attachments (@"path") are file names, not what you asked
+  const files = (e.ask.match(/@"[^"]*"|(?:^|\s)@[^\s]+/g) ?? []).length
+  const words = e.ask.replace(/@"[^"]*"/g, ' ').replace(/(^|\s)@[^\s]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const ask = words || (files ? `${files} attached file${files === 1 ? '' : 's'} (and pasted text)` : 'Follow-up turn (no new message from you)')
   const long = ask.length > 120 || e.done.length > 120 || e.next.length > 120
   return u.card('last', width, [
     <Box key="last-h" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap">
@@ -59,7 +63,7 @@ export function lastTurnCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: 
     e.done ? said(els, u, 'ls-done', 'check', K.emerald, 'Done', e.done, open) : null,
     e.next ? said(els, u, 'ls-next', 'pending', K.amber, 'Next', e.next, open) : null,
     <Box key="ls-foot" flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap">
-      <Text size="caption" color={K.muted}>{e.commands.length ? `Ran ${[...new Set(e.commands.map(cmdLabel))].slice(0, 3).join(' · ')}${e.commands.length > 3 ? ` and ${e.commands.length - 3} more` : ''}` : 'No commands run'}</Text>
+      <Text size="caption" color={K.muted}>{e.commands.length ? `Ran ${e.commands.length} command${e.commands.length === 1 ? '' : 's'}${e.commands.length <= 2 ? `: ${[...new Set(e.commands.map(cmdLabel))].join(' · ')}` : ''}` : 'No commands run'}</Text>
       {long ? <Button key="ls-more" plain onPress={() => { void toggleExpanded($, `last-${e.id}`) }}><Text size="caption" color={K.label}>{open ? 'Collapse' : 'Expand'}</Text></Button> : null}
     </Box>,
   ])
@@ -78,28 +82,37 @@ export function savingsCard(u: Kit, t: Tiles, s: StatusView, hit: number | null,
 export function readyToSwitch($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: StatusView, l: LiveView | null, key: string): (JSX.Element | null)[] {
   const { Box, Text, Button } = els
   const pv = s.handoff.preview
-  if (!s.handoff.exists || !pv) return [u.tag(`${key}-none`, 'link', K.silver, 'The handoff appears after the first reply here.')]
+  if (!s.handoff.exists || !pv) return [u.illo(`${key}-none`, illoHandoff(150), 'No handoff yet', [<Text key={`${key}-none-t`} weight="semibold" color={K.text}>Ready to switch chats</Text>, u.muted(`${key}-none-d`, 'The handoff appears after the first reply here.')])]
   const cold = l?.context.tokens ?? 0
   const failed = /FAILED/i.test(pv.lastCheck)
+  const pinned = (pv.instructions ?? 0) + (pv.decisions ?? 0)
+  const flagged = Math.max(pv.flagged ?? 0, toReview(s))
+  const clean = (x?: string) => (x ?? '').replace(/^\(pasted\) /, '').replace(/^_|_$/g, '')
   return [
     <Box key={`${key}-h`} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap">
       <Box flexDirection="row" gap={1} alignItems="center"><Text size="caption" weight="medium" color={K.label}>Ready to switch chats</Text>{t.badge(`${key}-b`, s.handoff.ready ? 'Resume ready' : 'Ready', K.emerald)}</Box>
       <Text size="caption" color={K.muted}>{`saved ${ago(minsSince(s.stateAt))}`}</Text>
     </Box>,
-    <Text key={`${key}-ok`} size="caption" color={K.label}>A new chat with /cortex-resume will know:</Text>,
+    pv.goal ? said(els, u, `${key}-goal`, 'star', K.emerald, 'Goal', clean(pv.goal), false, 110) : null,
+    pv.next && !/^Continue from the last assistant message/.test(pv.next) ? said(els, u, `${key}-next`, 'pending', K.amber, 'Next', clean(pv.next), false, 110) : null,
+    <Text key={`${key}-ok`} size="caption" color={K.label}>A new chat with /cortex-resume gets, in three parts:</Text>,
     <Box key={`${key}-g`} flexDirection="row" gap={1} flexWrap="wrap">
-      {t.metric(`${key}-m`, 'rule', K.emerald, k(s.native.alwaysTokens), 'memory tokens Claude loads itself', '40%')}
+      {t.metric(`${key}-p`, 'star', pinned ? K.emerald : K.silver, String(pinned), pinned === 1 ? 'pinned instruction or decision' : 'pinned instructions and decisions', '40%')}
+      {t.metric(`${key}-tr`, 'commit', pv.trail ? K.sage : K.silver, String(pv.trail ?? 0), `earlier turns${pv.commits ? ` · ${pv.commits} commit${pv.commits === 1 ? '' : 's'}` : ''}`, '40%')}
       {t.metric(`${key}-x`, 'turn', K.sage, String(pv.exchanges || 1), 'last exchanges, word for word', '40%')}
-      {t.metric(`${key}-f`, 'file', K.silver, String(pv.files), pv.files === 1 ? 'active file' : 'active files', '40%')}
-      {t.metric(`${key}-o`, 'pending', pv.openItems ? K.amber : K.silver, String(pv.openItems), pv.openItems === 1 ? 'open item' : 'open items', '40%')}
+      {t.metric(`${key}-o`, 'pending', pv.openItems ? K.amber : K.silver, String(pv.openItems), `open item${pv.openItems === 1 ? '' : 's'} · ${pv.files} active file${pv.files === 1 ? '' : 's'}`, '40%')}
     </Box>,
+    flagged ? u.tag(`${key}-mem`, 'alert', K.amber, `${flagged} memory note${flagged === 1 ? '' : 's'} flagged: the handoff tells the new chat not to rely on ${flagged === 1 ? 'it' : 'them'}`, K.label) : null,
     pv.lastCheck ? u.tag(`${key}-c`, failed ? 'cross' : 'test', failed ? K.rose : K.emerald, `Last check: ${pv.lastCheck}`, K.label) : null,
     <Box key={`${key}-t`} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} rowGap={1} flexWrap="wrap">
       <Box flexDirection="row" gap={1} alignItems="center" flexShrink={1}>
         {t.badge(`${key}-tk`, `≈${k(pv.tokens)} tokens to start`, K.emerald)}
         {cold > 50_000 ? <Text size="caption" color={K.muted}>{`instead of re-reading ${k(cold)}`}</Text> : null}
       </Box>
-      {key === 'or' ? <Button key="or-go" plain onPress={() => { void setTab($, 'data'); void setSub($, 'handoff') }}><Text size="caption" color={K.label}>See the handoff</Text></Button> : null}
+      {key === 'or' ? <Box flexDirection="row" gap={1}>
+        <Button key="or-go" variant="secondary" onPress={() => { void setTab($, 'data'); void setSub($, 'handoff') }}>See the handoff</Button>
+        <Button key="or-hand" variant="secondary" onPress={() => { void (flagged ? setFlow($, 'confirm') : handOff($)) }}>Hand off now</Button>
+      </Box> : null}
     </Box>,
   ]
 }

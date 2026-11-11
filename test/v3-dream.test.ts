@@ -59,7 +59,7 @@ test("v3 Mount Moon: a Dream finds the false, the stale and the duplicate note; 
   assert.match(applyDream(p, r.id), /^Applied 4 changes to 2 file/);
   assert.equal(readFileSync(join(root, "CLAUDE.md"), "utf8"), "# Project\n- Keep every source file under 300 lines.\n");
   assert.equal(readFileSync(join(mem, "MEMORY.md"), "utf8").trim(), "");
-  assert.match(applyDream(p, r.id), /only a proposed one can be applied/);
+  assert.match(applyDream(p, r.id), /Nothing left to apply/, "a second Apply changes nothing");
 
   assert.match(undoDream(p, r.id), /^Undone/);
   assert.equal(readFileSync(join(root, "CLAUDE.md"), "utf8"), CLAUDE_MD);

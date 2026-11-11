@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { dreaming, listDreams, type DreamReport } from "./dream.ts";
+import { readMemoryCheck } from "./tiers.ts";
 import { readEpisodes, type EpisodeView } from "./episodes.ts";
 import { computeHistory, type History } from "./history.ts";
 import { firstName } from "./identity.ts";
@@ -12,6 +13,8 @@ import { readPrefs, type Prefs } from "./prefs.ts";
 import { shortCommand, statePath } from "./state.ts";
 import { buildTimeline, type TimelineEvent } from "./timeline.ts";
 import { toolUsage, type Usage } from "./usage.ts";
+import { projectSpend, type Spend } from "./spend.ts";
+import { parkView, type ParkView } from "./park.ts";
 
 /** One snapshot of everything the panel, the strip and `kc s` show. Built from files on disk and a few git calls. */
 export interface Status {
@@ -23,7 +26,7 @@ export interface Status {
   episodes: EpisodeView[];
   timeline: TimelineEvent[];
   /** what a new chat will know after /cortex-resume, and what that costs */
-  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string } };
+  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal: string; next: string; instructions: number; decisions: number; trail: number; commits: number; flagged: number } };
   /** Claude Code's own memory files: what loads into every session, and what each costs */
   native: { files: NativeFile[]; alwaysTokens: number; alwaysLines: number; autoMemory: { dir: string; enabled: boolean } };
   /** Dreams: one running now, and the recent ones (newest first) */
@@ -34,6 +37,12 @@ export interface Status {
   history: History;
   /** skills, MCP servers and tools used in the last 20 Claude Code chats here */
   usage: Usage;
+  /** tokens this project's chats used (from Claude Code's transcripts), and chats resumed from a handoff */
+  spend: Spend;
+  /** MCP servers parked for this project: Cortex's record and what Claude Code's config says now */
+  parked: ParkView;
+  /** measured, each on its own: memory size against Claude Code's limits, scoped rules, open findings, clean checks */
+  memHealth: { files: { label: string; lines: number; limit: number }[]; scopedTokens: number; alwaysTokens: number; open: number; checks: number; clean: number };
   prefs: Prefs & { overridden: string[]; tokens: { handoff: number } };
   /** set when this project's v2 memories were archived on the way to v3 */
   migrated?: string;
@@ -97,6 +106,13 @@ export function computeStatus(p: RepoPaths): Status {
         openItems: (head.match(/^- \[ \] /gm) ?? []).length,
         tokens: Math.round(head.length / 4),
         lastCheck: (/^## Last check\n(.+)$/m.exec(head)?.[1] ?? "").replace(/^`([^`]*)`/, (_, c: string) => shortCommand(c)).replace(/`/g, "").slice(0, 90),
+        goal: (/^## Goal\n(.+)$/m.exec(head)?.[1] ?? "").slice(0, 300),
+        next: (/^## Next action\n(.+)$/m.exec(head)?.[1] ?? "").slice(0, 300),
+        instructions: (head.match(/ _\(turn \d+\)_$/gm) ?? []).length,
+        decisions: (/\*\*Decisions recorded at handoff:\*\*\n((?:- .*\n?)+)/.exec(head)?.[1]?.match(/^- /gm) ?? []).length,
+        trail: (head.match(/^- T\d+ /gm) ?? []).length + Number(/^- … (\d+) earlier turn/m.exec(head)?.[1] ?? 0),
+        commits: (/^\*\*Commits this session\*\*.*$/m.exec(head)?.[0]?.match(/`[^`]+`/g) ?? []).length,
+        flagged: readMemoryCheck(p)?.open.length ?? 0,
       } : undefined,
     },
     native: nativeSummary(p.root),
@@ -106,6 +122,9 @@ export function computeStatus(p: RepoPaths): Status {
     opencode: { installed: existsSync(join(homedir(), ".opencode", "bin", "opencode")), plugin: existsSync(join(p.root, ".opencode", "plugins", "kapex-cortex.ts")) },
     history,
     usage: toolUsage(p),
+    spend: projectSpend(p),
+    parked: parkView(p),
+    memHealth: memHealth(p, nativeSummary(p.root), recent),
     prefs: { ...prefs, tokens: { handoff: Math.round(head.length / 4) } },
     ...(migrated ? { migrated } : {}),
     stateAt: head ? new Date(statSync(sp).mtimeMs).toISOString() : null,
@@ -137,4 +156,19 @@ export function statusMarkdown(s: Status): string {
 
 export function statusText(s: Status): string {
   return statusMarkdown(s).replace(/^### /, "").replace(/\*\*/g, "").replace(/^\|---\|---\|\n?/m, "").replace(/^\| \| \|\n/m, "");
+}
+
+/** Memory health as separate measurements, never one made-up score. */
+function memHealth(p: RepoPaths, n: ReturnType<typeof nativeSummary>, recent: DreamReport[]): Status["memHealth"] {
+  const always = n.files.filter((f) => f.loads !== "on-demand")
+  const checks = recent.filter((d) => d.status !== "failed" && !d.model)
+  return {
+    // Claude Code loads auto memory's first 200 lines; for CLAUDE.md and rules, Anthropic's guidance is under 200 lines
+    files: always.map((f) => ({ label: f.label, lines: f.lines, limit: 200 })),
+    scopedTokens: n.files.filter((f) => f.loads === "on-demand" && f.paths).reduce((a, f) => a + Math.round(f.bytes / 4), 0),
+    alwaysTokens: n.alwaysTokens,
+    open: readMemoryCheck(p)?.open.length ?? 0,
+    checks: checks.length,
+    clean: checks.filter((d) => !d.findings.length).length,
+  };
 }

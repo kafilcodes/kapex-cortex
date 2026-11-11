@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { readEpisodes } from "./episodes.ts";
 import type { RepoPaths } from "./paths.ts";
 import { readPrefs } from "./prefs.ts";
@@ -15,6 +15,21 @@ export function spawnDream(p: RepoPaths, cli: string, node = process.execPath, e
   try {
     spawn(node, argv(node, IS_BINARY ? "" : cli, "dream", "run", ...extra).slice(1), { cwd: p.root, detached: true, stdio: "ignore", windowsHide: true }).unref();
   } catch { /* best effort */ }
+}
+
+/** Start the free Quick check in the background (the Stop hook calls this only when something it reads changed). */
+export function spawnQuick(p: RepoPaths, cli: string, node = process.execPath): void {
+  if (process.env.CORTEX_CLASSIFIER) return;
+  try {
+    spawn(node, argv(node, IS_BINARY ? "" : cli, "dream", "quick").slice(1), { cwd: p.root, detached: true, stdio: "ignore", windowsHide: true }).unref();
+  } catch { /* best effort */ }
+}
+
+/** The CLI to start from a hook: hooks run from claude-plugin/cortex/hook.mjs (or src/hook.ts), the CLI is cortex/src/cli.ts. */
+export function cliFromHook(script = process.argv[1] ?? ""): string {
+  if (/hook\.mjs$/.test(script)) return join(dirname(script), "src", "cli.ts");
+  if (/hook\.ts$/.test(script)) return join(dirname(script), "cli.ts");
+  return script;
 }
 
 /** Dream by itself after a session ends: only if you switched it on, at most once a day, and after 3 new chats. */

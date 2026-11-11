@@ -9,6 +9,7 @@ import { readEpisodes, TEST } from "./episodes.ts";
 import { scrub } from "./scrub.ts";
 import { buildBrief } from "./brief.ts";
 import { budgets } from "./prefs.ts";
+import { buildTiers } from "./tiers.ts";
 
 export const STATE_MAX = 8_000;
 
@@ -22,7 +23,7 @@ export interface StateInput {
   now?: Date;
 }
 
-export interface HandoffNote { goal?: string; next?: string; ts: string; session?: string }
+export interface HandoffNote { goal?: string; next?: string; decisions?: string[]; ts: string; session?: string }
 
 const handoffPath = (p: RepoPaths) => join(p.priv, "handoff.json");
 export const statePath = (p: RepoPaths) => join(p.vault, "STATE.md");
@@ -35,6 +36,7 @@ export function writeHandoff(p: RepoPaths, note: Omit<HandoffNote, "ts">, now = 
   const full: HandoffNote = {
     goal: note.goal ? scrub(note.goal).text : undefined,
     next: note.next ? scrub(note.next).text : undefined,
+    decisions: note.decisions?.length ? note.decisions.map((d) => scrub(d).text.slice(0, 300)).slice(0, 8) : undefined,
     session: note.session,
     ts: now.toISOString(),
   };
@@ -131,13 +133,17 @@ export function renderState(p: RepoPaths, inp: StateInput, gi: GitInfo | null): 
   const asst = inp.lastAssistant ? scrub(inp.lastAssistant).text : "";
   const brief = buildBrief(p, { session: inp.session, lastAssistant: inp.lastAssistant, handoff, heading: firstHeading(p.root), now });
   const { goal, next } = brief;
+  const max = budgets(p).state;
+  const lean = !budgets(p).lastReply;
+  const tiers = buildTiers(p, { session: inp.session, goal, handoff, recentTurns: lean ? 1 : 3, git: !!gi, room: { pinned: Math.max(1_500, Math.round(max * 0.14)), trail: Math.max(1_200, Math.round(max * 0.18)) } });
   const sections = [
     `# STATE — ${repo} · ${gi?.branch ?? "no git"} · updated ${now.toISOString()} · from ${inp.harness}${inp.model ? "/" + inp.model : ""} · session ${inp.session}`,
     "",
-    "> Handoff packet written by Kapex Cortex at the end of every turn. The project's rules load by themselves (CLAUDE.md, .claude/rules, auto memory): read this, then continue from **Next action**.",
+    "> Handoff packet written by Kapex Cortex at the end of every turn, in three parts: what's pinned for this session, the trail of earlier turns, and the last exchanges word for word. The project's rules load by themselves (CLAUDE.md, .claude/rules, auto memory): read this, then continue from **Next action**.",
     "",
     "## Goal", goal, "",
     "## Next action", next, "",
+    tiers.pinned,
     "## Verify (done = these pass)", verify.length ? verify.map((c) => "- `" + c + "`").join("\n") : "_No verify commands found. Add them to `.vault/verify.txt`._", "",
     "## Working tree",
     gi ? (gi.diffStat ? "```\n" + clip(gi.diffStat, 1_500) + "\n```" : "Clean (no tracked changes).") : "Not a git repository.",
@@ -145,10 +151,10 @@ export function renderState(p: RepoPaths, inp: StateInput, gi: GitInfo | null): 
     gi?.wipRef ? `WIP snapshot: \`${gi.wipRef}\` (restore with \`git stash apply <sha>\`).` : "",
     "",
     "## Last failure", inp.lastFailure ? "```\n" + clip(scrub(inp.lastFailure).text, 1_200) + "\n```" : "None recorded.", "",
+    tiers.trail,
     ...workingContext(p, inp, gi),
   ];
   let text = sections.filter((s, i, a) => !(s === "" && a[i - 1] === "")).join("\n");
-  const max = budgets(p).state;
   // the exchanges come last and are fitted to the budget, so nothing above them is ever cut
   const ex = exchangesSection(p, inp, asst, user, max - text.length - 200);
   text = `${text}\n${ex}`.replace(/\n{3,}/g, "\n\n");
@@ -157,7 +163,7 @@ export function renderState(p: RepoPaths, inp: StateInput, gi: GitInfo | null): 
 }
 
 /** Write this session's state and promote the newest session state to .vault/STATE.md, under the views lock. */
-export function refreshState(p: RepoPaths, inp: StateInput, opts: { snapshot?: boolean } = {}): void {
+export function refreshState(p: RepoPaths, inp: StateInput, opts: { snapshot?: boolean } = {}): GitInfo | null {
   const gi = gitInfo(p.root, inp.session, opts.snapshot ?? false);
   const text = renderState(p, inp, gi);
   const base = join(p.states, inp.session.replace(/[^A-Za-z0-9_-]/g, "_"));
@@ -167,6 +173,7 @@ export function refreshState(p: RepoPaths, inp: StateInput, opts: { snapshot?: b
     const newest = newestSessionState(p);
     if (newest) atomicWriteIfChanged(statePath(p), readFileSync(newest, "utf8"));
   });
+  return gi;
 }
 
 /** The inputs last used for one session's STATE (to keep good fields when a failure payload lacks them). */

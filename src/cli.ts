@@ -7,8 +7,7 @@ import { fileURLToPath } from "node:url";
 import { nearbyProjects, repoPaths, resolveProject } from "./core/paths.ts";
 import { pluginHooksTurn, pluginInstalled } from "./core/plugin.ts";
 import { MODES, parsePref, readPrefs, setPref } from "./core/prefs.ts";
-import { handleClaude } from "./hooks/claude.ts";
-import { handleOpencode } from "./hooks/opencode.ts";
+import { runHook } from "./hook.ts";
 import { cortexInit, nodeOnPath } from "./init.ts";
 import { installSkills } from "./skills.ts";
 import { refreshState, rerenderNewest, statePath, writeHandoff } from "./core/state.ts";
@@ -18,42 +17,7 @@ import { computeStatus, statusMarkdown, statusText } from "./core/status.ts";
 import { installShims, isSetUp, rememberInstall } from "./onboard.ts";
 import { dreamCommand } from "./dream-cli.ts";
 import { nativeSummary } from "./core/native.ts";
-
-function readStdin(): string {
-  try { return readFileSync(0, "utf8"); } catch { return ""; }
-}
-
-/** Keep the last 50 real hook durations (ms) for the panel's speed gauge. */
-function recordHookTime(priv: string, ms: number): void {
-  try {
-    const f = `${priv}/hook-times.json`;
-    let xs: number[] = [];
-    try { xs = JSON.parse(readFileSync(f, "utf8")) as number[]; } catch { /* first */ }
-    writeFileSync(f, JSON.stringify([...xs, ms].slice(-50)));
-  } catch { /* never break a hook */ }
-}
-
-/** Hooks must never break the harness: any error is logged and the hook exits 0 with no output. */
-function runHook(name: string, fromPlugin = false): void {
-  const raw = readStdin();
-  let input: Record<string, unknown> = {};
-  try { input = raw.trim() ? (JSON.parse(raw) as Record<string, unknown>) : {}; } catch { /* keep empty */ }
-  const start = String(input.cwd ?? input.directory ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd());
-  const root = resolveProject(start);
-  if (!root) return; // project not initialised: stay silent
-  const p = repoPaths(root);
-  const [harness, event] = name.toLowerCase().split(".");
-  // the plugin's hooks and an older per-project install can both fire: the plugin wins, the copy steps aside
-  if (harness === "claude" && !pluginHooksTurn(p, fromPlugin)) return;
-  try {
-    mkdirSync(p.priv, { recursive: true });
-    const out = harness === "claude" ? handleClaude(event ?? "", p, input) : harness === "opencode" ? handleOpencode(event ?? "", p, input) : "";
-    if (out) process.stdout.write(out);
-    recordHookTime(p.priv, Math.round(process.uptime() * 1000)); // whole process: what the harness waits for
-  } catch (err) {
-    try { appendFileSync(p.errors, `${new Date().toISOString()} ${name} ${(err as Error).stack ?? err}\n`); } catch { /* nowhere to log */ }
-  }
-}
+import { park, parkView, unpark } from "./core/park.ts";
 
 function repoOrDie(): ReturnType<typeof repoPaths> {
   const root = resolveProject(process.cwd());
@@ -104,11 +68,24 @@ function main(argv: string[]): void {
     case "dream":
       void dreamCommand(rest, repoOrDie(), self, node).then((code) => process.exit(code));
       return;
+    case "park": {
+      // kc park [list] · add <server…> [--auto] [--tokens <server>=<n>…] · remove <server…>
+      const p = repoOrDie();
+      const [sub = "list", ...names] = rest;
+      const tokens: Record<string, number> = {};
+      const plain = names.filter((n, i) => !n.startsWith("--") && names[i - 1] !== "--tokens");
+      names.forEach((n, i) => { if (names[i - 1] === "--tokens") { const m = /^(.+)=(\d+)$/.exec(n); if (m) tokens[m[1]!] = Number(m[2]); } });
+      if (sub === "add") console.log(park(p, plain, { auto: names.includes("--auto"), tokens }));
+      else if (sub === "remove") console.log(unpark(p, plain));
+      else { const v = parkView(p); console.log(v.servers.length ? v.servers.map((s) => `${s.name}  ${s.auto ? "auto" : "you"}  ${s.at.slice(0, 16)}  ${v.disabled.includes(s.name) ? "off in Claude Code" : "back on (changed elsewhere)"}`).join("\n") : "Nothing parked by Cortex here."); }
+      return;
+    }
     case "handoff": {
       const p = repoOrDie();
       const arg = (flag: string) => { const i = rest.indexOf(flag); return i >= 0 ? rest[i + 1] : undefined; };
       const goal = arg("--goal"), next = arg("--next");
-      if (goal || next) writeHandoff(p, { goal, next });
+      const decisions = rest.flatMap((x, i) => (x === "--decision" && rest[i + 1] ? [rest[i + 1]!] : []));
+      if (goal || next || decisions.length) writeHandoff(p, { goal, next, decisions });
       const ok = rerenderNewest(p) || (refreshState(p, { harness: "manual", session: "manual" }, { snapshot: true }), true);
       console.log(ok ? `Handoff saved to ${statePath(p)}` : `Handoff note saved; ${statePath(p)} will include it after the next turn ends.`);
       return;
@@ -132,7 +109,7 @@ function main(argv: string[]): void {
     }
     case "key": {
       // save the API key for the "api" Dream backend in the macOS keychain: pbpaste | kc key
-      const key = readStdin().trim();
+      const key = (() => { try { return readFileSync(0, "utf8"); } catch { return ""; } })().trim();
       if (!key) { console.error("Pipe the key in: pbpaste | kc key"); process.exit(2); }
       if (process.platform !== "darwin") { console.error("Set CORTEX_CLASSIFIER_KEY in your environment instead (the keychain is macOS only)."); process.exit(2); }
       const r = spawnSync("/usr/bin/security", ["add-generic-password", "-U", "-s", "kapex-cortex-classifier", "-a", "kapex-cortex", "-w", key], { encoding: "utf8" });
@@ -152,7 +129,6 @@ function main(argv: string[]): void {
       process.exit(r.status ?? 0);
     }
     case "hook":
-      if (process.env.CORTEX_CLASSIFIER) return; // a model call Cortex started itself: nothing to capture
       runHook(rest[0] ?? "", rest.includes("--plugin"));
       return;
     default:

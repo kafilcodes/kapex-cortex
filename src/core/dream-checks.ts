@@ -18,8 +18,12 @@ export interface Finding {
   /** the file and lines it's about ("" and 0 for a new lesson) */
   file: string; label: string; line: number; end: number; entry: string;
   why: string; evidence: string[]; action: Op;
-  /** you chose to leave this one out of Apply */
+  /** you chose to leave this one out of Apply (older Dreams) */
   skip?: boolean;
+  /** your decision: applied, or kept as it is */
+  done?: "applied" | "kept";
+  /** the proposed op before you chose "Remove line" instead */
+  was?: Op["op"];
 }
 
 const NEG = /\b(broken|fails?|failing|doesn'?t work|does not work|not working|skip(?:ped)?|never run|don'?t run|do not run|hangs?|flaky)\b/i;

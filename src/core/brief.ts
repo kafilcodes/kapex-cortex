@@ -28,6 +28,18 @@ export function requestText(t: Turn): string {
   return segs.filter((s) => s.source === "you").map((s) => s.text).join(" ").trim();
 }
 
+/** `@"path"` and `@path` attachments are file names, not the request. */
+export const noRefs = (s: string) => s.replace(/@"[^"]*"/g, " ").replace(/(^|\s)@[^\s]+/g, " ").replace(/\s+/g, " ").trim();
+
+/** The request in a message: your own words without attachments; if that leaves nothing, the start of what you pasted. */
+export function askOf(t: Turn): string {
+  const own = noRefs(requestText(t).replace(/^\/[\w:-]+\s*/, ""));
+  if (own.length >= 15) return own;
+  const pasted = segments(t.text).find((s) => s.source === "pasted")?.text.trim() ?? "";
+  const body = noRefs(pasted.replace(/^\/[\w:-]+\s*/, ""));
+  return body.length >= 15 ? `(pasted) ${body}` : own;
+}
+
 /** A "Next:" / "Next step:" / "Next action:" line in the assistant's last reply, if it wrote one. */
 export function nextFromReply(reply: string): string {
   const m = /^\s*(?:[-*]\s*)?(?:\*\*)?next(?: action| step)?(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(.+)$/im.exec(reply);
@@ -35,7 +47,7 @@ export function nextFromReply(reply: string): string {
 }
 
 export function buildBrief(p: RepoPaths, a: { session: string; lastAssistant?: string; handoff: HandoffNote | null; heading: string; now: Date }): Brief {
-  const asks = readTurns(p, a.session).map((t) => ({ ts: t.ts, text: requestText(t).replace(/^\/[\w:-]+\s*/, "") })).filter((t) => t.text.length >= 15);
+  const asks = readTurns(p, a.session).map((t) => ({ ts: t.ts, text: askOf(t) })).filter((t) => t.text.length >= 15);
   const first = asks[0];
   const latest = asks.at(-1);
   // the current goal is the most recent real task statement ("Yes, do it" replies don't count), else the first ask

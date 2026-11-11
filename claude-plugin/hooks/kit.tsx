@@ -52,6 +52,13 @@ export function kit(els: ElementTable, surface: string) {
     line: (key: string, text: string, open: boolean, color: string = K.text, size?: 'caption') => <Text key={key} color={color} size={size} wrap={open ? 'wrap' : 'truncate-end'}>{text}</Text>,
     /** a small rounded tag */
     pill: (key: string, text: string, color: string = K.label) => <Box key={key} backgroundColor={K.pill} paddingX={1}><Text size="caption" color={color}>{text}</Text></Box>,
+    /** an illustration beside its words (the words alone where drawings can't show) */
+    illo: (key: string, svg: string, alt: string, kids: (JSX.Element | null)[]) => (
+      <Box key={key} flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
+        {Svg ? <Svg key={`${key}-i`} source={svg} alt={alt} width={size(svg, 'width')} height={size(svg, 'height')} /> : null}
+        <Box flexDirection="column" gap={1} flexGrow={1} flexShrink={1} minWidth={20}>{kids}</Box>
+      </Box>
+    ),
     /** a section heading in Kapex Emerald */
     section: (key: string, text: string) => <Text key={key} weight="semibold" color={K.emerald}>{text}</Text>,
   }

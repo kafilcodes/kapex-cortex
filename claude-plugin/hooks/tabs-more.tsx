@@ -2,12 +2,17 @@ import { clock, k } from './charts'
 import { ago, animateFor, minsSince, type Dollar } from './data'
 import type { Ctx } from './tabs'
 import { K, levelColor } from './theme'
-import { area, micro } from './viz'
+import { parkButton, parkedList, savedCard, spendCard } from './spend'
+import type { Tiles } from './tiles'
+import { area, lollipop, micro, stacked } from './viz'
+
+/** Category colours for the composition bar: neutrals first, then the emerald family (never the warning colours). */
+const CAT = ['#9CA3AF', '#14B8A6', '#34D399', '#6B7280', '#10B981', '#A7F3D0', '#4B5563']
 
 // Costs: hook speed, the plan, what loads into every message, which MCP servers and skills you never use.
 // Data already on hand only.
 
-export function detailsBody($: Dollar, o: Ctx): JSX.Element {
+export function detailsBody($: Dollar, o: Ctx, t: Tiles): JSX.Element {
   const { s, l, u, five } = o
   const { Box, Text } = o.els
   const w = Math.min(o.px - 120, 520)
@@ -21,6 +26,7 @@ export function detailsBody($: Dollar, o: Ctx): JSX.Element {
     : Object.keys(usage.skills).some(n => n.startsWith(`${x.name}:`) || (x.names ?? []).includes(n.split(':').pop()!))
   const label = (x: { kind: string; name: string }) => `${x.kind === 'mcp' ? 'MCP' : 'Skills'} · ${x.name.replace(/^plugin_/, '')}`
   const idle = lo.filter(x => !usedHere(x))
+  const maxLo = Math.max(1, ...lo.map(x => x.loaded))
   const line = (key: string, left: string, right: string, color: string = K.label, ic = '') => (
     <Box key={key} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>{ic ? u.tag(`${key}-t`, ic, color === K.amber ? K.amber : K.silver, left, color) : <Text size="caption" color={color}>{left}</Text>}<Text size="caption" tabular color={K.text}>{right}</Text></Box>
   )
@@ -35,20 +41,42 @@ export function detailsBody($: Dollar, o: Ctx): JSX.Element {
         line('d-mem', 'Memory Claude loads in every session', `${k(s.native.alwaysTokens)} tokens · ${s.native.alwaysLines} lines`),
         line('d-cx', 'What Cortex adds to your messages', '0 tokens (hooks write files; nothing is injected)'),
       ])}
-      {rows.length || usage ? (
-        <Box key="fixed" flexDirection="column" gap={1} backgroundColor={K.card} borderStyle="round" borderColor={K.hairline} paddingX={2} paddingY={1}>
-          {u.head('fx-t', 'Loaded into every message')}
-          {rows.slice(0, 6).map(r => line(`fx-${r.name}`, r.name, `${k(r.tokens)} tokens`))}
-          {usage ? u.muted('fx-used', `Used in your last ${usage.chats} chat${usage.chats === 1 ? '' : 's'} here: skills ${Object.entries(usage.skills).sort((a, b) => b[1] - a[1]).map(([n, v]) => `${n} ×${v}`).join(', ') || 'none'} · MCP servers ${Object.entries(usage.mcp).sort((a, b) => b[1] - a[1]).map(([n, v]) => `${n} ×${v}`).join(', ') || 'none'}.`) : null}
-        </Box>
-      ) : null}
-      {lo.length ? (
-        <Box key="lo" flexDirection="column" gap={1} backgroundColor={K.card} borderStyle="round" borderColor={K.hairline} paddingX={2} paddingY={1}>
-          {u.head('lo-t', 'Tools and skills loaded here')}
-          {lo.slice(0, 8).map(x => line(`lo-${x.kind}-${x.name}`, `${label(x)}${usedHere(x) ? '' : ' · unused lately'}`, `${k(x.loaded)} tokens`, usedHere(x) ? K.label : K.amber, x.kind === 'mcp' ? 'link' : 'spark'))}
-          {idle.length && usage ? u.muted('lo-idle', `Not used in your last ${usage.chats} chats here: ${idle.map(label).join(', ')} (about ${k(idle.reduce((a, x) => a + x.loaded, 0))} tokens in every message). A plugin turns off with claude plugin disable <name>; other MCP servers in /mcp.`) : null}
-        </Box>
-      ) : null}
+      {rows.length ? u.card('fixed', '100%', [
+        u.head('fx-t', 'Loaded into every message', `${k(rows.reduce((a, r) => a + r.tokens, 0))} tokens before you type`),
+        u.graphic('fx-g', stacked({ items: rows.slice(0, 7).map((r, i) => ({ value: r.tokens, color: CAT[i % CAT.length]!, label: `${r.name}: ${k(r.tokens)} tokens` })), width: Math.min(o.px - 90, 980), animate: animateFor('fx', rows.map(r => r.tokens).join(',')) }), rows.map(r => `${r.name} ${k(r.tokens)}`).join(', ')),
+        <Box key="fx-lg" flexDirection="row" flexWrap="wrap" columnGap={3} rowGap={0}>
+          {rows.slice(0, 7).map((r, i) => (
+            <Box key={`fx-${r.name}`} flexDirection="row" gap={1} alignItems="center">
+              {u.dot(`fxd-${r.name}`, CAT[i % CAT.length]!)}
+              <Text size="caption" color={K.label}>{r.name.replace(/^System /, '')}</Text>
+              <Text size="caption" tabular weight="semibold" color={K.text}>{k(r.tokens)}</Text>
+              <Text size="caption" tabular color={K.muted}>{`${Math.round((100 * r.tokens) / Math.max(1, rows.reduce((a, x) => a + x.tokens, 0)))}%`}</Text>
+            </Box>
+          ))}
+        </Box>,
+        u.muted('fx-cache', 'Cached after the first reply: re-read at about 1/10 the price.'),
+      ]) : null}
+      {lo.length ? u.card('lo', '100%', [
+        u.head('lo-t', 'Tools and skills loaded here', usage ? `use counted over your last ${usage.chats} chat${usage.chats === 1 ? '' : 's'} here` : undefined),
+        ...lo.slice(0, 10).map(x => {
+          const used = usedHere(x)
+          const n = x.kind === 'mcp' ? usage?.mcp[x.name] ?? 0 : Object.entries(usage?.skills ?? {}).filter(([n2]) => n2.startsWith(`${x.name}:`) || (x.names ?? []).includes(n2.split(':').pop()!)).reduce((a, [, v]) => a + v, 0)
+          return (
+            <Box key={`lo-${x.kind}-${x.name}`} flexDirection="row" alignItems="center" columnGap={1} flexWrap="wrap">
+              <Box width="34%" minWidth={16} flexShrink={1}>{u.tag(`lot-${x.kind}-${x.name}`, x.kind === 'mcp' ? 'link' : 'spark', used ? K.emerald : K.amber, label(x), K.text)}</Box>
+              <Box flexGrow={1} minWidth={10}>{u.graphic(`log-${x.kind}-${x.name}`, lollipop({ share: x.loaded / maxLo, width: Math.max(60, w * 0.42), color: used ? K.emerald : K.amber, animate: animateFor(`lo-${x.name}`, String(x.loaded)) }), `${k(x.loaded)} tokens`)}</Box>
+              <Text size="caption" tabular weight="semibold" color={K.text}>{k(x.loaded)}</Text>
+              {t.badge(`lob-${x.kind}-${x.name}`, usage ? (used ? `used ×${n}` : 'unused lately') : 'use unknown', used ? K.emerald : K.amber, used ? 'check' : 'pending')}
+              {parkButton($, o.els, s, x)}
+            </Box>
+          )
+        }),
+        idle.length && usage ? t.badge('lo-idle', `${idle.length} unused · about ${k(idle.reduce((a, x) => a + x.loaded, 0))} tokens of context in every message`, K.amber, 'alert') : null,
+      ]) : null}
+      {parkedList($, o.els, u, t, s, l)}
+      {idle.some(x => x.kind === 'skills') ? u.muted('lo-sk', 'Plugin skills: turn off with /plugin, or in Claude Desktop → Customize.') : null}
+      {spendCard($, o.els, u, t, s, o.px)}
+      {savedCard(u, t, s)}
       {u.muted('d-turns', `${l ? `${l.turns} turns this session` : ''}${l?.costUsd !== undefined ? ` · $${l.costUsd.toFixed(2)} at API prices` : ''}`)}
     </Box>
   )
