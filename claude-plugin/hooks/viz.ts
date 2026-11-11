@@ -152,8 +152,8 @@ export function stacked(o: { items: { value: number; color: string; label: strin
   return svg(W, H, `<clipPath id="sc"><rect width="${W}" height="${H}" rx="7"/></clipPath><g clip-path="url(#sc)">${segs.join('')}</g>`)
 }
 
-/** Ranking: a thin stem from zero to the value (share of the largest) with a dot at the end. */
+/** Ranking: a rounded progress bar, filled to the share of the largest. */
 export function lollipop(o: { share: number; width: number; color: string; animate: boolean }): string {
-  const W = Math.round(o.width), s = Math.max(0, Math.min(1, o.share)), x = Math.max(5, s * (W - 6))
-  return svg(W, 10, `<rect y="4" width="${W}" height="2" rx="1" fill="${K.pill}"/><rect y="4" width="${x.toFixed(1)}" height="2" rx="1" fill="${o.color}">${grow(o.animate, 'width', x.toFixed(1))}</rect><circle cx="${x.toFixed(1)}" cy="5" r="4" fill="${o.color}"/>`)
+  const W = Math.round(o.width), s = Math.max(0, Math.min(1, o.share)), x = Math.max(8, s * W)
+  return svg(W, 8, `<rect width="${W}" height="8" rx="4" fill="${K.pill}"/><rect width="${x.toFixed(1)}" height="8" rx="4" fill="${o.color}">${grow(o.animate, 'width', x.toFixed(1))}</rect>`)
 }

@@ -69,12 +69,17 @@ export function lastTurnCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: 
   ])
 }
 
-export function savingsCard(u: Kit, t: Tiles, s: StatusView, hit: number | null, waste: number, width: string): JSX.Element {
+export function savingsCard(u: Kit, t: Tiles, s: StatusView, hit: number | null, waste: number, width: string, l?: LiveView | null): JSX.Element {
+  // the same counts the Costs page shows: this chat's total from Claude Code's transcript, and what Cortex measurably saved
+  const used = l?.sessionId ? s.spend?.sessions?.[l.sessionId] : undefined
+  const saved = s.spend?.resumedContext ?? 0
   return u.card('save', width, [
     u.head('save-h', 'Savings', 'this chat'),
     t.metric('sv-c', 'spark', K.emerald, '0', 'tokens Cortex adds to each message', '100%'),
     t.metric('sv-h', 'check', hit === null ? K.silver : hit < 50 ? K.amber : K.sage, hit !== null ? `${hit}%` : '–', 'of the last reply read from cache', '100%'),
     t.metric('sv-w', 'alert', waste >= 5000 ? K.amber : K.silver, waste ? k(waste) : '0', waste ? 'tokens per message for unused tools' : 'unused tools loaded', '100%'),
+    t.metric('sv-u', 'turn', K.silver, used !== undefined ? k(used) : '–', 'tokens this chat used so far', '100%'),
+    t.metric('sv-s', 'check', saved ? K.emerald : K.silver, k(saved), 'tokens saved by Cortex so far (chats resumed from a handoff)', '100%'),
   ])
 }
 

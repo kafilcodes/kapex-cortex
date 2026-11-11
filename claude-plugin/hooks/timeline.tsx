@@ -55,7 +55,7 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
     const res = ep ? outcome(ep) : null
     return t.tile({
       id: ev.id, icon: kind.icon, color: TONE[ev.tone] ?? K.silver, title: ev.title, time: time(ev.ts),
-      badges: [[kind.label, TONE[ev.tone] ?? K.label, kind.icon], res ? [res.text, res.color, res.icon] : null, ...ev.tags.slice(0, ep ? 2 : 4).map(x => [x] as [string])],
+      badges: [[kind.label, TONE[ev.tone] ?? K.label], res ? [res.text, res.color, res.icon] : null, ...ev.tags.slice(0, ep ? 2 : 4).map(x => [x] as [string])],
       preview: ev.detail,
       body: ep ? [
         <Box key={`tm-${ev.id}`} flexDirection="row" gap={1} flexWrap="wrap">

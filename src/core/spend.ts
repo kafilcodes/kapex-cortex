@@ -12,7 +12,7 @@ import type { RepoPaths } from "./paths.ts";
  * cleanupPeriodDays, 30 by default). Cached per file by size and time: only a chat that grew is read again.
  */
 export interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number; replies: number }
-export interface Spend { today: Tokens; week: Tokens; all: Tokens; since: string | null; chats: number; resumed: number; resumedContext: number }
+export interface Spend { today: Tokens; week: Tokens; all: Tokens; since: string | null; chats: number; resumed: number; resumedContext: number; sessions: Record<string, number> }
 type Day = Record<string, Tokens>;
 interface FileSum { days: Day; first: string; resumed: boolean; firstContext: number; lastContext: number }
 
@@ -62,17 +62,17 @@ function files(dir: string): { f: string; key: string; sig: string; main: boolea
 
 export function projectSpend(p: RepoPaths, now = new Date(), home = process.env.CORTEX_CLAUDE_HOME ?? join(homedir(), ".claude")): Spend {
   const dir = join(home, "projects", p.root.replace(/[^A-Za-z0-9]/g, "-"));
-  const res: Spend = { today: zero(), week: zero(), all: zero(), since: null, chats: 0, resumed: 0, resumedContext: 0 };
+  const res: Spend = { today: zero(), week: zero(), all: zero(), since: null, chats: 0, resumed: 0, resumedContext: 0, sessions: {} };
   if (!existsSync(dir)) return res;
   const cacheFile = join(p.priv, "spend-cache.json");
   let cache: Record<string, { sig: string; s: FileSum }> = {};
   try { cache = JSON.parse(readFileSync(cacheFile, "utf8")); } catch { /* first run */ }
   const next: typeof cache = {};
-  const sums: { s: FileSum; main: boolean }[] = [];
+  const sums: { s: FileSum; main: boolean; key: string }[] = [];
   for (const x of files(dir)) {
     const s = cache[x.key]?.sig === x.sig ? cache[x.key]!.s : sumFile(x.f);
     next[x.key] = { sig: x.sig, s };
-    sums.push({ s, main: x.main });
+    sums.push({ s, main: x.main, key: x.key });
   }
   atomicWriteIfChanged(cacheFile, JSON.stringify(next));
   const today = localDay(now.toISOString());
@@ -86,6 +86,12 @@ export function projectSpend(p: RepoPaths, now = new Date(), home = process.env.
   // chats started from a handoff, and how big the chat before each one had grown: the context its first message didn't re-read
   const mains = sums.filter((x) => x.main && x.s.first).map((x) => x.s).sort((a, b) => a.first.localeCompare(b.first));
   res.chats = mains.length;
+  // each recent chat's own total (its subagents included), for "this chat" on Overview
+  const all = (d: FileSum) => Object.values(d.days).reduce((a, t) => a + t.input + t.output + t.cacheRead + t.cacheWrite, 0);
+  for (const x of sums.filter((y) => y.main && y.s.first).sort((a, b) => b.s.first.localeCompare(a.s.first)).slice(0, 8)) {
+    const id = x.key.replace(/\.jsonl$/, "");
+    res.sessions[id] = all(x.s) + sums.filter((y) => !y.main && y.key.startsWith(`${id}/`)).reduce((a, y) => a + all(y.s), 0);
+  }
   mains.forEach((s, i) => { if (s.resumed && i > 0) { res.resumed++; res.resumedContext += Math.max(0, mains[i - 1]!.lastContext - s.firstContext); } });
   return res;
 }

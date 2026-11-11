@@ -101,6 +101,7 @@ export async function refresh($: Dollar): Promise<void> {
       limits: u.rateLimits.map(x => ({ kind: x.kind, percentUsed: x.percentUsed, resetsAt: x.resetsAt })),
       costUsd: u.cost?.usd,
       startedAt: (u as { startedAt?: number }).startedAt,
+      sessionId: await $.session.id().catch(() => undefined),
       loadout: loadout(u.context.breakdown),
     }
     const t = await cacheTtl($, u.rateLimits.some(x => x.kind === 'five_hour'))

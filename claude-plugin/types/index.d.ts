@@ -30,7 +30,7 @@ export type StatusView = {
   history?: HistoryView
   prefs?: PrefsView
   usage?: { chats: number; skills: Record<string, number>; mcp: Record<string, number>; tools: Record<string, number> }
-  spend?: { today: TokensView; week: TokensView; all: TokensView; since: string | null; chats: number; resumed: number; resumedContext: number }
+  spend?: { today: TokensView; week: TokensView; all: TokensView; since: string | null; chats: number; resumed: number; resumedContext: number; sessions?: Record<string, number> }
   parked?: { servers: { name: string; at: string; auto: boolean; tokens: number }[]; keepOn: string[]; disabled: string[] }
   memHealth?: { files: { label: string; lines: number; limit: number }[]; scopedTokens: number; alwaysTokens: number; open: number; checks: number; clean: number }
   migrated?: string
@@ -57,6 +57,7 @@ export type LiveView = {
   /** MCP servers and skill sets loaded in this chat, by what they cost (from Claude Code's own /context numbers) */
   loadout?: { kind: 'mcp' | 'skills'; name: string; tokens: number; loaded: number; items: number; names?: string[]; server?: string }[]
   startedAt?: number
+  sessionId?: string
 }
 /** The panel's pages; Dream & Memory has its own sub-pages (ViewState.sub). Old values still load (mapped to a page). */
 export type Tab = 'overview' | 'timeline' | 'data' | 'settings' | 'waiting' | 'rules' | 'failed' | 'handoff' | 'compactions' | 'details'

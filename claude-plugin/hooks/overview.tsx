@@ -117,7 +117,7 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
             <Button key="ov-dream" variant={waiting ? 'primary' : 'secondary'} onPress={() => { void setTab($, 'data'); void setSub($, 'dream') }}>{waiting ? `Review ${waiting}` : 'Open'}</Button>
           </Box>,
         ])}
-        {savingsCard(u, t, s, hit, waste, w3)}
+        {savingsCard(u, t, s, hit, waste, w3, l)}
         {u.card('cost', wCost, [
           u.head('cost-h', 'Every message carries', usedRows.length ? `${k(usedRows.reduce((a, r) => a + r.tokens, 0))} tokens` : undefined),
           usedRows.length ? u.graphic('g-caps', capsules({ items: usedRows.slice(0, 6).map((r, i) => ({ label: shortName(r.name), value: r.tokens, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length]!, note: k(r.tokens) })), width: Math.min(wide ? o.px * 0.3 - 50 : o.px - 60, 460), height: 104, animate: animateFor('caps', usedRows.map(r => r.tokens).join(',')) }), usedRows.map(r => `${r.name} ${k(r.tokens)}`).join(', ')) : u.tag('cost-wait', 'pending', K.silver, 'Shows after Claude\'s first reply in this chat.'),

@@ -380,3 +380,4 @@ From Kafil's screenshots of v3.0.0 in the app:
 - **Built for a panel that redraws often:** every drawing is static (no animation, no timers), 2–2.7 KB, built once per size and kept in a cache capped at 64 entries, so a redraw is a Map lookup. Neutral parts are grey at part opacity and the face is a dark screen, so it reads on light and dark.
 - 20 core tests, 14 panel tests (new: mood order and the bounded cache).
 - v3.5.1: the Settings page's opening line says "Preferences" (the tab already says Settings), and the Dream page's "Nothing to fix" / "All decided" / "No Dream yet" drawings are centered.
+- v3.5.2: Timeline kind badges without a second icon (the tile already has one); Costs ranks tools and skills with rounded progress bars (no end dot); Overview Savings adds "tokens this chat used so far" (this chat's transcript, subagents included) and "tokens saved by Cortex so far", the same counts the Costs page uses.
