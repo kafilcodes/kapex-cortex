@@ -5,6 +5,7 @@ import { K, levelColor } from './theme'
 import { parkButton, parkedList, savedCard, spendCard } from './spend'
 import type { Tiles } from './tiles'
 import { area, lollipop, micro, stacked } from './viz'
+import { sceneSvg } from './mascot'
 
 /** Category colours for the composition bar: neutrals first, then the emerald family (never the warning colours). */
 const CAT = ['#9CA3AF', '#14B8A6', '#34D399', '#6B7280', '#10B981', '#A7F3D0', '#4B5563']
@@ -32,6 +33,7 @@ export function detailsBody($: Dollar, o: Ctx, t: Tiles): JSX.Element {
   )
   return (
     <Box flexDirection="column" gap={1}>
+      {u.intro('d-in', sceneSvg('costs', 120), 'Cortex counting tokens', 'What it costs', 'Per message and for this project, from Claude Code\'s own numbers.')}
       {u.card('d-speed', '100%', [
         u.head('d-speed-h', 'Speed and plan'),
         line('d-hook-l', 'Hook speed, real runs (p95)', s.hooks.p95 !== null ? `${s.hooks.p95} ms of ${s.hooks.cap} ms · ${s.hooks.samples} runs` : 'no runs yet'),

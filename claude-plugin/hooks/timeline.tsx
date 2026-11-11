@@ -1,4 +1,5 @@
 import type { ElementTable } from 'claude-code'
+import { sceneSvg } from './mascot'
 
 import type { StatusView, TimelineEventView, ViewState } from '../types'
 import { k } from './charts'
@@ -71,6 +72,7 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
 
   return (
     <Box flexDirection="column" gap={1}>
+      {u.intro('tl-in', sceneSvg('timeline', 120), 'Cortex at the timeline', 'What happened, newest first', 'Turns, commits, handoffs and Dreams in one place.')}
       {u.card('tl-act', '100%', [
         u.head('tl-act-h', 'Activity', `${shown.length} events · ${now - from > 36 * 3_600_000 ? 'last 7 days' : 'today'}`),
         shown.length ? u.graphic('g-lanes', chart, `${shown.length} events: ${LANES.map(([l], i) => `${shown.filter(e => (KIND[e.kind] ?? KIND.turn!).lane === i).length} ${l.toLowerCase()}`).join(', ')}`, true) : u.tag('tl-none', 'turn', K.silver, 'No events yet. Each reply, commit, compaction and handoff shows up here.'),

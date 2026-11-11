@@ -53,10 +53,20 @@ export function kit(els: ElementTable, surface: string) {
     /** a small rounded tag */
     pill: (key: string, text: string, color: string = K.label) => <Box key={key} backgroundColor={K.pill} paddingX={1}><Text size="caption" color={color}>{text}</Text></Box>,
     /** an illustration beside its words (the words alone where drawings can't show) */
-    illo: (key: string, svg: string, alt: string, kids: (JSX.Element | null)[]) => (
-      <Box key={key} flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
+    illo: (key: string, svg: string, alt: string, kids: (JSX.Element | null)[], center = false) => (
+      <Box key={key} flexDirection="row" gap={2} alignItems="center" justifyContent={center ? 'center' : 'flex-start'} flexWrap="wrap" paddingY={center ? 1 : 0}>
         {Svg ? <Svg key={`${key}-i`} source={svg} alt={alt} width={size(svg, 'width')} height={size(svg, 'height')} /> : null}
-        <Box flexDirection="column" gap={1} flexGrow={1} flexShrink={1} minWidth={20}>{kids}</Box>
+        <Box flexDirection="column" gap={1} flexGrow={center ? 0 : 1} flexShrink={1} minWidth={20}>{kids}</Box>
+      </Box>
+    ),
+    /** a page's opening line: a title, one short caption and its drawing on the right; no card behind it */
+    intro: (key: string, svg: string, alt: string, title: string, caption: string) => (
+      <Box key={key} flexDirection="row" alignItems="center" justifyContent="space-between" columnGap={2} flexWrap="wrap" paddingX={1}>
+        <Box flexDirection="column" gap={0} flexGrow={1} flexShrink={1} minWidth={24}>
+          <Text weight="semibold" color={K.text}>{title}</Text>
+          <Text size="caption" color={K.label}>{caption}</Text>
+        </Box>
+        {Svg ? <Svg key={`${key}-i`} source={svg} alt={alt} width={size(svg, 'width')} height={size(svg, 'height')} /> : null}
       </Box>
     ),
     /** a section heading in Kapex Emerald */

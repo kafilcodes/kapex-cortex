@@ -5,9 +5,10 @@ import { cacheState, clock, k } from './charts'
 import { act, ago, animateFor, minsSince, setSub, setTab, toReview, type Dollar } from './data'
 import type { Kit } from './kit'
 import { lastTurnCard, readyToSwitch, savingsCard } from './cards'
-import { K, levelColor, RESUME } from './theme'
+import { K, levelColor } from './theme'
 import { tiles } from './tiles'
-import { switchCard, switchDue } from './switch'
+import { heroRow } from './hero'
+import { switchDue } from './switch'
 import { unusedTools, type Tip } from './tips'
 import { arcGauge, area, capsules, drain, micro } from './viz'
 
@@ -60,14 +61,7 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
   const sw = switchDue(s, l, cv, vw)
   return (
     <Box flexDirection="column" gap={1}>
-      {sw ? switchCard($, els, u, s, sw, vw) : null}
-      {tip && !sw ? u.card('tip', '100%', [
-        <Box key="tip-r" flexDirection="row" gap={1} alignItems="center" justifyContent="space-between" flexWrap="wrap">
-          <Box flexDirection="row" gap={1} alignItems="center" flexShrink={1}>{u.node('tip-n', tip.icon, tip.color)}<Text weight="semibold" color={tip.color === K.rose ? K.rose : K.text}>{tip.text}</Text></Box>
-          {/resume/.test(tip.text) ? <Button key="tip-go" variant="primary" onPress={() => { void $.prompt.submit({ text: RESUME }) }}>Resume</Button> : <Button key="tip-go" onPress={() => { void setTab($, 'data'); void setSub($, 'handoff') }}>What a new chat knows</Button>}
-        </Box>,
-        u.line('tip-d', tip.detail, vw.expanded.includes('tip'), K.label, 'caption'),
-      ], tip.color) : null}
+      {heroRow($, els, u, { s, l, cv, vw, tip, sw, five: five?.percentUsed ?? 0, cols: o.cols })}
 
       <Box key="hero" flexDirection="row" flexWrap="wrap" gap={1}>
         {u.card('ctx', wCtx, [

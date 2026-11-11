@@ -1,4 +1,5 @@
 import type { ElementTable } from 'claude-code'
+import { sceneSvg } from './mascot'
 
 import type { NativeFileView, StatusView, ViewState } from '../types'
 import { k } from './charts'
@@ -37,6 +38,7 @@ export function filesBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
   }
   return (
     <Box flexDirection="column" gap={1}>
+      {u.intro('nf-in', sceneSvg('memory', 120), 'Cortex with your memory files', 'What Claude remembers', 'Rules without paths load in every chat; rules with paths only for their files.')}
       {u.card('nf-sum', '100%', [
         u.head('nf-h', 'What Claude Code loads by itself', n.autoMemory.enabled ? 'auto memory on' : 'auto memory off', n.autoMemory.enabled ? K.emerald : K.amber),
         <Box key="nf-m" flexDirection="row" gap={1} flexWrap="wrap">
@@ -44,7 +46,6 @@ export function filesBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
           {t.metric('nfm-l', 'rule', n.alwaysLines > 200 ? K.amber : K.silver, String(n.alwaysLines), 'lines in every session', '26%')}
           {t.metric('nfm-f', 'file', K.silver, String(n.files.length), 'memory files', '26%')}
         </Box>,
-        u.muted('nf-how', 'Rules without paths load in every chat, rules with paths only for their files, auto memory its first 200 lines.'),
       ])}
       {s.memHealth ? (() => {
         const mh = s.memHealth

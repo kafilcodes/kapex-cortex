@@ -1,4 +1,5 @@
 import type { ElementTable, InputProps, SelectProps } from 'claude-code'
+import { sceneSvg } from './mascot'
 
 import type { StatusView } from '../types'
 import { act, type Dollar } from './data'
@@ -61,6 +62,8 @@ export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView
   const be = pr.dreamBackend ?? 'claude'
   const [short, full] = BACKEND_HELP[be] ?? BACKEND_HELP.claude!
   return (
+    <Box flexDirection="column" gap={1}>
+    {u.intro('st-in', sceneSvg('settings', 120), 'Cortex adjusting its preferences', 'Preferences', 'Every change saves at once.')}
     <Box key="st" flexDirection="row" flexWrap="wrap" gap={1}>
       {sec('sec-dream', 'dream', 'Dream', 'Checks your memory files against what really happened', [
         field('dreamBackend', 'Who judges', BACKENDS, be, short, full),
@@ -88,6 +91,7 @@ export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView
         text('name', 'Your name (optional)', pr.name ?? '', s.name || 'e.g. Kafil'),
         <Text key="st-scope" size="caption" color={K.muted}>{pr.overridden.length ? `Saved for you on this computer. This project overrides: ${pr.overridden.join(', ')}.` : 'Saved for you on this computer, used in every project.'}</Text>,
       ])}
+    </Box>
     </Box>
   )
 }

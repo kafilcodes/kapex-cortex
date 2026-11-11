@@ -4,7 +4,6 @@ import type { CacheView, LiveView, StatusView, ViewState } from '../types'
 import { cacheState, k } from './charts'
 import { copyResume, handOff, RESUME_COMMAND, setFlow, setSub, setTab, snoozeSwitch, toReview, type Dollar } from './data'
 import type { Kit } from './kit'
-import { illoHandoff } from './illos'
 import { K } from './theme'
 
 // Switching to a fresh chat when this one is big: offered at your threshold (80% by default), or 10 points earlier
@@ -26,7 +25,8 @@ export function switchDue(s: StatusView, l: LiveView | null, cv: CacheView, vw: 
 /** Memory notes a new chat would load although a check flagged them. */
 export const flaggedNotes = (s: StatusView) => Math.max(toReview(s), s.handoff.preview?.flagged ?? 0)
 
-export function switchCard($: Dollar, els: ElementTable, u: Kit, s: StatusView, sw: Switch, vw: ViewState): JSX.Element {
+/** The hand-off question's title and its body (the Overview hero draws them beside the mascot). */
+export function switchParts($: Dollar, els: ElementTable, u: Kit, s: StatusView, sw: Switch, vw: ViewState): { title: string; body: (JSX.Element | null)[] } {
   const { Box, Text, Button } = els
   const pv = s.handoff.preview
   const flagged = flaggedNotes(s)
@@ -56,11 +56,5 @@ export function switchCard($: Dollar, els: ElementTable, u: Kit, s: StatusView, 
             flagged ? <Text key="sw-f" size="caption" color={K.amber}>{`${flagged} memory note${flagged === 1 ? '' : 's'} to check first`}</Text> : null,
           ]),
         ]
-  return u.card('switch', '100%', [u.illo('sw-i', illoHandoff(190), 'A full chat handing off to a fresh one', [
-    <Box key="sw-h" flexDirection="row" gap={1} alignItems="center">
-      {u.node('sw-n', 'link', sw.cold ? K.rose : K.amber)}
-      <Text weight="semibold" color={K.text}>{`Context ${sw.pct}% full${sw.cold ? ' and the cache is cold' : ''}: continue in a fresh chat?`}</Text>
-    </Box>,
-    ...body,
-  ])], sw.cold ? K.rose : K.amber)
+  return { title: `Context ${sw.pct}% full${sw.cold ? ' and the cache is cold' : ''}: continue in a fresh chat?`, body }
 }

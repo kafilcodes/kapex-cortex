@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import { freshLimits } from '../hooks/data'
+import { moodOf } from '../hooks/hero'
+import { cachedDrawings, moodSvg } from '../hooks/mascot'
 import { tipFor } from '../hooks/tips'
 
 const PANE = {
@@ -361,4 +363,22 @@ test('hand-off: at 82% the Overview asks; flagged memory is checked first; Yes s
   await ui.press({ key: 'sw-done' })
   expect(await ui.find({ key: 'sw-yes' })).toBeUndefined() // "Done" waits 30 minutes or 5 more points
   await ui.unmount()
+})
+
+test('mascot: the Overview mood follows Cortex status (stressed > dream > working > hi > calm); drawings are cached and bounded', () => {
+  const s: any = STATUS, quiet: any = { ...STATUS, dream: { running: null, recent: [] } }
+  const l = (percent: number, turns = 5): any => ({ model: 'm', turns, context: { tokens: percent * 2000, window: 200_000, percent, rows: [] }, limits: [] })
+  const sw = { pct: 82, tokens: 164_000, cold: false }
+  expect(moodOf(s, l(82), sw, null, 0)).toBe('stressed') // the hand-off question is open
+  expect(moodOf(quiet, l(30), null, null, 92)).toBe('stressed') // 5-hour plan nearly used
+  expect(moodOf(s, l(30), null, null, 10)).toBe('dream') // 2 notes waiting for a decision
+  expect(moodOf(quiet, l(65), null, null, 10)).toBe('working')
+  expect(moodOf(quiet, l(5, 1), null, null, 10)).toBe('hi')
+  expect(moodOf(quiet, l(20), null, null, 10)).toBe('calm')
+  const a = moodSvg('calm', 150)
+  expect(moodSvg('calm', 150)).toBe(a) // the same string from the cache, not built again
+  expect(a.length).toBeLessThan(4_000)
+  expect(a).not.toMatch(/<animate|<script|@keyframes/) // static
+  for (let w = 100; w < 400; w++) moodSvg('hi', w)
+  expect(cachedDrawings()).toBeLessThanOrEqual(64)
 })

@@ -40,6 +40,7 @@ export function dataPage($: Dollar, o: Ctx): JSX.Element {
     const hv = s.history
     body = (
       <Box flexDirection="column" gap={1}>
+        {u.intro('h-in', illoHandoff(150), 'A full chat handing off to a fresh one', 'Handing off to a new chat', 'What /cortex-resume gives the next chat, saved after every reply.')}
         {u.card('h-ready', '100%', readyToSwitch($, o.els, u, t, s, o.l, 'hr'), K.emerald)}
         <Box key="h-act" flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" columnGap={1} rowGap={1}>
           {u.tag('h1', 'link', s.handoff.ready ? K.amber : K.emerald, `Saved after every reply${s.handoff.from ? ` · last from ${s.handoff.from}` : ''}`, K.label)}

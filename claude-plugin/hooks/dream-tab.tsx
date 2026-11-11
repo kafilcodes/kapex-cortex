@@ -1,4 +1,5 @@
 import type { ElementTable } from 'claude-code'
+import { sceneSvg } from './mascot'
 
 import type { DreamView, FindingView, StatusView, ViewState } from '../types'
 import { act, ago, minsSince, type Dollar } from './data'
@@ -85,7 +86,6 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
         <Button key="kc-dream" variant="primary" onPress={() => { void act($, 'Dream started', ['dream']) }}>{running ? 'Dreaming…' : 'Dream now'}</Button>
       </Box>
     </Box>,
-    u.muted('dr-what', `Checks your memory files against your last ${n} chats, tests and git. Nothing changes until you Apply.`),
     <Box key="dr-m" flexDirection="row" gap={1} flexWrap="wrap">
       {t.metric('dm-c', 'turn', K.silver, last ? String(last.transcripts) : '–', 'chats read', '40%')}
       {t.metric('dm-e', 'test', K.silver, last ? String(last.evidenceCount) : '–', 'facts checked', '40%')}
@@ -110,6 +110,7 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
 
   return (
     <Box flexDirection="column" gap={1}>
+      {u.intro('dr-in', sceneSvg('dream', 120), 'Cortex dreaming over notes', 'Dream: an audit of your memory', `Checks your notes against your last ${n} chats, tests and git. Nothing changes until you Apply.`)}
       {head}
       {last?.error ? u.card('dr-err', '100%', [u.tag('dr-err-t', 'cross', K.rose, `The last Dream failed: ${last.error}`, K.text)], K.rose) : null}
       {last?.modelError ? u.tag('dr-merr', 'alert', K.amber, `The model step failed, so only Cortex's own checks ran: ${last.modelError}`, K.label) : null}
@@ -118,9 +119,9 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
         badges: [['checked by Cortex']],
         body: last.rejected.map((r, i) => <Text key={`rjt-${i}`} size="caption" color={K.muted}>{r}</Text>),
       }) : null}
-      {last && !last.error && !last.findings.length ? u.card('dr-ok', '100%', [u.illo('dr-ok-i', illoDreamClean(150), 'All clear', [<Text key="dr-ok-t" weight="semibold" color={K.text}>Nothing to fix</Text>, u.muted('dr-ok-d', 'Your memory matches what happened.')])]) : null}
-      {last && open === 0 && appliedN && live ? u.card('dr-done', '100%', [u.illo('dr-done-i', illoDreamClean(130), 'All decided', [<Text key="dr-done-t" weight="semibold" color={K.text}>All decided</Text>, u.muted('dr-done-d', `${appliedN} applied. Undo stays available below.`)])]) : null}
-      {!last && !running ? u.card('dr-none', '100%', [u.illo('dr-none-i', illoDreamStart(150), 'No Dream yet', [<Text key="dr-none-t" weight="semibold" color={K.text}>No Dream yet</Text>, u.muted('dr-none-d', 'Press Quick check (free) or Dream now above.')])]) : null}
+      {last && !last.error && !last.findings.length ? u.illo('dr-ok-i', illoDreamClean(120), 'All clear', [<Text key="dr-ok-t" weight="semibold" color={K.text}>Nothing to fix</Text>, u.muted('dr-ok-d', 'Your memory matches what happened.')], true) : null}
+      {last && open === 0 && appliedN && live ? u.illo('dr-done-i', illoDreamClean(110), 'All decided', [<Text key="dr-done-t" weight="semibold" color={K.text}>All decided</Text>, u.muted('dr-done-d', `${appliedN} applied. Undo stays available below.`)], true) : null}
+      {!last && !running ? u.illo('dr-none-i', illoDreamStart(120), 'No Dream yet', [<Text key="dr-none-t" weight="semibold" color={K.text}>No Dream yet</Text>, u.muted('dr-none-d', 'Press Quick check (free) or Dream now above.')], true) : null}
       {list.length ? t.groupHead('dr-fh', 'dream', K.emerald, 'What it found', String(list.length)) : null}
       {list.length ? actions : null}
       {list.length ? t.stack('dr-fl', list.map(f => findingTile(last!, f))) : null}
