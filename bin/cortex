@@ -1,0 +1,4 @@
+#!/bin/sh
+# Kapex Cortex CLI launcher (runs TypeScript directly via Node's type stripping)
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+exec node "$DIR/src/cli.ts" "$@"

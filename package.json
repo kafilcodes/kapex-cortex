@@ -1,0 +1,25 @@
+{
+  "name": "kapex-cortex",
+  "version": "3.1.1",
+  "description": "Human-lossless context for AI coding harnesses: invariants survive compaction, handoffs survive rate limits.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "cortex": "bin/cortex"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && node scripts/bundle-plugin.ts --check && npm test",
+    "bundle": "node scripts/bundle-plugin.ts",
+    "build:sea": "node scripts/build-sea.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "esbuild": "0.28.2",
+    "typescript": "5.9"
+  }
+}

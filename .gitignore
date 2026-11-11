@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+.vault/private/
+.claude/settings.local.json
+.opencode/plugins/kapex-cortex.ts
+spike-repo/
+.vault/STATE.md
+bench/results/*.jsonl.tmp
+dist/
+docs/preview/
+.vault/dreams/

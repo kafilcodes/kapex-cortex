@@ -1,0 +1,7 @@
+{
+  "name": "kapex-cortex",
+  "owner": { "name": "Mohd. Kafil Khan", "url": "https://github.com/kafilcodes" },
+  "plugins": [
+    { "name": "kapex-cortex", "source": "./claude-plugin", "description": "Live Kapex Cortex panel beside the chat: rules, approvals, handoffs, Obsidian sync." }
+  ]
+}

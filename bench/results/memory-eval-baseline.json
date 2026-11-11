@@ -1,0 +1,8 @@
+{
+ "at": "2026-11-09T17:58:52.272Z",
+ "classifier": "claude:haiku",
+ "precision": 0.429,
+ "recall": 0.545,
+ "typeAccuracy": 1,
+ "autoPrecision": 0.5
+}

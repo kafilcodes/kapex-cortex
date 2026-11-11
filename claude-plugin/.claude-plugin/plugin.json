@@ -1,0 +1,12 @@
+{
+  "name": "kapex-cortex",
+  "version": "3.1.1",
+  "description": "Kapex Cortex for Claude Code: a status strip and cost/cache panel, lossless handoffs between chats (and to OpenCode), and Dreams that check Claude's own memory against what really happened.",
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Mohd. Kafil Khan",
+    "url": "https://github.com/kafilcodes"
+  },
+  "hooks": "./hooks/cortex-hooks.json"
+}
