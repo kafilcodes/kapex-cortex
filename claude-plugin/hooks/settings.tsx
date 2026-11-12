@@ -3,6 +3,7 @@ import { sceneSvg } from './mascot'
 
 import type { StatusView } from '../types'
 import { act, type Dollar } from './data'
+import { replayIntro } from './intro'
 import type { Kit } from './kit'
 import { K } from './theme'
 
@@ -86,10 +87,27 @@ export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView
         </Box>] : []),
         <Text key="st-cost" size="caption" color={K.label}>{`The current handoff is about ${(pr.tokens?.handoff ?? 0).toLocaleString()} tokens, saved after every reply.`}</Text>,
       ])}
+      {s.safety ? sec('sec-safe', 'rule', 'Safety for long runs', 'Auto mode, background and long sessions', [
+        ...s.safety.findings.map(x => (
+          <Box key={`sf-${x.id}`} flexDirection="row" gap={1} alignItems="flex-start" paddingY={1}>
+            {u.node(`sf-${x.id}-n`, x.level === 'ok' ? 'check' : x.level === 'warn' ? 'alert' : 'pending', x.level === 'ok' ? K.emerald : x.level === 'warn' ? K.amber : K.silver, 20)}
+            <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={16} gap={0}>
+              <Text weight="medium" color={K.text}>{x.title}</Text>
+              <Text size="caption" color={K.label}>{x.detail}</Text>
+            </Box>
+            {x.fix ? <Button key={`sf-fix-${x.id}`} variant="secondary" onPress={() => { void act($, x.fix === 'gate' ? 'Gate added' : 'Deny rules added', ['safety', 'apply', x.fix!]) }}>{x.fix === 'gate' ? 'Add gate' : 'Block'}</Button> : null}
+          </Box>
+        )),
+        <Box key="sf-foot" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap">
+          <Text size="caption" color={K.muted}>Changes go in .claude/settings.json; new chats pick them up.</Text>
+          {s.safety.undo ? <Button key="sf-undo" variant="secondary" onPress={() => { void act($, 'Undone', ['safety', 'undo']) }}>Undo</Button> : null}
+        </Box>,
+      ]) : null}
       {sec('sec-you', 'star', 'You', 'Greeting and name', [
         field('greeting', 'Greeting', ONOFF, pr.greeting === false ? 'off' : 'on', pr.greeting === false ? 'Off: the panel shows the project name.' : `On: ${s.name ? `"${(h => (h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'))(new Date().getHours())}, ${s.name}"` : 'no name found yet; set one below'}.`, 'The name comes from your setting below, else your computer account\'s full name (first word). It stays on this computer, in ~/.cortex, never in your project.'),
         text('name', 'Your name (optional)', pr.name ?? '', s.name || 'e.g. Kafil'),
         <Text key="st-scope" size="caption" color={K.muted}>{pr.overridden.length ? `Saved for you on this computer. This project overrides: ${pr.overridden.join(', ')}.` : 'Saved for you on this computer, used in every project.'}</Text>,
+        <Box key="st-intro" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap"><Text size="caption" color={K.label}>The three-step intro: what Cortex shows and does.</Text><Button key="st-intro-b" variant="secondary" onPress={() => { void replayIntro($) }}>Show the intro again</Button></Box>,
       ])}
     </Box>
     </Box>

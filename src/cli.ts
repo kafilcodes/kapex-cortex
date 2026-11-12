@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { IS_BINARY } from "./core/self.ts";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nearbyProjects, repoPaths, resolveProject } from "./core/paths.ts";
-import { pluginHooksTurn, pluginInstalled } from "./core/plugin.ts";
+import { pluginHooksTurn, pluginInstalled, pluginListed } from "./core/plugin.ts";
+import { opencodeHome } from "./core/home.ts";
 import { MODES, parsePref, readPrefs, setPref } from "./core/prefs.ts";
 import { runHook } from "./hook.ts";
 import { cortexInit, nodeOnPath } from "./init.ts";
@@ -18,6 +19,7 @@ import { installShims, isSetUp, rememberInstall } from "./onboard.ts";
 import { dreamCommand } from "./dream-cli.ts";
 import { nativeSummary } from "./core/native.ts";
 import { park, parkView, unpark } from "./core/park.ts";
+import { applySafety, auditSafety, undoSafety } from "./core/safety.ts";
 
 function repoOrDie(): ReturnType<typeof repoPaths> {
   const root = resolveProject(process.cwd());
@@ -68,6 +70,16 @@ function main(argv: string[]): void {
     case "dream":
       void dreamCommand(rest, repoOrDie(), self, node).then((code) => process.exit(code));
       return;
+    case "safety": {
+      // kc safety [--json] · apply secrets|gate [--cmd "<check>"] · undo
+      const p = repoOrDie();
+      const [sub = "", what = ""] = rest;
+      if (sub === "apply" && (what === "secrets" || what === "gate")) { const i = rest.indexOf("--cmd"); console.log(applySafety(p, what, i > 0 ? rest[i + 1] : undefined)); return; }
+      if (sub === "undo") { console.log(undoSafety(p)); return; }
+      const v = auditSafety(p);
+      console.log(rest.includes("--json") ? JSON.stringify(v) : v.findings.map((x) => `${x.level === "ok" ? "✓" : x.level === "warn" ? "!" : "·"} ${x.title}: ${x.detail}${x.fix ? `  (fix: kc safety apply ${x.fix})` : ""}`).join("\n"));
+      return;
+    }
     case "park": {
       // kc park [list] · add <server…> [--auto] [--tokens <server>=<n>…] · remove <server…>
       const p = repoOrDie();
@@ -120,7 +132,8 @@ function main(argv: string[]): void {
       console.log(setup({ node, cli: self }).map((l) => `  • ${l}`).join("\n"));
       return;
     case "install-skills": {
-      const written = installSkills(process.env.HOME ?? "", node, self);
+      const home = process.env.HOME ?? "";
+      const written = installSkills(home, node, self, { plugin: pluginListed(), opencode: existsSync(opencodeHome()) });
       console.log(written.length ? written.map((w) => `  • ${w}`).join("\n") : "Skills already up to date.");
       return;
     }

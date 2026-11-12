@@ -31,6 +31,10 @@ const dayOf = (iso: string) => {
 const time = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 const base = (f: string) => f.split(/[\\/]/).slice(-2).join('/')
 
+/** Lines a tile's text takes, so its connector is as tall as the tile and no taller (measured in the real app: a tile
+ * with a one-line preview is about 116 px; the base 74 + 22 per line). The preview is cut to 140 characters. */
+const previewLines = (detail: string | undefined, px: number) => (detail ? 1 + Math.max(1, Math.ceil((Math.min(140, detail.length) * 6.4) / Math.max(200, px - 140))) : 1)
+
 export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView, vw: ViewState, px: number): JSX.Element {
   const { Box, Text, Button } = els
   const t = tiles($, els, u, vw.expanded)
@@ -80,7 +84,7 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
       {days.map(([day, list]) => (
         <Box key={`day-${day}`} flexDirection="column" gap={1}>
           {t.groupHead(`dh-${day}`, 'pending', K.emerald, day, `${list.length}`)}
-          {t.railed(`dl-${day}`, list.map(ev => ({ tile: tileOf(ev), lines: ev.detail ? 3 : 1 })))}
+          {t.railed(`dl-${day}`, list.map(ev => ({ tile: tileOf(ev), lines: previewLines(ev.detail, px) })))}
         </Box>
       ))}
       {all.length > limit ? <Button key="tl-more" onPress={() => { void showMore($, 'timeline', 24) }}>{`Show ${Math.min(24, all.length - limit)} older events`}</Button> : null}

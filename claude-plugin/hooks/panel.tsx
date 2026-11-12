@@ -4,6 +4,7 @@ import type { StatusView, Tab } from '../types'
 import { k, prettyModel } from './charts'
 import { act, chooseProject, planLimits, readFail, readOff, refresh, refreshNow, refreshSoon, setSub, setTab, snapshot, statusOrSaved, toReview, type Dollar } from './data'
 import { healthRing } from './icons'
+import { introPage, introSeen } from './intro'
 import { kit } from './kit'
 import { LOGO_SIZE, LOGO_SVG } from './logo'
 import { overviewPage } from './overview'
@@ -11,6 +12,7 @@ import { settingsBody } from './settings'
 import { dataPage } from './tabs'
 import { K } from './theme'
 import { timelinePage } from './timeline'
+import { switchDue } from './switch'
 import { tipFor } from './tips'
 
 // The Cortex panel: a greeting header and four pages (Overview · Timeline · Dream & Memory · Settings), so nothing is
@@ -32,6 +34,7 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
   const s: StatusView | null = await statusOrSaved($)
   const { l, cv, msg, hist, ph, vw } = snap
   const cols = (e as { props?: { bodyColumns?: number } }).props?.bodyColumns ?? 60
+  const bodyRows = (e as { props?: { scroll?: { bodyRows?: number } } }).props?.scroll?.bodyRows ?? 40
   const px = Math.max(220, Math.min(1400, cols * 7.2))
   const failed = await readFail($)
   const { o, dir } = await readOff($)
@@ -65,7 +68,7 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
   }
 
   const { limits, at: limitsAt } = await planLimits($, l)
-  const tip = tipFor(s, l, cv, limits)
+  const tip = tipFor(s, l, cv, limits, switchDue(s, l, cv, vw))
   const legacy = LEGACY[snap.chosen as Tab]
   const page: Tab = legacy ? legacy[0] : (snap.chosen as Tab) || 'overview'
   if (legacy && vw.sub !== legacy[1]) void setSub($, legacy[1])
@@ -79,7 +82,9 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
     s.opencode.plugin ? u.tag('m-oc', 'link', K.silver, 'OpenCode ready') : null,
     dir && o ? u.tag('m-dir', 'file', K.silver, `chat in ${o.cwd.split('/').pop()}`) : null,
   ]
-  const body = page === 'timeline' ? timelinePage($, els, u, s, vw, px)
+  const intro = !(await introSeen($, s, vw))
+  const body = intro ? introPage($, els, u, vw, px, bodyRows)
+    : page === 'timeline' ? timelinePage($, els, u, s, vw, px)
     : page === 'data' ? dataPage($, { els, u, s, l, current: page, wip: s.git?.wip, five: limits.find(x => x.kind === 'five_hour'), px, vw })
     : page === 'settings' ? settingsBody($, els, u, s, cols >= 120)
     : overviewPage($, els, u, { s, l, cv, hist, ph, vw, limits, limitsAt, tip, cols, px })
@@ -102,9 +107,9 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
         </Box>
       </Box>
 
-      <Box key="nav" flexDirection="row" gap={1} flexWrap="wrap">
+      {intro ? null : <Box key="nav" flexDirection="row" gap={1} flexWrap="wrap">
         {PAGES.map(([t, label, key]) => <Button key={`tab-${t}`} hotkey={key} variant={page === t ? 'primary' : 'secondary'} onPress={() => { void setTab($, t) }}><Text color={page === t ? K.emerald : undefined} weight={page === t ? 'semibold' : undefined}>{t === 'data' && waiting ? `${label} · ${waiting}` : label}</Text></Button>)}
-      </Box>
+      </Box>}
 
       {body}
 

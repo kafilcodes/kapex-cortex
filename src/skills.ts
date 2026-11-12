@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { claudeHome, cortexHome } from "./core/home.ts";
+import { claudeHome, cortexHome, opencodeHome } from "./core/home.ts";
+import { pluginListed } from "./core/plugin.ts";
 import { cmdline } from "./core/self.ts";
 import { atomicWriteIfChanged } from "./util/atomic.ts";
 
@@ -66,12 +67,17 @@ export function shortSkills(full: Record<string, string>): Record<string, string
   return out;
 }
 
-export function installSkills(home: string, node: string, cli: string): string[] {
+/**
+ * Write Cortex's skills where they are needed, once each. With the Claude Code plugin installed, Claude Code already
+ * has them, so a copy in ~/.claude/skills would be listed twice in every message: only OpenCode gets a copy, in its own
+ * folder (~/.config/opencode/skills). Without the plugin, ~/.claude/skills serves Claude Code (and OpenCode reads it too).
+ */
+export function installSkills(home: string, node: string, cli: string, opts: { plugin?: boolean; opencode?: boolean } = {}): string[] {
   const written: string[] = [];
-  const full = skillFiles(node, cli);
+  const dirs = opts.plugin ? (opts.opencode ? [join(opencodeHome(), "skills")] : []) : [join(home, ".claude", "skills")];
   // no short /kc-* aliases: they shadowed the panel's /kc in autocomplete
-  for (const [name, body] of Object.entries(full)) {
-    const path = join(home, ".claude", "skills", name, "SKILL.md");
+  for (const dir of dirs) for (const [name, body] of Object.entries(skillFiles(node, cli))) {
+    const path = join(dir, name, "SKILL.md");
     if (atomicWriteIfChanged(path, body)) written.push(path);
   }
   return written;
@@ -81,19 +87,31 @@ export function installSkills(home: string, node: string, cli: string): string[]
 const RETIRED = ["cortex-approve"];
 
 /**
- * Keep the copies of Cortex's skills in ~/.claude/skills (written by `kc setup` for OpenCode, which reads that folder)
- * as current as the plugin's. Claude Code prefers a personal skill over a plugin's of the same name, so an old copy
- * would answer /cortex-resume with an older version's steps. Only files Cortex wrote are touched (they say
- * "Kapex Cortex"); runs at session start, a few small reads when nothing changed.
+ * Keep Cortex's own skill copies (files that say "Kapex Cortex") right, at session start:
+ * - with the plugin installed, copies in ~/.claude/skills are duplicates Claude Code lists in every message (and,
+ *   being personal skills, they win over the plugin's). They move to OpenCode's own skills folder when OpenCode is
+ *   set up, and are removed from ~/.claude/skills either way;
+ * - without the plugin, they are kept as current as this version, so /cortex-resume never runs older steps.
+ * Retired skills (cortex-approve) go. Files Cortex didn't write are never touched. A few small reads when nothing changed.
  */
 export function refreshOwnSkills(home = claudeHome()): string[] {
   const dir = join(home, "skills");
   const own = (f: string) => { try { return /Kapex Cortex/.test(readFileSync(f, "utf8")); } catch { return false; } };
-  if (!existsSync(join(dir, "cortex-resume", "SKILL.md")) && !RETIRED.some((n) => existsSync(join(dir, n, "SKILL.md")))) return [];
+  const names = ["cortex-resume", "cortex-handoff", "cortex-init"];
+  if (!names.some((n) => existsSync(join(dir, n, "SKILL.md"))) && !RETIRED.some((n) => existsSync(join(dir, n, "SKILL.md")))) return [];
   let install: { node?: string; cli?: string } = {};
   try { install = (JSON.parse(readFileSync(join(cortexHome(), "config.json"), "utf8")) as { install?: typeof install }).install ?? {}; } catch { /* no install recorded */ }
-  if (!install.node) return [];
   const changed: string[] = [];
+  if (pluginListed(home)) {
+    const oc = opencodeHome();
+    if (existsSync(oc) && install.node) changed.push(...installSkills("", install.node, install.cli ?? "", { plugin: true, opencode: true }));
+    for (const name of [...names, ...RETIRED]) {
+      const f = join(dir, name, "SKILL.md");
+      if (existsSync(f) && own(f)) { rmSync(join(dir, name), { recursive: true, force: true }); changed.push(f); }
+    }
+    return changed;
+  }
+  if (!install.node) return [];
   for (const [name, body] of Object.entries(skillFiles(install.node, install.cli ?? ""))) {
     const f = join(dir, name, "SKILL.md");
     if (existsSync(f) && own(f) && atomicWriteIfChanged(f, body)) changed.push(f);

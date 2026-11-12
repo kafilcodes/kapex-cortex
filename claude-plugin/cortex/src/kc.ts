@@ -24,6 +24,7 @@ export const KC_HELP = `kc — Kapex Cortex
   kc d run        Dream now and wait (add --no-model for the checks a program can do alone)
   kc d show [id]  what a Dream found        kc d apply <id> / discard <id> / undo <id>
   kc d skip <id> <finding> [off]           leave one finding out of Apply (off = put it back)
+  kc safety       secrets, sandbox and a check before Claude finishes  ·  kc safety apply secrets|gate  ·  kc safety undo
   kc prefs set <key> <value>               settings: dreamModel, dreamBackend, dreamTranscripts, autoDream, tokenMode
 
 In Claude Code: /kc opens the panel. In a new chat, or OpenCode after a usage limit: /cortex-resume.

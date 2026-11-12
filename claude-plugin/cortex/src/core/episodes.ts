@@ -20,7 +20,7 @@ export interface Episode {
   id: string; session: string; start: string; end: string;
   ask: string;
   tools: Record<string, number>; files: string[]; commands: string[];
-  tests: { ran: number; failed: number }; commits: number; errors: number; interrupted: boolean;
+  tests: { ran: number; failed: number; lastOk?: boolean }; commits: number; errors: number; interrupted: boolean;
   skills: string[]; mcp: string[];
   outTokens: number; contextTokens: number;
   done: string; next: string;
@@ -81,10 +81,13 @@ export function observe(ep: Open, entry: Record<string, unknown>): void {
         if (TEST.test(cmd)) { ep.tests.ran++; ep.pending[String(b.id)] = "test"; }
       }
     } else if (b.type === "tool_result") {
+      const wasTest = ep.pending[String(b.tool_use_id)] === "test";
       if (b.is_error) {
         ep.errors++;
-        if (ep.pending[String(b.tool_use_id)] === "test") ep.tests.failed++;
+        if (wasTest) ep.tests.failed++;
       }
+      // the run that counts is the last one: a failure fixed later in the turn is not a failed turn
+      if (wasTest) ep.tests.lastOk = !b.is_error;
       delete ep.pending[String(b.tool_use_id)];
     }
   }

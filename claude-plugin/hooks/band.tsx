@@ -1,14 +1,15 @@
 import type { Hook } from 'claude-code'
 
 import { cacheState, clock } from './charts'
-import { openPane, planLimits, readFail, refresh, refreshNow, refreshSoon, setSub, setTab, snapshot, statusOrSaved, toReview, type Dollar } from './data'
+import { act, handOff, openPane, planLimits, readFail, refresh, refreshNow, refreshSoon, setFlow, setSub, setTab, snapshot, statusOrSaved, toReview, type Dollar } from './data'
 import type { Tip } from './tips'
 import { switchDue } from './switch'
 import { tipFor } from './tips'
 import { iconPaths } from './icons'
 import { kit } from './kit'
 import { logoSvg } from './logo'
-import { esc, FONT, K, levelColor } from './theme'
+import { esc, FONT, K, levelColor, RESUME } from './theme'
+import { flaggedNotes } from './switch'
 
 // The status strip above the prompt, like a phone's status bar: what Claude Code doesn't show you at a glance.
 // One line, never wrapping: the logo, one pill (context · cache · 5-hour plan), one more pill (the tip that matters
@@ -68,8 +69,24 @@ export function stripParts(o: Strip, tip: Tip | null = null): { main: string; si
   const words = [o.ctx !== null ? `context ${o.ctx}%` : '', o.cacheText, o.plan !== null ? `5h ${o.plan}%` : '', o.week !== null ? `week ${o.week}%` : '', o.handoff === 'ready' ? 'handoff ready' : '', o.waiting ? `${o.waiting} to review` : ''].filter(Boolean).join(' · ')
   const main = pill(parts).replace(/(<svg[^>]*>)/, `$1<title>${esc(words)}</title>`)
   const hc = o.handoff === 'ready' ? K.amber : o.handoff === 'saved' ? K.emerald : K.ink
-  const side = tip ? tipPill(tip) : pill([both(glyph(o.handoff === 'ready' ? 'link' : o.handoff === 'saved' ? 'check' : 'pending', hc), label(o.handoff === 'ready' ? 'resume ready' : o.handoff === 'saved' ? 'handoff saved' : 'no handoff yet', o.handoff === 'ready' ? K.amber : K.ink))])
+  // no tip: all is well. Say so (and that the handoff is kept), so the strip never looks like it wants something
+  const side = tip ? tipPill(tip) : o.handoff === 'ready' ? pill([both(glyph('link', K.amber), label('resume ready', K.amber))]) : pill([both(glyph('check', K.emerald), label(o.handoff === 'saved' ? 'All good · handoff saved' : 'All good', K.ink, 600))])
   return { main, side, words }
+}
+
+const ACTION_LABEL: Record<string, string> = { handoff: 'Hand off', dream: 'Dream', review: 'Review', costs: 'Costs', resume: 'Resume' }
+
+/** One press from the strip. Hand off saves the handoff and copies /cortex-resume (memory flagged by a check is shown
+ * first); Dream starts one in the background (it only proposes); the others open the panel where the decision is. */
+async function doTip($: Dollar, action: string, s: NonNullable<Awaited<ReturnType<typeof statusOrSaved>>>): Promise<void> {
+  if (action === 'resume') { await $.prompt.submit({ text: RESUME }); return }
+  if (action === 'handoff') {
+    await setTab($, 'overview')
+    if (flaggedNotes(s)) await setFlow($, 'confirm'); else await handOff($)
+  } else if (action === 'dream') { await setTab($, 'data'); await setSub($, 'dream'); void act($, 'Dream started', ['dream']) }
+  else if (action === 'review') { await setTab($, 'data'); await setSub($, 'dream') }
+  else if (action === 'costs') { await setTab($, 'data'); await setSub($, 'details') }
+  await openPane($)
 }
 
 export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) => unknown): Promise<unknown> {
@@ -103,7 +120,8 @@ export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) =
   const ttlMs = cv.ttl === '1h' ? 3_600_000 : 300_000
   const cs = cacheState(cv.lastAt, ttlMs)
   const { limits } = await planLimits($, l)
-  const tip = tipFor(s, l, cv, limits)
+  const sw = switchDue(s, l, cv, vw)
+  const tip = tipFor(s, l, cv, limits, sw)
   const parts = stripParts({
     ctx: l?.context.percent ?? null, compactAt: buffer ? (win - buffer) / win : undefined,
     cacheShare: cs.leftMin / (ttlMs / 60_000), cacheSec: cs.leftMin * 60,
@@ -112,10 +130,8 @@ export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) =
     plan: limits.find(x => x.kind === 'five_hour')?.percentUsed ?? null, week: limits.find(x => x.kind === 'seven_day')?.percentUsed ?? null,
     handoff: s.handoff.ready ? 'ready' : s.handoff.exists ? 'saved' : 'none', waiting,
   }, tip)
-  // big chat (or cold cache): one button that opens the panel's hand-off question
-  const sw = switchDue(s, l, cv, vw)
   const openLabel = <Text>{'Open Cortex'}{waiting ? <Text color={K.amber} weight="semibold">{` · ${waiting}`}</Text> : null}</Text>
-  if (!u.Svg) return <Box flexDirection="row" gap={1} alignItems="center" justifyContent="space-between"><Text size="caption" color={waiting || tip?.level === 'warn' ? K.amber : undefined}>{`Cortex · ${tip ? `${tip.text} · ` : ''}${parts.words}`}</Text><Box flexDirection="row" gap={1}><Button key="kc-refresh" plain onPress={() => { void refreshNow($) }}>↻</Button><Button key="kc-open" plain onPress={open}>Open Cortex</Button></Box></Box>
+  if (!u.Svg) return <Box flexDirection="row" gap={1} alignItems="center" justifyContent="space-between"><Text size="caption" color={waiting || (tip && tip.level !== 'ok') ? K.amber : undefined}>{`Cortex · ${tip ? `${tip.text} · ` : ''}${parts.words}`}</Text><Box flexDirection="row" gap={1}><Button key="kc-refresh" plain onPress={() => { void refreshNow($) }}>↻</Button><Button key="kc-open" plain onPress={open}>Open Cortex</Button></Box></Box>
   const Svg = u.Svg
   const draw = (key: string, svg: string, alt: string) => <Svg key={key} source={svg} alt={alt} width={Number(/width="(\d+)"/.exec(svg)?.[1] ?? 100)} height={H} isInteractive />
   return (
@@ -126,7 +142,7 @@ export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) =
         {draw('kc-side', parts.side, tip ? `${tip.text}. ${tip.detail}` : parts.words)}
       </Box>
       <Box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
-        {sw ? <Button key="kc-switch" variant="primary" onPress={() => { void setTab($, 'overview'); void openPane($) }}>New chat…</Button> : null}
+        {tip?.action ? <Button key="kc-do" variant={tip.level === 'act' ? 'primary' : 'secondary'} onPress={() => { void doTip($, tip.action!, s) }}>{ACTION_LABEL[tip.action]}</Button> : null}
         <Button key="kc-refresh" variant="secondary" onPress={() => { void refreshNow($) }}>{failed ? 'Retry' : '↻'}</Button>
         <Button key="kc-open" variant="secondary" onPress={open}>{openLabel}</Button>
       </Box>

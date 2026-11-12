@@ -1,59 +1,64 @@
 import type { CacheView, LiveView, StatusView } from '../types'
 import { cacheState, clock, k } from './charts'
+import { ago, minsSince, toReview } from './data'
 import { K } from './theme'
 
-// One proactive tip at a time for the status strip (and the panel), from data already on hand. Highest value first:
-// the moments where a decision saves the most tokens or the most work. Short words in the strip, the reason on hover.
-export type Tip = { level: 'warn' | 'info' | 'ok'; icon: string; text: string; detail: string; color: string }
+// One tip at a time for the status strip and the Overview, from data already on hand, as a traffic light:
+//   act  (rose)   a move worth making now, with what it saves: hand off before a cold re-read or compaction
+//   warn (amber)  something to know, and that it's fine to continue: the cache cooling, context or plan filling up,
+//                 memory to review, tools you never use, a Dream that's due
+//   ok   (emerald) a fresh chat with a handoff from another chat: continue from it
+// No tip means all is well (the strip says so). Short words in the strip; the reason on hover and in the panel.
+export type TipAction = 'handoff' | 'dream' | 'review' | 'costs' | 'resume'
+export type Tip = { level: 'act' | 'warn' | 'ok'; icon: string; text: string; detail: string; color: string; action?: TipAction }
 
-export function tipFor(s: StatusView, l: LiveView | null, cv: CacheView, limits: LiveView['limits']): Tip | null {
+const DAY = 24 * 60
+
+export function tipFor(s: StatusView, l: LiveView | null, cv: CacheView, limits: LiveView['limits'], sw: { pct: number } | null = null): Tip | null {
   const ctx = l?.context.tokens ?? 0
   const pct = l?.context.percent ?? 0
   const rows = l?.context.rows ?? []
   const win = l?.context.window ?? 1
   const buffer = rows.find(r => /autocompact/i.test(r.name))?.tokens ?? 0
   const compactAt = buffer ? (win - buffer) / win : 0.9
+  const at = (s.prefs?.handoffAt ?? 80) / 100
   const ttlMs = cv.ttl === '1h' ? 3_600_000 : 300_000
   const cs = cacheState(cv.lastAt, ttlMs)
-  const switchTokens = s.handoff.preview?.tokens ?? 0
-  const ready = s.handoff.exists ? ` Handoff saved: a new chat starts with about ${k(switchTokens || 2000)} tokens.` : ''
-
-  // 1. a cold cache on a big chat: the next message re-reads everything at full price
-  if (cs.state === 'cold' && ctx > 150_000) {
-    return { level: 'warn', icon: 'alert', color: K.rose, text: `Cold cache: next message re-reads ${k(ctx)}`, detail: `Your next message re-reads all ${k(ctx)} tokens at full price.${ready}` }
-  }
-  // 2. the cache is about to cool: reply now or wrap up
-  if (cs.state === 'cooling' && ctx > 50_000) {
-    return { level: 'warn', icon: 'pending', color: K.amber, text: `Cache cools at ${clock(cs.until!)}`, detail: `Reply before then, or hand off, to avoid re-reading ${k(ctx)} tokens.` }
-  }
-  // 3. close to compaction
-  if (pct / 100 >= compactAt - 0.2 && ctx > 100_000) {
-    return { level: 'info', icon: 'link', color: K.amber, text: `${pct}% full: a new chat is ready`, detail: `Claude summarizes this chat near ${Math.round(compactAt * 100)}%.${ready}` }
-  }
-  // 4. the 5-hour plan is nearly used
+  const start = (s.handoff.preview?.tokens || 2000) + (s.native?.alwaysTokens ?? 0)
+  const save = Math.max(0, ctx - start)
+  const fresh = s.handoff.exists ? ` A new chat starts with about ${k(start)} tokens.` : ''
   const five = limits.find(x => x.kind === 'five_hour')?.percentUsed ?? 0
-  if (five >= 85) {
-    return { level: 'warn', icon: 'alert', color: K.amber, text: `5-hour plan at ${five}%`, detail: `Continue in OpenCode (free models) with /cortex-resume, or wait for the reset.` }
-  }
-  // 5. a brand-new chat with a recent handoff from another session
-  if ((l?.turns ?? 0) <= 1 && s.handoff.exists && s.handoff.ageMinutes !== null && s.handoff.ageMinutes < 3 * 24 * 60) {
-    return { level: 'ok', icon: 'link', color: K.emerald, text: 'Continue: type /cortex-resume', detail: `A handoff from ${s.handoff.from || 'your last session'} is saved.${ready}` }
-  }
-  // 6. the last turn filled this chat with tool output: a subagent would have kept it out (measured from the journal)
+
+  // red: a move that saves real tokens or work now
+  if (cs.state === 'cold' && ctx > 150_000) return { level: 'act', icon: 'alert', color: K.rose, action: 'handoff', text: `Cold cache · hand off, save ~${k(save)}`, detail: `Your next message here re-reads all ${k(ctx)} tokens at full price.${fresh}` }
+  if (sw || (ctx > 100_000 && pct / 100 >= Math.min(at, compactAt - 0.05))) return { level: 'act', icon: 'link', color: K.rose, action: 'handoff', text: `${pct}% full · hand off, save ~${k(save)}`, detail: `Every message here carries ${k(ctx)} tokens, and Claude summarizes the chat near ${Math.round(compactAt * 100)}%.${fresh}` }
+  if (five >= 90) return { level: 'act', icon: 'alert', color: K.rose, action: 'handoff', text: `5h plan ${five}% · hand off`, detail: 'Save the handoff, then continue in OpenCode (free models) with /cortex-resume, or wait for the reset.' }
+
+  // amber: worth knowing, fine to continue
+  if (cs.state === 'cooling' && ctx > 50_000) return { level: 'warn', icon: 'pending', color: K.amber, text: `Cache cools at ${clock(cs.until!)} · reply before`, detail: `After that, your next message re-reads ${k(ctx)} tokens at full price. Fine to continue.` }
+  if (ctx > 100_000 && pct / 100 >= Math.min(at, compactAt) - 0.15) return { level: 'warn', icon: 'turn', color: K.amber, text: `${pct}% full · fine to continue`, detail: `Cortex suggests a fresh chat at ${Math.round(at * 100)}%.${fresh}` }
+  if (five >= 70) return { level: 'warn', icon: 'pending', color: K.amber, text: `5h plan ${five}% · fine to continue`, detail: 'At 90% Cortex suggests handing off, so you can continue in OpenCode or after the reset.' }
+  const waiting = toReview(s)
+  if (waiting) return { level: 'warn', icon: 'dream', color: K.amber, action: 'review', text: `${waiting} memory fix${waiting === 1 ? '' : 'es'} to review`, detail: 'A Dream or Quick check found notes that look wrong or stale. Decide before a new chat trusts them.' }
+  // the last turn filled this chat with tool output: a subagent would have kept it out (measured from the journal)
   const [e0, e1] = s.episodes ?? []
   if (e0 && e1 && e0.session === e1.session && Date.now() - Date.parse(e0.end) < 30 * 60_000) {
     const grew = e0.contextTokens - e1.contextTokens
     const reads = ['Read', 'Grep', 'Glob', 'Bash', 'WebFetch'].reduce((a, n) => a + (e0.tools[n] ?? 0), 0)
-    if (grew >= 40_000 && reads >= 12) {
-      return { level: 'info', icon: 'spark', color: K.sage, text: `Last turn added ~${k(grew)} to this chat`, detail: `Mostly tool output (${reads} reads and commands). For big searches or test runs, ask for a subagent: only its summary lands here (its tokens still count toward your plan).` }
-    }
+    if (grew >= 40_000 && reads >= 12) return { level: 'warn', icon: 'spark', color: K.amber, text: `Last turn added ~${k(grew)}`, detail: `Mostly tool output (${reads} reads and commands). For big searches or test runs, ask for a subagent: only its summary lands here (its tokens still count toward your plan).` }
   }
-  // 7. paying every message for tools nobody uses
   const unused = unusedTools(s, l, 500)
   const waste = unused.reduce((a, x) => a + x.loaded, 0)
-  if (waste >= 5000) {
-    return { level: 'info', icon: 'spark', color: K.sage, text: `Save ~${k(waste)} tokens a message`, detail: `${[...new Set(unused.map(toolName))].join(', ').replace('a connector', 'claude.ai connectors')} load into every message but weren't used in your recent chats. Turn them off in Costs (new chats only; one press turns them back on). Plugin skills: /plugin or Desktop → Customize.` }
-  }
+  if (waste >= 5000) return { level: 'warn', icon: 'spark', color: K.amber, action: 'costs', text: `Save ~${k(waste)} tokens a message`, detail: `${[...new Set(unused.map(toolName))].join(', ').replace('a connector', 'claude.ai connectors')} load into every message but weren't used in your recent chats. Turn them off in Costs (new chats only; one press turns them back on).` }
+  // a Dream is due: none in 3 days (or ever) and a good few chats since
+  const last = s.dream.recent[0]?.ts
+  const since = (s.episodes ?? []).filter(e => !last || e.end > last)
+  const sessions = new Set(since.map(e => e.session)).size
+  if (!s.dream.running && sessions >= 3 && since.length >= 10 && (!last || (minsSince(last) ?? 0) > 3 * DAY)) return { level: 'warn', icon: 'dream', color: K.amber, action: 'dream', text: `Dream due · ${last ? `last ${ago(minsSince(last))}` : 'none yet'}`, detail: `${sessions} chats since${last ? ' the last Dream' : ''}. A Dream checks Claude's memory against them in the background and only proposes changes.` }
+
+  // green: a fresh chat, and a recent handoff written by another chat
+  const other = !s.handoff.session || !l?.sessionId || s.handoff.session !== l.sessionId
+  if ((l?.turns ?? 0) === 0 && other && s.handoff.exists && s.handoff.ageMinutes !== null && s.handoff.ageMinutes < 3 * DAY) return { level: 'ok', icon: 'link', color: K.emerald, action: 'resume', text: 'Continue: type /cortex-resume', detail: `A handoff from ${s.handoff.from || 'your last session'} is saved.${fresh}` }
   return null
 }
 

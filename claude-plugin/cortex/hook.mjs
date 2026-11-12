@@ -50,9 +50,18 @@ function resolveProject(start) {
 
 // src/core/plugin.ts
 import { existsSync as existsSync2, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
-import { join as join2 } from "node:path";
+import { join as join3 } from "node:path";
+
+// src/core/home.ts
+import { homedir } from "node:os";
+import { dirname as dirname2, isAbsolute, join as join2, resolve as resolve2 } from "node:path";
+var cortexHome = () => process.env.CORTEX_HOME ?? join2(homedir(), ".cortex");
+var claudeHome = () => process.env.CORTEX_CLAUDE_HOME ?? process.env.CLAUDE_CONFIG_DIR ?? join2(homedir(), ".claude");
+var opencodeHome = () => process.env.CORTEX_OPENCODE_HOME ?? join2(homedir(), ".config", "opencode");
+
+// src/core/plugin.ts
 var FRESH_MS = 24 * 36e5;
-var marker = (p) => join2(p.priv, "plugin-hooks");
+var marker = (p) => join3(p.priv, "plugin-hooks");
 function pluginHooksTurn(p, fromPlugin, now = Date.now()) {
   const m = marker(p);
   let age2 = Infinity;
@@ -69,6 +78,14 @@ function pluginHooksTurn(p, fromPlugin, now = Date.now()) {
     }
   }
   return true;
+}
+function pluginListed(claudeDir = claudeHome()) {
+  try {
+    const j = JSON.parse(readFileSync(join3(claudeDir, "plugins", "installed_plugins.json"), "utf8"));
+    return Object.keys(j.plugins ?? {}).some((k) => k.startsWith("kapex-cortex@"));
+  } catch {
+    return false;
+  }
 }
 
 // src/core/self.ts
@@ -102,23 +119,23 @@ import {
   unlinkSync,
   writeSync
 } from "node:fs";
-import { basename, dirname as dirname2, join as join3 } from "node:path";
+import { basename, dirname as dirname3, join as join4 } from "node:path";
 var MAX_LINE_BYTES = 16 * 1024;
 var sha = (data) => createHash("sha256").update(data).digest("hex");
-function atomicWriteIfChanged(path, data) {
+function atomicWriteIfChanged(path, data, opts = {}) {
   if (existsSync3(path)) {
     try {
       if (sha(readFileSync2(path)) === sha(data)) return false;
     } catch {
     }
   }
-  const dir = dirname2(path);
+  const dir = dirname3(path);
   mkdirSync(dir, { recursive: true });
-  const tmp = join3(dir, `.${basename(path)}.${process.pid}.${randomBytes(4).toString("hex")}.nosync`);
+  const tmp = join4(dir, `.${basename(path)}.${process.pid}.${randomBytes(4).toString("hex")}.nosync`);
   const fd = openSync(tmp, "w", 420);
   try {
     writeSync(fd, data);
-    fsyncSync(fd);
+    if (opts.durable !== false) fsyncSync(fd);
   } finally {
     closeSync(fd);
   }
@@ -137,7 +154,7 @@ function appendLine(path, line) {
   if (line.includes("\n")) throw new Error("appendLine: line must not contain a newline");
   const buf = Buffer.from(line + "\n", "utf8");
   if (buf.length > MAX_LINE_BYTES) throw new Error(`appendLine: line is ${buf.length} bytes (max ${MAX_LINE_BYTES})`);
-  mkdirSync(dirname2(path), { recursive: true });
+  mkdirSync(dirname3(path), { recursive: true });
   const fd = openSync(path, "a", 420);
   try {
     writeSync(fd, buf);
@@ -178,7 +195,7 @@ function rotateJsonl(path, maxBytes, keepLines) {
 // src/util/lock.ts
 import { closeSync as closeSync2, existsSync as existsSync4, mkdirSync as mkdirSync2, openSync as openSync2, readFileSync as readFileSync3, statSync as statSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync2, writeSync as writeSync2 } from "node:fs";
 import { randomBytes as randomBytes2 } from "node:crypto";
-import { dirname as dirname3 } from "node:path";
+import { dirname as dirname4 } from "node:path";
 var sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 function pidAlive(pid) {
   try {
@@ -207,7 +224,7 @@ function tryLock(lockPath, opts = {}) {
   const waitMs = opts.waitMs ?? 100;
   const staleMs = opts.staleMs ?? 1e4;
   const token = `${process.pid} ${Date.now()} ${randomBytes2(4).toString("hex")}`;
-  mkdirSync2(dirname3(lockPath), { recursive: true });
+  mkdirSync2(dirname4(lockPath), { recursive: true });
   const deadline = Date.now() + waitMs;
   for (; ; ) {
     try {
@@ -236,7 +253,7 @@ function tryLock(lockPath, opts = {}) {
   }
 }
 var touch = (path) => {
-  mkdirSync2(dirname3(path), { recursive: true });
+  mkdirSync2(dirname4(path), { recursive: true });
   writeFileSync2(path, String(Date.now()));
 };
 var clearFlag = (path) => {
@@ -275,7 +292,7 @@ import { dirname as dirname5, join as join8 } from "node:path";
 
 // src/core/episodes.ts
 import { appendFileSync, existsSync as existsSync6, readFileSync as readFileSync5, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join5 } from "node:path";
+import { join as join6 } from "node:path";
 
 // src/util/ulid.ts
 import { randomBytes as randomBytes3 } from "node:crypto";
@@ -336,10 +353,10 @@ function segments(text) {
 
 // src/core/transcript.ts
 import { closeSync as closeSync3, existsSync as existsSync5, fstatSync, openSync as openSync3, readFileSync as readFileSync4, readSync } from "node:fs";
-import { join as join4 } from "node:path";
+import { join as join5 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 function cursorFile(p, key) {
-  return join4(p.cursors, `${key.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
+  return join5(p.cursors, `${key.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
 }
 function readCursor(p, key) {
   try {
@@ -422,8 +439,8 @@ function claudeNewTurns(p, session, transcriptPath, observe2) {
 }
 function opencodeDbPath() {
   const home = process.env.HOME ?? "";
-  const xdg = process.env.XDG_DATA_HOME ?? join4(home, ".local", "share");
-  return process.env.CORTEX_OPENCODE_DB ?? join4(xdg, "opencode", "opencode.db");
+  const xdg = process.env.XDG_DATA_HOME ?? join5(home, ".local", "share");
+  return process.env.CORTEX_OPENCODE_DB ?? join5(xdg, "opencode", "opencode.db");
 }
 function opencodeNewTurns(p, session, dbPath = opencodeDbPath()) {
   if (!session || !existsSync5(dbPath)) return [];
@@ -466,9 +483,9 @@ function opencodeLastAssistant(session, dbPath = opencodeDbPath()) {
 }
 
 // src/core/episodes.ts
-var file = (p) => join5(p.priv, "episodes.jsonl");
-var ratingsFile = (p) => join5(p.priv, "ratings.jsonl");
-var openFile = (p, session) => join5(p.priv, `episode-open-${session.replace(/[^\w.-]/g, "_")}.json`);
+var file = (p) => join6(p.priv, "episodes.jsonl");
+var ratingsFile = (p) => join6(p.priv, "ratings.jsonl");
+var openFile = (p, session) => join6(p.priv, `episode-open-${session.replace(/[^\w.-]/g, "_")}.json`);
 var TEST = /\b(?:(?:npm|pnpm|yarn|bun) (?:run )?(?:test|check|typecheck|lint)|pytest|go test|cargo test|vitest|jest|node --test|make (?:test|check)|claude plugin (?:test|validate))\b/;
 var EDIT_TOOLS = /* @__PURE__ */ new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 var empty = (session, ts) => ({ session, start: ts, end: ts, ask: "", tools: {}, files: [], commands: [], tests: { ran: 0, failed: 0 }, commits: 0, errors: 0, interrupted: false, skills: [], mcp: [], outTokens: 0, contextTokens: 0, pending: {} });
@@ -517,10 +534,12 @@ function observe(ep, entry) {
         }
       }
     } else if (b.type === "tool_result") {
+      const wasTest = ep.pending[String(b.tool_use_id)] === "test";
       if (b.is_error) {
         ep.errors++;
-        if (ep.pending[String(b.tool_use_id)] === "test") ep.tests.failed++;
+        if (wasTest) ep.tests.failed++;
       }
+      if (wasTest) ep.tests.lastOk = !b.is_error;
       delete ep.pending[String(b.tool_use_id)];
     }
   }
@@ -564,14 +583,6 @@ function readEpisodes(p, limit = 30) {
 // src/core/prefs.ts
 import { mkdirSync as mkdirSync3, readFileSync as readFileSync6, writeFileSync as writeFileSync4 } from "node:fs";
 import { join as join7 } from "node:path";
-
-// src/core/home.ts
-import { homedir } from "node:os";
-import { dirname as dirname4, isAbsolute, join as join6, resolve as resolve2 } from "node:path";
-var cortexHome = () => process.env.CORTEX_HOME ?? join6(homedir(), ".cortex");
-var claudeHome = () => process.env.CORTEX_CLAUDE_HOME ?? process.env.CLAUDE_CONFIG_DIR ?? join6(homedir(), ".claude");
-
-// src/core/prefs.ts
 var TOKEN_MODES = ["lean", "balanced", "rich"];
 var DREAM_BACKENDS = ["claude", "opencode", "api", "off"];
 var DEFAULT_PREFS = {
@@ -936,6 +947,15 @@ description: Turn on Kapex Cortex in the current project (status strip and panel
 `
   };
 }
+function installSkills(home, node, cli, opts = {}) {
+  const written = [];
+  const dirs = opts.plugin ? opts.opencode ? [join12(opencodeHome(), "skills")] : [] : [join12(home, ".claude", "skills")];
+  for (const dir of dirs) for (const [name, body] of Object.entries(skillFiles(node, cli))) {
+    const path = join12(dir, name, "SKILL.md");
+    if (atomicWriteIfChanged(path, body)) written.push(path);
+  }
+  return written;
+}
 var RETIRED = ["cortex-approve"];
 function refreshOwnSkills(home = claudeHome()) {
   const dir = join12(home, "skills");
@@ -946,14 +966,27 @@ function refreshOwnSkills(home = claudeHome()) {
       return false;
     }
   };
-  if (!existsSync10(join12(dir, "cortex-resume", "SKILL.md")) && !RETIRED.some((n) => existsSync10(join12(dir, n, "SKILL.md")))) return [];
+  const names = ["cortex-resume", "cortex-handoff", "cortex-init"];
+  if (!names.some((n) => existsSync10(join12(dir, n, "SKILL.md"))) && !RETIRED.some((n) => existsSync10(join12(dir, n, "SKILL.md")))) return [];
   let install = {};
   try {
     install = JSON.parse(readFileSync10(join12(cortexHome(), "config.json"), "utf8")).install ?? {};
   } catch {
   }
-  if (!install.node) return [];
   const changed = [];
+  if (pluginListed(home)) {
+    const oc = opencodeHome();
+    if (existsSync10(oc) && install.node) changed.push(...installSkills("", install.node, install.cli ?? "", { plugin: true, opencode: true }));
+    for (const name of [...names, ...RETIRED]) {
+      const f = join12(dir, name, "SKILL.md");
+      if (existsSync10(f) && own(f)) {
+        rmSync3(join12(dir, name), { recursive: true, force: true });
+        changed.push(f);
+      }
+    }
+    return changed;
+  }
+  if (!install.node) return [];
   for (const [name, body] of Object.entries(skillFiles(install.node, install.cli ?? ""))) {
     const f = join12(dir, name, "SKILL.md");
     if (existsSync10(f) && own(f) && atomicWriteIfChanged(f, body)) changed.push(f);
@@ -1086,9 +1119,41 @@ function readMemoryCheck(p) {
     return null;
   }
 }
-function commitsSince(root, since) {
-  const r = spawnSync("git", ["-C", root, "log", `--since=${since}`, "--format=%h %s", "-n", "15"], { encoding: "utf8", timeout: 1500 });
-  return r.status === 0 ? r.stdout.split("\n").filter(Boolean) : [];
+function headSha(root) {
+  try {
+    const head2 = readFileSync11(join13(root, ".git", "HEAD"), "utf8").trim();
+    const ref = /^ref: (refs\/heads\/.+)$/.exec(head2)?.[1];
+    if (!ref) return null;
+    try {
+      return readFileSync11(join13(root, ".git", ref), "utf8").trim() || null;
+    } catch {
+    }
+    const packed = readFileSync11(join13(root, ".git", "packed-refs"), "utf8").split("\n").find((l) => l.endsWith(` ${ref}`));
+    return packed?.split(" ")[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+function commitsSince(p, since) {
+  const sha2 = headSha(p.root);
+  const file3 = join13(p.priv, "commits-cache.json");
+  const key = `${since}|${sha2}`;
+  if (sha2) {
+    try {
+      const c = JSON.parse(readFileSync11(file3, "utf8"));
+      if (c.key === key) return c.out;
+    } catch {
+    }
+  }
+  const r = spawnSync("git", ["-C", p.root, "log", `--since=${since}`, "--format=%h %s", "-n", "15"], { encoding: "utf8", timeout: 1500 });
+  const out = r.status === 0 ? r.stdout.split("\n").filter(Boolean) : [];
+  if (sha2 && r.status === 0) {
+    try {
+      writeFileSync8(file3, JSON.stringify({ key, out }));
+    } catch {
+    }
+  }
+  return out;
 }
 function buildTiers(p, a) {
   const turns = readTurns(p, a.session);
@@ -1123,7 +1188,7 @@ ${pinnedLines.join("\n\n")}
     return `- T${i + 1} ${hhmm(e.start)} \xB7 ${oneLine2(scrub(ask).text, 120)}${e.done ? ` \u2192 ${oneLine2(scrub(e.done).text, 150)}` : ""}${extra ? ` _(${extra})_` : ""}`;
   };
   let trailLines = older.map(line);
-  const commits = a.git && eps[0] ? commitsSince(p.root, eps[0].start) : [];
+  const commits = a.git && eps[0] ? commitsSince(p, eps[0].start) : [];
   const tail = commits.length ? `
 **Commits this session** (newest first): ${commits.map((c) => `\`${oneLine2(c, 90)}\``).join(" \xB7 ")}` : "";
   const head2 = "## Session trail (earlier turns, oldest first; the newest are below, word for word)\n";
@@ -1264,8 +1329,8 @@ function refreshState(p, inp, opts = {}) {
   const text = renderState(p, inp, gi);
   const base = join14(p.states, inp.session.replace(/[^A-Za-z0-9_-]/g, "_"));
   runSerialized(p.viewsLock, p.viewsDirty, () => {
-    atomicWriteIfChanged(`${base}.input.json`, JSON.stringify({ ...inp, now: void 0 }));
-    atomicWriteIfChanged(`${base}.md`, text);
+    atomicWriteIfChanged(`${base}.input.json`, JSON.stringify({ ...inp, now: void 0 }), { durable: false });
+    atomicWriteIfChanged(`${base}.md`, text, { durable: false });
     const newest = newestSessionState(p);
     if (newest) atomicWriteIfChanged(statePath(p), readFileSync12(newest, "utf8"));
   });
@@ -1330,7 +1395,7 @@ function workingContext(p, inp, gi) {
     changed.length ? "Uncommitted:\n```\n" + changed.join("\n") + "\n```" : "",
     "",
     "## Last check",
-    tested ? `\`${testCmd.slice(0, 80)}\` ${tested.tests.failed ? `FAILED (${tested.tests.failed} of ${tested.tests.ran} runs)` : "passed"}, ${ago(Date.now() - Date.parse(tested.end))} ago.` : "_No test or check run in the last turns._",
+    tested ? `\`${testCmd.slice(0, 80)}\` ${!tested.tests.failed ? "passed" : tested.tests.lastOk ? `passed on the last run (${tested.tests.failed} of ${tested.tests.ran} runs failed earlier and were fixed)` : `FAILED on the last run (${tested.tests.failed} of ${tested.tests.ran} runs failed)`}, ${ago(Date.now() - Date.parse(tested.end))} ago.` : "_No test or check run in the last turns._",
     "",
     ...open.length ? ["## Open items", open.map((o) => `- [ ] ${o}`).join("\n"), ""] : []
   ];

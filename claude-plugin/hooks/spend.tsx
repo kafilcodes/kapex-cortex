@@ -18,7 +18,7 @@ export function spendCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: Sta
   const sp = s.spend
   if (!sp || !sp.all.replies) return null
   const col = (key: string, label: string, x: TokensView) => (
-    <Box key={key} width="30%" flexGrow={1} minWidth={18} flexDirection="column" gap={0} backgroundColor={K.pill} paddingX={1} paddingY={1}>
+    <Box key={key} width="30%" flexGrow={1} minWidth={18} flexDirection="column" gap={0} backgroundColor={K.pill} {...u.inset()} paddingX={1} paddingY={1}>
       <Text size="caption" color={K.label}>{label}</Text>
       <Text size="heading" weight="semibold" tabular color={K.text}>{k(total(x))}</Text>
       {u.graphic(`${key}-g`, stacked({ items: PARTS.map(([f, l, c]) => ({ value: x[f], color: c, label: `${l}: ${k(x[f])}` })), width: Math.max(80, Math.min(px * 0.27, 300)), animate: animateFor(`sp-${key}`, String(total(x))) }), PARTS.map(([f, l]) => `${l} ${k(x[f])}`).join(', '))}

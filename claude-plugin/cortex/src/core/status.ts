@@ -15,6 +15,8 @@ import { buildTimeline, type TimelineEvent } from "./timeline.ts";
 import { toolUsage, type Usage } from "./usage.ts";
 import { projectSpend, type Spend } from "./spend.ts";
 import { parkView, type ParkView } from "./park.ts";
+import { cortexFootprint } from "./plugin.ts";
+import { auditSafety, type SafetyView } from "./safety.ts";
 
 /** One snapshot of everything the panel, the strip and `kc s` show. Built from files on disk and a few git calls. */
 export interface Status {
@@ -26,7 +28,7 @@ export interface Status {
   episodes: EpisodeView[];
   timeline: TimelineEvent[];
   /** what a new chat will know after /cortex-resume, and what that costs */
-  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal: string; next: string; instructions: number; decisions: number; trail: number; commits: number; flagged: number } };
+  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal: string; next: string; instructions: number; decisions: number; trail: number; commits: number; flagged: number } };
   /** Claude Code's own memory files: what loads into every session, and what each costs */
   native: { files: NativeFile[]; alwaysTokens: number; alwaysLines: number; autoMemory: { dir: string; enabled: boolean } };
   /** Dreams: one running now, and the recent ones (newest first) */
@@ -34,6 +36,8 @@ export interface Status {
   git: { branch: string; dirty: number; untracked: number; wip: { ref: string; sha: string; at: string } | null } | null;
   hooks: { p95: number | null; samples: number; cap: number; recent?: number[] };
   opencode: { installed: boolean; plugin: boolean };
+  footprint: { tokens: number; skills: number; duplicates: number };
+  safety: SafetyView;
   history: History;
   /** skills, MCP servers and tools used in the last 20 Claude Code chats here */
   usage: Usage;
@@ -99,6 +103,7 @@ export function computeStatus(p: RepoPaths): Status {
       exists: !!head,
       ageMinutes: head ? minutesSince(sp) : null,
       ready: /HANDOFF READY/.test(head),
+      session: /· session ([^\s·]+)/.exec(head.split("\n")[0] ?? "")?.[1] ?? "",
       from: /· from ([^ ]+)/.exec(head.split("\n")[0] ?? "")?.[1] ?? "",
       preview: head ? {
         exchanges: (head.match(/^### You /gm) ?? []).length,
@@ -120,6 +125,8 @@ export function computeStatus(p: RepoPaths): Status {
     git: gitStatus(p.root),
     hooks: { ...hookP95(p), cap: 150 },
     opencode: { installed: existsSync(join(homedir(), ".opencode", "bin", "opencode")), plugin: existsSync(join(p.root, ".opencode", "plugins", "kapex-cortex.ts")) },
+    footprint: cortexFootprint(),
+    safety: auditSafety(p),
     history,
     usage: toolUsage(p),
     spend: projectSpend(p),

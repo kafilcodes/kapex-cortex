@@ -11,9 +11,14 @@ export function kit(els: ElementTable, surface: string) {
   const { Box, Text } = els
   const Svg = surface === 'terminal' ? undefined : (els as unknown as { Svg?: (p: SvgProps) => JSX.Element }).Svg
   const size = (svg: string, d: 'width' | 'height') => Number(new RegExp(`${d}="(\\d+)"`).exec(svg)?.[1] ?? 0)
+  // The desktop rounds a Box only when it has a border, so inner tiles (metric cells, KPI cells) get a soft round edge
+  // to match the cards' corners. Never on badges and chips: a bordered Box gets the card's padding and turns a chip
+  // into a tall button. The terminal draws borders as extra rows of box characters, so there they stay plain.
+  const inset = (color: string = K.edge): { borderStyle?: string; borderColor?: string } => (surface === 'terminal' ? {} : { borderStyle: 'round', borderColor: color })
   return {
     els,
     Svg,
+    inset,
     /** a drawing, or its words where drawings can't show (the terminal) */
     graphic: (key: string, svg: string, alt: string, interactive = false) =>
       Svg ? <Svg key={key} source={svg} alt={alt} width={size(svg, 'width')} height={size(svg, 'height')} {...(interactive ? { isInteractive: true } : {})} /> : <Text key={key} color={K.label}>{alt}</Text>,

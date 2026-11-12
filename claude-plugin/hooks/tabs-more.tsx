@@ -43,7 +43,7 @@ export function detailsBody($: Dollar, o: Ctx, t: Tiles): JSX.Element {
         line('d-plan-l', 'Plan usage, 5-hour window', five ? `${five.percentUsed}%${five.resetsAt ? ` · resets ${clock(Date.parse(five.resetsAt))}` : ''}` : 'no data'),
         u.graphic('d-plan-g', micro({ share: (five?.percentUsed ?? 0) / 100, width: w, animate: animateFor('dplan', `${five?.percentUsed}`) }), `${five?.percentUsed ?? 0}% used`),
         line('d-mem', 'Memory Claude loads in every session', `${k(s.native.alwaysTokens)} tokens · ${s.native.alwaysLines} lines`),
-        line('d-cx', 'What Cortex adds to your messages', '0 tokens (hooks write files; nothing is injected)'),
+        line('d-cx', 'What Cortex adds to your messages', s.footprint ? `~${k(s.footprint.tokens)} tokens: its ${s.footprint.skills} skill descriptions${s.footprint.duplicates ? `, ${s.footprint.duplicates} listed twice (old copies in ~/.claude/skills)` : ''}; plus one short note when a chat opens with a handoff waiting` : 'its skill descriptions, plus one short note when a chat opens with a handoff waiting'),
       ])}
       {rows.length ? u.card('fixed', '100%', [
         u.head('fx-t', 'Loaded into every message', `${k(rows.reduce((a, r) => a + r.tokens, 0))} tokens before you type`),

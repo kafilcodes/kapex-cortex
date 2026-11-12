@@ -168,8 +168,9 @@ export function refreshState(p: RepoPaths, inp: StateInput, opts: { snapshot?: b
   const text = renderState(p, inp, gi);
   const base = join(p.states, inp.session.replace(/[^A-Za-z0-9_-]/g, "_"));
   runSerialized(p.viewsLock, p.viewsDirty, () => {
-    atomicWriteIfChanged(`${base}.input.json`, JSON.stringify({ ...inp, now: undefined }));
-    atomicWriteIfChanged(`${base}.md`, text);
+    // per-session working copies, rebuilt every turn: atomic but not fsynced; STATE.md, the handoff itself, is
+    atomicWriteIfChanged(`${base}.input.json`, JSON.stringify({ ...inp, now: undefined }), { durable: false });
+    atomicWriteIfChanged(`${base}.md`, text, { durable: false });
     const newest = newestSessionState(p);
     if (newest) atomicWriteIfChanged(statePath(p), readFileSync(newest, "utf8"));
   });
@@ -254,7 +255,7 @@ function workingContext(p: RepoPaths, inp: StateInput, gi: GitInfo | null): stri
     changed.length ? "Uncommitted:\n```\n" + changed.join("\n") + "\n```" : "",
     "",
     "## Last check",
-    tested ? `\`${testCmd.slice(0, 80)}\` ${tested.tests.failed ? `FAILED (${tested.tests.failed} of ${tested.tests.ran} runs)` : "passed"}, ${ago(Date.now() - Date.parse(tested.end))} ago.` : "_No test or check run in the last turns._",
+    tested ? `\`${testCmd.slice(0, 80)}\` ${!tested.tests.failed ? "passed" : tested.tests.lastOk ? `passed on the last run (${tested.tests.failed} of ${tested.tests.ran} runs failed earlier and were fixed)` : `FAILED on the last run (${tested.tests.failed} of ${tested.tests.ran} runs failed)`}, ${ago(Date.now() - Date.parse(tested.end))} ago.` : "_No test or check run in the last turns._",
     "",
     ...(open.length ? ["## Open items", open.map((o) => `- [ ] ${o}`).join("\n"), ""] : []),
   ];

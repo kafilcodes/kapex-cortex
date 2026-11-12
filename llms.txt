@@ -1,0 +1,26 @@
+# Kapex Cortex
+
+> Kapex Cortex is an open-source Claude Code plugin (MIT, zero runtime dependencies, Node.js 23.6+) that adds a live status strip and a costs panel, lossless handoffs between chats, Dreams that check Claude's memory files against what really happened, and a safety check for long autonomous runs. It never rewrites or compresses prompts; its always-on context cost is about 250 tokens (three skill descriptions).
+
+Install in Claude Code: `/plugin marketplace add kafilcodes/kapex-cortex` then `/plugin install kapex-cortex@kapex-cortex`. Open the panel with `/kc`.
+
+## What it does
+
+- Status strip above the prompt: context %, prompt-cache countdown, 5-hour and weekly plan use, handoff state, one tip.
+- Costs: what each MCP server and skill adds to every message; one press turns unused MCP servers off for new chats (Claude Code's own per-project switch).
+- Lossless handoff: `.vault/STATE.md` rewritten after every reply (goal, standing instructions, turn trail, last exchanges word for word); `/cortex-resume` continues in a new chat or in OpenCode after a usage limit.
+- Fresh-eyes check: a zero-context subagent reads only the handoff and reports gaps (the "Goldfish" idea from Google's Elephant-Goldfish model).
+- Dream: checks CLAUDE.md, .claude/rules and auto memory against transcripts, test runs and git; proposes fixes with Apply and Undo; never writes on its own.
+- Safety for long runs: Read deny rules for .env and ~/.ssh, sandbox status, and a Stop-hook test gate that sends Claude back on failure (decision "block", at most 3 times).
+
+## Facts
+
+- Works with: Claude Code CLI and Desktop (macOS tested by hand; Linux and Windows pass CI). OpenCode as a usage-limit fallback.
+- Does not: inject into messages, compress tokens, run an MCP server, keep its own memory store, or orchestrate sessions (Claude Code has subagents, agent view, agent teams and Projects for that).
+- Stop hook p95: about 50 ms on an Apple M4, including Node startup.
+
+## Docs
+
+- [README](https://github.com/kafilcodes/kapex-cortex/blob/main/README.md): install, features, Q&A, safety, limits
+- [BUILD-LOG](https://github.com/kafilcodes/kapex-cortex/blob/main/BUILD-LOG.md): what broke and how it was fixed
+- [License (MIT)](https://github.com/kafilcodes/kapex-cortex/blob/main/LICENSE)

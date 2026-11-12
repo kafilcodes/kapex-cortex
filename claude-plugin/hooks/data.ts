@@ -220,6 +220,8 @@ export async function toggleExpanded($: Dollar, id: string): Promise<void> {
   await update($, view, v => ({ ...v, expanded: v.expanded.includes(id) ? v.expanded.filter(x => x !== id) : [...v.expanded.slice(-40), id] }))
 }
 export async function setSub($: Dollar, sub: string): Promise<void> { await update($, view, v => ({ ...v, sub })) }
+/** First-run intro: the step to show, or -1 once finished or skipped. */
+export async function setIntro($: Dollar, step: number): Promise<void> { await update($, view, v => ({ ...v, intro: step })) }
 
 /** The handoff flow's step (Overview banner) and "Later". */
 export async function setFlow($: Dollar, flow: '' | 'confirm' | 'copied'): Promise<void> { await update($, view, v => ({ ...v, flow })) }

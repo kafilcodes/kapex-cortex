@@ -45,14 +45,25 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
   const lastDream = s.dream.recent[0]
   const waiting = toReview(s)
   const wip = s.git?.wip
-  const cellW = wide ? '20%' : '42%'
-  const cellPx = Math.max(70, Math.min(180, (wide ? (o.px * 0.62) / 4 : mid ? (o.px * 0.54) / 2 : o.px / 2) - 50))
+  // always a 2×2 grid: four across left the cells short and hollow at full width
+  const cellW = '42%'
+  const cellPx = Math.max(90, Math.min(300, (wide ? (o.px * 0.62) / 2 : mid ? (o.px * 0.54) / 2 : o.px / 2) - 50))
+  // one KPI cell: icon and title over the bar on the left, the value large on the right across both lines, then a
+  // small caption (and an action, e.g. Save) underneath. Cells grow to fill the card, so no empty strip is left below.
+  const barPx = Math.max(60, cellPx - 64)
   const cell = (key: string, icon: string, label: string, value: string, color: string, visual: JSX.Element | null, caption: string, action?: JSX.Element) => (
-    <Box key={key} width={cellW} flexGrow={1} minWidth={16} flexDirection="column" gap={0} backgroundColor={K.pill} paddingX={1} paddingY={1}>
-      <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>{u.tag(`${key}-l`, icon, color === K.muted ? K.silver : color, label, K.label)}{action ?? null}</Box>
-      <Text size="heading" weight="semibold" tabular color={color}>{value}</Text>
-      {visual}
-      {u.line(`${key}-c`, caption, false, K.muted, 'caption')}
+    <Box key={key} width={cellW} flexGrow={1} minWidth={16} flexDirection="column" justifyContent="space-between" gap={1} backgroundColor={K.pill} {...u.inset()} paddingX={1} paddingY={1}>
+      <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>
+        <Box flexDirection="column" gap={1} flexGrow={1} flexShrink={1} minWidth={8}>
+          {u.tag(`${key}-l`, icon, color === K.muted ? K.silver : color, label, K.label)}
+          {visual}
+        </Box>
+        <Box flexShrink={0}><Text size="title" weight="semibold" tabular color={color}>{value}</Text></Box>
+      </Box>
+      <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>
+        <Box flexGrow={1} flexShrink={1} minWidth={6}>{u.line(`${key}-c`, caption, false, K.muted, 'caption')}</Box>
+        {action ?? null}
+      </Box>
     </Box>
   )
   const unused = unusedTools(s, l, 200)
@@ -82,14 +93,14 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
         ])}
         {u.card('kpi', wKpi, [
           u.head('kpi-h', 'Plan, cache and handoff', hit !== null ? `${hit}% of the last reply cached` : undefined),
-          <Box key="cells" flexDirection="row" flexWrap="wrap" gap={1}>
-            {cell('c5', 'pending', '5-hour plan', five ? `${five.percentUsed}%` : '–', five ? levelColor(five.percentUsed / 100, 0.7, 0.9) : K.muted,
-              five ? u.graphic('g5', micro({ share: five.percentUsed / 100, width: cellPx, animate: animateFor('p5', `${five.percentUsed}`) }), `${five.percentUsed}% used`) : null,
+          <Box key="cells" flexDirection="row" flexWrap="wrap" gap={1} flexGrow={1}>
+            {cell('c5', 'pending', '5 Hr Plan', five ? `${five.percentUsed}%` : '–', five ? levelColor(five.percentUsed / 100, 0.7, 0.9) : K.muted,
+              five ? u.graphic('g5', micro({ share: five.percentUsed / 100, width: barPx, animate: animateFor('p5', `${five.percentUsed}`) }), `${five.percentUsed}% used`) : null,
               five ? (five.rolled ? `new window since ${clock(Date.parse(five.resetsAt!))} · updates after a reply` : `${five.resetsAt ? `resets ${clock(Date.parse(five.resetsAt))}` : ''}${planRate > 0.01 && five.percentUsed < 100 ? ` · limit ≈${clock(Date.now() + ((100 - five.percentUsed) / planRate) * 60_000)}` : ''}${stale}`) : 'appears after a reply')}
             {cell('c7', 'decision', 'This week', week ? `${week.percentUsed}%` : '–', week ? levelColor(week.percentUsed / 100, 0.7, 0.9) : K.muted,
-              week ? u.graphic('g7', micro({ share: week.percentUsed / 100, width: cellPx, animate: animateFor('p7', `${week.percentUsed}`) }), `${week.percentUsed}% used`) : null, week?.rolled ? 'new week started · updates after a reply' : `7-day window${week?.resetsAt ? ` · resets ${new Date(week.resetsAt).toLocaleDateString(undefined, { weekday: 'short' })} ${clock(Date.parse(week.resetsAt))}` : ''}${stale}`)}
+              week ? u.graphic('g7', micro({ share: week.percentUsed / 100, width: barPx, animate: animateFor('p7', `${week.percentUsed}`) }), `${week.percentUsed}% used`) : null, week?.rolled ? 'new week started · updates after a reply' : `7-day window${week?.resetsAt ? ` · resets ${new Date(week.resetsAt).toLocaleDateString(undefined, { weekday: 'short' })} ${clock(Date.parse(week.resetsAt))}` : ''}${stale}`)}
             {cell('cc', 'spark', 'Cache', cs.state === 'unknown' ? 'Idle' : cs.state === 'cold' ? 'Cold' : `${cs.leftMin} min`, { warm: K.sage, cooling: K.amber, cold: K.rose, unknown: K.muted }[cs.state],
-              cs.state === 'unknown' ? null : u.graphic('gc', drain({ share: cs.leftMin / (ttlMs / 60_000), seconds: 0, width: cellPx }), `${cs.leftMin} minutes of cache left`),
+              cs.state === 'unknown' ? null : u.graphic('gc', drain({ share: cs.leftMin / (ttlMs / 60_000), seconds: 0, width: barPx }), `${cs.leftMin} minutes of cache left`),
               cs.until ? (cs.state === 'cold' ? 'expired: the next reply re-reads everything' : `warm until ${clock(cs.until)}`) : 'warms up with your next reply')}
             {cell('ch', 'link', 'Handoff', s.handoff.exists ? ago(minsSince(s.stateAt)) : 'none', s.handoff.ready ? K.amber : s.handoff.exists ? K.emerald : K.muted,
               null, s.git ? `${s.git.branch} · ${s.git.dirty} changed${wip ? ` · snapshot ${ago(minsSince(wip.at))}` : ''}` : 'not a git repo',

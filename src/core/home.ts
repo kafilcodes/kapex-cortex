@@ -9,6 +9,8 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
  */
 export const cortexHome = () => process.env.CORTEX_HOME ?? join(homedir(), ".cortex");
 export const claudeHome = () => process.env.CORTEX_CLAUDE_HOME ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
+/** OpenCode's global config folder (~/.config/opencode): its skills live in skills/<name>/SKILL.md. */
+export const opencodeHome = () => process.env.CORTEX_OPENCODE_HOME ?? join(homedir(), ".config", "opencode")
 
 /** Claude Code names a project's folder after its path with every other character turned into "-". */
 export const projectSlug = (dir: string) => resolve(dir).replace(/[^A-Za-z0-9]/g, "-");

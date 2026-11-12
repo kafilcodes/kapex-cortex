@@ -51,9 +51,29 @@ export function writeMemoryCheck(p: RepoPaths, findings: { label: string; line: 
   try { writeFileSync(memoryCheckPath(p), JSON.stringify({ at: now.toISOString(), open } satisfies MemoryCheck)); } catch { /* best effort */ }
 }
 
-function commitsSince(root: string, since: string): string[] {
-  const r = spawnSync("git", ["-C", root, "log", `--since=${since}`, "--format=%h %s", "-n", "15"], { encoding: "utf8", timeout: 1_500 });
-  return r.status === 0 ? r.stdout.split("\n").filter(Boolean) : [];
+/** The commit HEAD points at, read from .git without starting git (null for anything unusual: worktrees, detached). */
+export function headSha(root: string): string | null {
+  try {
+    const head = readFileSync(join(root, ".git", "HEAD"), "utf8").trim();
+    const ref = /^ref: (refs\/heads\/.+)$/.exec(head)?.[1];
+    if (!ref) return null;
+    try { return readFileSync(join(root, ".git", ref), "utf8").trim() || null; } catch { /* packed */ }
+    const packed = readFileSync(join(root, ".git", "packed-refs"), "utf8").split("\n").find((l) => l.endsWith(` ${ref}`));
+    return packed?.split(" ")[0] ?? null;
+  } catch { return null; }
+}
+
+/** This session's commits. Asked of git only when HEAD moved since the last turn (most turns don't commit), which
+ * keeps one process start (about 9 ms) out of most Stop hooks. */
+function commitsSince(p: RepoPaths, since: string): string[] {
+  const sha = headSha(p.root);
+  const file = join(p.priv, "commits-cache.json");
+  const key = `${since}|${sha}`;
+  if (sha) { try { const c = JSON.parse(readFileSync(file, "utf8")) as { key: string; out: string[] }; if (c.key === key) return c.out; } catch { /* no cache yet */ } }
+  const r = spawnSync("git", ["-C", p.root, "log", `--since=${since}`, "--format=%h %s", "-n", "15"], { encoding: "utf8", timeout: 1_500 });
+  const out = r.status === 0 ? r.stdout.split("\n").filter(Boolean) : [];
+  if (sha && r.status === 0) { try { writeFileSync(file, JSON.stringify({ key, out })); } catch { /* best effort */ } }
+  return out;
 }
 
 export interface Tiers { pinned: string; trail: string; counts: { instructions: number; decisions: number; flagged: number; trail: number; commits: number } }
@@ -89,7 +109,7 @@ export function buildTiers(p: RepoPaths, a: { session: string; goal?: string; ha
     return `- T${i + 1} ${hhmm(e.start)} · ${oneLine(scrub(ask).text, 120)}${e.done ? ` → ${oneLine(scrub(e.done).text, 150)}` : ""}${extra ? ` _(${extra})_` : ""}`;
   };
   let trailLines = older.map(line);
-  const commits = a.git && eps[0] ? commitsSince(p.root, eps[0].start) : [];
+  const commits = a.git && eps[0] ? commitsSince(p, eps[0].start) : [];
   const tail = commits.length ? `\n**Commits this session** (newest first): ${commits.map((c) => `\`${oneLine(c, 90)}\``).join(" · ")}` : "";
   const head = "## Session trail (earlier turns, oldest first; the newest are below, word for word)\n";
   while (trailLines.length > 1 && head.length + trailLines.join("\n").length + tail.length > a.room.trail) trailLines = trailLines.slice(1);

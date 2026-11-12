@@ -21,12 +21,16 @@ export type StatusView = {
   name?: string
   episodes?: EpisodeView[]
   timeline?: TimelineEventView[]
-  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal?: string; next?: string; instructions?: number; decisions?: number; trail?: number; commits?: number; flagged?: number } }
+  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal?: string; next?: string; instructions?: number; decisions?: number; trail?: number; commits?: number; flagged?: number } }
   native: { files: NativeFileView[]; alwaysTokens: number; alwaysLines: number; autoMemory: { dir: string; enabled: boolean } }
   dream: { running: { since: string } | null; recent: DreamView[] }
   git: { branch: string; dirty: number; untracked: number; wip: { ref: string; sha: string; at: string } | null } | null
   hooks: { p95: number | null; samples: number; cap: number; recent?: number[] }
   opencode: { installed: boolean; plugin: boolean }
+  /** what Cortex adds to every message: its skill names and descriptions (duplicates: old copies in ~/.claude/skills) */
+  footprint?: { tokens: number; skills: number; duplicates: number }
+  /** the safety check for autonomous runs: secrets, sandbox, a check before Claude finishes */
+  safety?: { findings: { id: 'secrets' | 'sandbox' | 'gate'; level: 'ok' | 'info' | 'warn'; title: string; detail: string; fix?: 'secrets' | 'gate' }[]; command: string; undo: boolean }
   history?: HistoryView
   prefs?: PrefsView
   usage?: { chats: number; skills: Record<string, number>; mcp: Record<string, number>; tools: Record<string, number> }
@@ -63,11 +67,11 @@ export type LiveView = {
 export type Tab = 'overview' | 'timeline' | 'data' | 'settings' | 'waiting' | 'rules' | 'failed' | 'handoff' | 'compactions' | 'details'
 export type TimelineEventView = { id: string; ts: string; kind: string; title: string; detail?: string; tags: string[]; tone: 'ok' | 'warn' | 'bad' | 'info' }
 /** The Memory and Timeline tabs' list state. */
-export type ViewState = { collapsed: string[]; more: Record<string, number>; editing: string; expanded: string[]; sub: string; flow?: '' | 'confirm' | 'copied'; snooze?: { until: number; pct: number } }
+export type ViewState = { collapsed: string[]; more: Record<string, number>; editing: string; expanded: string[]; sub: string; flow?: '' | 'confirm' | 'copied'; snooze?: { until: number; pct: number }; /** first-run intro: the step shown, -1 once finished or skipped */ intro?: number }
 /** One turn of the session journal. */
 export type EpisodeView = {
   id: string; session: string; start: string; end: string; ask: string
-  tools: Record<string, number>; files: string[]; commands: string[]; tests: { ran: number; failed: number }
+  tools: Record<string, number>; files: string[]; commands: string[]; tests: { ran: number; failed: number; lastOk?: boolean }
   commits: number; errors: number; interrupted: boolean; skills: string[]; mcp: string[]
   outTokens: number; contextTokens: number; done: string; next: string
   rating?: { stars?: number; thumb?: 'up' | 'down'; note?: string }

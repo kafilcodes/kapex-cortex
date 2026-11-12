@@ -11,10 +11,11 @@ const sha = (data: string | Buffer) => createHash("sha256").update(data).digest(
 
 /**
  * Write a file atomically: temp file in the same directory (".nosync" so iCloud ignores it),
- * fsync, then rename over the target. Skips the write when content is unchanged.
+ * fsync, then rename over the target. Skips the write when content is unchanged. `durable: false` skips the fsync
+ * (still atomic: a reader never sees half a file) for working copies rebuilt every turn, where a power cut costs nothing.
  * Returns true if the file was written.
  */
-export function atomicWriteIfChanged(path: string, data: string): boolean {
+export function atomicWriteIfChanged(path: string, data: string, opts: { durable?: boolean } = {}): boolean {
   if (existsSync(path)) {
     try {
       if (sha(readFileSync(path)) === sha(data)) return false;
@@ -28,7 +29,7 @@ export function atomicWriteIfChanged(path: string, data: string): boolean {
   const fd = openSync(tmp, "w", 0o644);
   try {
     writeSync(fd, data);
-    fsyncSync(fd);
+    if (opts.durable !== false) fsyncSync(fd);
   } finally {
     closeSync(fd);
   }

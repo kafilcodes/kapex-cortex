@@ -7,8 +7,8 @@ import { installSkills } from "./skills.ts";
 import { pluginInstalled } from "./core/plugin.ts";
 
 /**
- * One-time, machine-level setup: the /cortex-* skills (when the plugin isn't installed, or for OpenCode, which reads
- * ~/.claude/skills too), and removal of the MCP server older versions registered (v3 has none: no tool definitions
+ * One-time, machine-level setup: the /cortex-* skills (in ~/.claude/skills without the plugin; with it, only OpenCode's
+ * own copy), and removal of the MCP server older versions registered (v3 has none: no tool definitions
  * in every message).
  */
 export function setup(opts: { node: string; cli: string }): string[] {
@@ -16,8 +16,8 @@ export function setup(opts: { node: string; cli: string }): string[] {
   const home = process.env.HOME ?? homedir();
   const plugin = pluginInstalled(home);
   const opencode = existsSync(join(home, ".opencode", "bin", "opencode"));
-  if (!plugin || opencode) for (const f of installSkills(home, opts.node, opts.cli)) out.push(`skill: ${f}`);
-  else out.push("skills: provided by the Kapex Cortex plugin");
+  for (const f of installSkills(home, opts.node, opts.cli, { plugin, opencode })) out.push(`skill: ${f}`);
+  if (plugin) out.push(`skills: provided by the Kapex Cortex plugin${opencode ? " (OpenCode gets its own copy in ~/.config/opencode/skills)" : ""}`);
   const claude = [join(home, ".local", "bin", "claude"), "claude"].find((c) => c === "claude" || existsSync(c))!;
   const rm = spawnSync(claude, ["mcp", "remove", "-s", "user", "kapex-cortex"], { encoding: "utf8", timeout: 20_000 });
   if (rm.status === 0) out.push("mcp: removed the old per-user kapex-cortex server");

@@ -43,11 +43,12 @@ export function buildTimeline(p: RepoPaths, history: History, dreams: DreamRepor
   for (const e of readEpisodes(p, 40)) {
     const tags: string[] = [];
     if (e.files.length) tags.push(`${e.files.length} file${e.files.length === 1 ? "" : "s"}`);
-    if (e.tests.ran) tags.push(e.tests.failed ? "tests failed" : "tests passed");
+    const red = e.tests.failed > 0 && e.tests.lastOk !== true; // a failure fixed later in the turn is a pass
+    if (e.tests.ran) tags.push(red ? "tests failed" : e.tests.failed ? `tests passed · ${e.tests.failed} fixed` : "tests passed");
     if (e.commits) tags.push(`${e.commits} commit${e.commits === 1 ? "" : "s"}`);
     if (e.errors) tags.push(`${e.errors} error${e.errors === 1 ? "" : "s"}`);
     if (e.interrupted) tags.push("interrupted");
-    const tone = e.tests.failed ? "bad" : e.interrupted || e.errors > 2 ? "warn" : "ok";
+    const tone = red ? "bad" : e.interrupted || e.errors > 2 ? "warn" : "ok";
     ev.push({ id: `turn-${e.id}`, ts: e.end, kind: "turn", title: e.ask || "Follow-up turn (no new message from you)", detail: e.done || undefined, tags, tone });
   }
   ev.push(...gitEvents(p.root));

@@ -252,7 +252,7 @@ test('status strip: context ring, cache countdown, plan, handoff and waiting cou
   expect(String(strip.props.source)).toMatch(/<animate attributeName="width"/)
   await band.unmount()
   const term = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'terminal', props: {} } as any)
-  expect(await term.find({ type: 'Text', text: /^Cortex · context 42%/ })).toBeDefined()
+  expect(await term.find({ type: 'Text', text: /^Cortex · 2 memory fixes to review · context 42%/ })).toBeDefined()
   await term.unmount()
 })
 
@@ -302,11 +302,13 @@ test('tips: a cold cache on a big chat warns with the handoff; a cooling cache s
   const live = (tokens: number, percent: number) => ({ model: 'm', turns: 9, context: { tokens, window: 1_000_000, percent, rows: [{ name: 'Autocompact buffer', tokens: 30_000 }] }, limits: [] })
   const s = STATUS as any
   const cold = tipFor(s, live(758_000, 76) as any, { lastAt: Date.now() - 2 * 3_600_000, read: 0, write: 0, input: 0, ttl: '1h', ttlSource: 'x' }, [])
-  expect(cold?.text).toMatch(/^Cold cache: next message re-reads 758k$/)
-  expect(cold?.detail).toMatch(/a new chat starts with about 1\.8k tokens/)
+  expect(cold?.text).toMatch(/^Cold cache · hand off, save ~75\dk$/)
+  expect(cold?.level).toBe('act')
+  expect(cold?.action).toBe('handoff')
+  expect(cold?.detail).toMatch(/re-reads all 758k tokens/)
   const cooling = tipFor(s, live(300_000, 30) as any, { lastAt: Date.now() - 55 * 60_000, read: 0, write: 0, input: 0, ttl: '1h', ttlSource: 'x' }, [])
   expect(cooling?.text).toMatch(/^Cache cools at /)
-  expect(tipFor({ ...s, handoff: { ...s.handoff, exists: false } }, live(20_000, 2) as any, { lastAt: Date.now(), read: 0, write: 0, input: 0, ttl: '1h', ttlSource: 'x' }, [])).toBeNull()
+  expect(tipFor({ ...s, dream: { running: null, recent: [] }, handoff: { ...s.handoff, exists: false } }, live(20_000, 2) as any, { lastAt: Date.now(), read: 0, write: 0, input: 0, ttl: '1h', ttlSource: 'x' }, [])).toBeNull()
 })
 
 
@@ -381,4 +383,98 @@ test('mascot: the Overview mood follows Cortex status (stressed > dream > workin
   expect(a).not.toMatch(/<animate|<script|@keyframes/) // static
   for (let w = 100; w < 400; w++) moodSvg('hi', w)
   expect(cachedDrawings()).toBeLessThanOrEqual(64)
+})
+
+test('first run: a three-step intro with drawings; Start hides it for good; Settings shows it again; people with history skip it', async ($, on) => {
+  const store = new Map<string, unknown>()
+  engine(on, { ...STATUS, episodes: [] })
+  on('store.get', (_: unknown, e: any) => ({ value: store.get(e.key) }))
+  on('store.set', (_: unknown, e: any) => { store.set(e.key, e.value); return { value: undefined } })
+  await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'kc' } as any)
+  const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 70 } })
+  const text = async () => JSON.stringify(await ui.drawn())
+  expect(await text()).toContain('1 of 3')
+  expect(await ui.find({ key: 'tab-overview' })).toBeFalsy()
+  expect((await ui.findAll({ type: 'Svg' })).length).toBeGreaterThan(1)
+  await ui.press({ key: 'intro-next' })
+  expect(await text()).toContain('Switch chats without losing your place')
+  await ui.press({ key: 'intro-back' })
+  expect(await text()).toContain('1 of 3')
+  await ui.press({ key: 'intro-next' }); await ui.press({ key: 'intro-next' })
+  expect(await text()).toContain('Start using Cortex')
+  await ui.press({ key: 'intro-next' })
+  expect(store.get('intro-seen-1')).toBe(true)
+  expect(await ui.find({ key: 'tab-overview' })).toBeTruthy()
+  await ui.press({ key: 'tab-settings' })
+  await ui.press({ key: 'st-intro-b' })
+  expect(await text()).toContain('1 of 3')
+  await ui.press({ key: 'intro-skip' })
+  expect(await ui.find({ key: 'tab-overview' })).toBeTruthy()
+  await ui.unmount()
+})
+
+test('safety card: findings with Block / Add gate / Undo send kc safety; the handoff page offers a fresh-eyes check', async ($, on) => {
+  const calls: string[] = []
+  const safety = { command: 'npm test', undo: true, findings: [
+    { id: 'secrets', level: 'warn', title: '.env can be read', detail: 'Add deny rules.', fix: 'secrets' },
+    { id: 'sandbox', level: 'info', title: 'Sandbox off', detail: 'Type /sandbox.' },
+    { id: 'gate', level: 'warn', title: 'Nothing checks the work before Claude finishes', detail: 'Add a gate.', fix: 'gate' },
+  ] }
+  engine(on, { ...STATUS, safety, footprint: { tokens: 498, skills: 3, duplicates: 3 } }, {}, calls)
+  const sent: string[] = []
+  on('prompt.submit', (_: unknown, e: any) => { sent.push(String(e?.text ?? '')); return { text: String(e?.text ?? '') } })
+  await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'kc' } as any)
+  const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 160 } })
+  expect(JSON.stringify(await ui.drawn())).toContain('~498 tokens')
+  await ui.press({ key: 'tab-settings' })
+  expect(JSON.stringify(await ui.drawn())).toContain('Safety for long runs')
+  await ui.press({ key: 'sf-fix-secrets' }); await ui.press({ key: 'sf-fix-gate' }); await ui.press({ key: 'sf-undo' })
+  for (const c of ['safety apply secrets', 'safety apply gate', 'safety undo']) expect(calls).toContain(c)
+  await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-handoff' })
+  await ui.press({ key: 'kc-fish' })
+  expect(sent.some(t => /Fresh-eyes check/.test(t) && /not a fork/.test(t) && /\.vault\/STATE\.md/.test(t))).toBe(true)
+  await ui.unmount()
+})
+
+test('strip tips are a traffic light: red says the move and what it saves, amber says fine to continue, green only for a fresh chat from another chat', () => {
+  const live = (tokens: number, percent: number, turns = 9, sessionId = 'chat-b') => ({ model: 'm', turns, sessionId, context: { tokens, window: 1_000_000, percent, rows: [{ name: 'Autocompact buffer', tokens: 30_000 }] }, limits: [] })
+  const warm = { lastAt: Date.now(), read: 0, write: 0, input: 0, ttl: '1h', ttlSource: 'x' } as const
+  const s = { ...(STATUS as any), dream: { running: null, recent: [] }, prefs: { ...(STATUS as any).prefs, handoffAt: 80 }, handoff: { ...(STATUS as any).handoff, session: 'chat-a' } }
+  // all fine: no tip (the strip says All good)
+  expect(tipFor(s, live(200_000, 20) as any, warm, [])).toBeNull()
+  // amber: filling up, fine to continue, no button
+  const mid = tipFor(s, live(700_000, 70) as any, warm, [])
+  expect([mid?.level, mid?.text, mid?.action]).toEqual(['warn', '70% full · fine to continue', undefined])
+  expect(tipFor(s, live(200_000, 20) as any, warm, [{ kind: 'five_hour', percentUsed: 75 }] as any)?.text).toBe('5h plan 75% · fine to continue')
+  // red: at the hand-off threshold, the move and what it saves per message
+  const full = tipFor(s, live(820_000, 82) as any, warm, [])
+  expect([full?.level, full?.action]).toEqual(['act', 'handoff'])
+  expect(full?.text).toMatch(/^82% full · hand off, save ~8\d\dk$/)
+  expect(tipFor(s, live(200_000, 20) as any, warm, [{ kind: 'five_hour', percentUsed: 93 }] as any)?.text).toBe('5h plan 93% · hand off')
+  // green: only a brand-new chat, and only when the handoff came from another chat
+  expect(tipFor(s, live(20_000, 2, 0, 'chat-b') as any, warm, [])?.action).toBe('resume')
+  expect(tipFor(s, live(20_000, 2, 0, 'chat-a') as any, warm, [])).toBeNull()
+  expect(tipFor(s, live(20_000, 2, 1, 'chat-b') as any, warm, [])).toBeNull()
+  // a Dream is due after a few chats and 3+ days
+  const old = new Date(Date.now() - 5 * 86_400_000).toISOString()
+  const eps = Array.from({ length: 12 }, (_, i) => ({ id: `e${i}`, session: `c${i % 4}`, start: old, end: new Date(Date.now() - i * 3_600_000).toISOString(), ask: '', tools: {}, files: [], commands: [], tests: { ran: 0, failed: 0 }, commits: 0, errors: 0, interrupted: false, skills: [], mcp: [], outTokens: 0, contextTokens: 0, done: '', next: '' }))
+  const due = tipFor({ ...s, episodes: eps, dream: { running: null, recent: [{ ...DREAM, status: 'applied', ts: old, findings: [] }] } }, live(200_000, 20) as any, warm, [])
+  expect([due?.action, due?.text]).toEqual(['dream', 'Dream due · last 5 d ago'])
+})
+
+test('strip: All good when nothing needs you; one press Hand off saves the handoff and copies /cortex-resume', async ($, on) => {
+  const calls: string[] = []
+  engine(on, { ...STATUS, prefs: { ...STATUS.prefs, handoffAt: 80 }, dream: { running: null, recent: [] } }, {}, calls, { tokens: 820_000, percent: 82 })
+  on('ui.copy', () => ({ value: { isCopied: true } }))
+  on('turn.complete', () => ({ text: '' }))
+  await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1', usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 9_700, cache_creation_input_tokens: 200 } } as any)
+  const band: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: {} } as any)
+  expect(JSON.stringify(await band.drawn())).toContain('hand off, save')
+  await band.press({ key: 'kc-do' })
+  expect(calls).toContain('handoff')
+  await band.unmount()
 })

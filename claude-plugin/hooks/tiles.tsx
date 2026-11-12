@@ -59,7 +59,7 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[]) 
   const stack = (key: string, items: JSX.Element[]) => <Box key={key} flexDirection="column" gap={1}>{items}</Box>
   /** an icon, a value and what it counts, side by side */
   const metric = (key: string, icon: string, color: string, value: string, label: string, width = '30%') => (
-    <Box key={key} {...(width === '100%' ? {} : { width })} flexGrow={1} minWidth={14} flexDirection="row" gap={1} alignItems="center" backgroundColor={K.pill} paddingX={1} paddingY={1}>
+    <Box key={key} {...(width === '100%' ? {} : { width })} flexGrow={1} minWidth={14} flexDirection="row" gap={1} alignItems="center" backgroundColor={K.pill} {...u.inset()} paddingX={1} paddingY={1}>
       {u.node(`${key}-n`, icon, color, 20)}
       <Box flexDirection="column" flexShrink={1} minWidth={6}>
         <Text weight="semibold" tabular color={color === K.silver ? K.text : color}>{value}</Text>

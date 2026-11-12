@@ -8,7 +8,7 @@ import { dreamBody } from './dream-tab'
 import { filesBody } from './files-tab'
 import { detailsBody } from './tabs-more'
 import { illoHandoff } from './illos'
-import { K, RESUME } from './theme'
+import { GOLDFISH, K, RESUME } from './theme'
 import { tiles } from './tiles'
 
 // The "Dream & Memory" page: sub-pages Dream · Memory files · Handoff · Costs.
@@ -49,6 +49,19 @@ export function dataPage($: Dollar, o: Ctx): JSX.Element {
             <Button key="kc-resume" variant="primary" onPress={() => { void $.prompt.submit({ text: RESUME }) }}>Resume here</Button>
           </Box>
         </Box>
+        {u.card('h-fish', '100%', [
+          <Box key="h-fish-r" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2} rowGap={1} flexWrap="wrap">
+            <Box flexDirection="row" gap={1} alignItems="flex-start" flexGrow={1} flexShrink={1} minWidth={24}>
+              {u.node('h-fish-n', 'lesson', K.sage, 22)}
+              <Box flexDirection="column" gap={0} flexShrink={1}>
+                <Text weight="semibold" color={K.text}>Check with fresh eyes</Text>
+                <Text size="caption" color={K.label}>A helper that knows nothing of this chat reads only the handoff and the files it names, and says where it would get stuck. Runs once in this chat (roughly 20–50k tokens, more when the handoff names many files); nothing is added to later messages.</Text>
+              </Box>
+            </Box>
+            <Button key="kc-fish" variant="secondary" onPress={() => { void $.prompt.submit({ text: GOLDFISH }) }}>Check now</Button>
+          </Box>,
+          u.muted('h-fish-egm', 'The idea is the Goldfish from Google\'s Elephant-Goldfish model. For design docs and spec drift, its own plugin (egm) does the same.'),
+        ])}
         {u.card('h-git', '100%', [
           u.head('h-git-h', 'Code state', s.git ? s.git.branch : undefined),
           s.git ? (

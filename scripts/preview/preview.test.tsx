@@ -40,6 +40,7 @@ test('preview', async ($, on) => {
     for (const sub of ['dream', 'files', 'handoff', 'details']) await shot(`data-${sub}`, 'tab-data', `sub-${sub}`)
     await shot('data-dream', 'tab-data', 'sub-dream'); await opened('data-dream-open')
     await shot('settings', 'tab-settings')
+    await shot('intro-1', 'st-intro-b'); await shot('intro-2', 'intro-next'); await shot('intro-3', 'intro-next'); await ui.press({ key: 'intro-next' })
     await ui.press({ key: 'tab-overview' })
     await ui.unmount()
   }

@@ -9,6 +9,7 @@ process.env.CORTEX_HOME = mkdtempSync(join(tmpdir(), "cortex-test-home-"));
 process.env.CORTEX_CLAUDE_HOME = mkdtempSync(join(tmpdir(), "cortex-test-claude-")); // never the real ~/.claude
 process.env.CORTEX_NO_NAME_DETECT = "1"; // tests never read the real account name
 process.env.CORTEX_NO_NOTIFY = "1";
+process.env.CORTEX_OPENCODE_HOME = mkdtempSync(join(tmpdir(), "cortex-test-opencode-")); // never the real ~/.config/opencode
 
 export const ROOT = resolve(import.meta.dirname, "..");
 export const CLI = join(ROOT, "src", "cli.ts");

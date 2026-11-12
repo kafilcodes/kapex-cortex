@@ -2,10 +2,10 @@ import type { ElementTable } from 'claude-code'
 
 import type { CacheView, LiveView, StatusView, ViewState } from '../types'
 import { cacheState, clock } from './charts'
-import { setSub, setTab, toReview, type Dollar } from './data'
+import { act, handOff, setFlow, setSub, setTab, toReview, type Dollar } from './data'
 import type { Kit } from './kit'
 import { moodSvg, type Mood } from './mascot'
-import { switchParts, type Switch } from './switch'
+import { flaggedNotes, switchParts, type Switch } from './switch'
 import { K, RESUME } from './theme'
 import type { Tip } from './tips'
 
@@ -41,9 +41,12 @@ export function heroRow($: Dollar, els: ElementTable, u: Kit, o: { s: StatusView
     title = tip.text
     body = [
       u.line('hero-d', tip.detail, vw.expanded.includes('tip'), K.label, 'caption'),
-      row('hero-b', [/resume/.test(tip.text)
+      row('hero-b', [tip.action === 'resume'
         ? <Button key="tip-go" variant="primary" onPress={() => { void $.prompt.submit({ text: RESUME }) }}>Resume</Button>
-        : <Button key="tip-go" onPress={() => { void setTab($, 'data'); void setSub($, /tokens|subagent/i.test(tip.text) ? 'details' : 'handoff') }}>{/tokens a message/.test(tip.text) ? 'See costs' : 'What a new chat knows'}</Button>]),
+        : tip.action === 'handoff' ? <Button key="tip-go" variant="primary" onPress={() => { void (flaggedNotes(s) ? setFlow($, 'confirm') : handOff($)) }}>Hand off now</Button>
+        : tip.action === 'dream' ? <Button key="tip-go" variant="primary" onPress={() => { void act($, 'Dream started', ['dream']); void setTab($, 'data'); void setSub($, 'dream') }}>Dream now</Button>
+        : tip.action === 'review' ? <Button key="tip-go" variant="primary" onPress={() => { void setTab($, 'data'); void setSub($, 'dream') }}>Review</Button>
+        : <Button key="tip-go" onPress={() => { void setTab($, 'data'); void setSub($, tip.action === 'costs' ? 'details' : 'handoff') }}>{tip.action === 'costs' ? 'See costs' : 'What a new chat knows'}</Button>]),
     ]
   } else if (mood === 'dream') {
     title = s.dream.running ? 'Dream time: checking your memory' : `${waiting} memory note${waiting === 1 ? '' : 's'} to review`

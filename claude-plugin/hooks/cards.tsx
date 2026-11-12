@@ -16,7 +16,8 @@ export const cmdLabel = (c: string) => c.replace(/^(?:\s*[A-Za-z_]\w*=(?:"[^"]*"
 
 /** How a turn went, as one badge: tests failed › interrupted › tests passed › tool errors › done. */
 export function outcome(e: EpisodeView): { icon: string; color: string; text: string } {
-  if (e.tests.ran && e.tests.failed) return { icon: 'cross', color: K.rose, text: `${e.tests.failed} of ${e.tests.ran} checks failed` }
+  if (e.tests.ran && e.tests.failed && e.tests.lastOk) return { icon: 'check', color: K.emerald, text: `Checks passed · ${e.tests.failed} fixed` }
+  if (e.tests.ran && e.tests.failed) return { icon: 'cross', color: K.rose, text: e.tests.lastOk === false ? 'Last check failed' : `${e.tests.failed} of ${e.tests.ran} checks failed` }
   if (e.interrupted) return { icon: 'pending', color: K.amber, text: 'Interrupted' }
   if (e.tests.ran) return { icon: 'check', color: K.emerald, text: 'Checks passed' }
   if (e.errors) return { icon: 'alert', color: K.amber, text: `${e.errors} tool error${e.errors === 1 ? '' : 's'}` }
@@ -56,16 +57,17 @@ export function lastTurnCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: 
     said(els, u, 'ls-ask', /^Background|^A side|^CI /.test(ask) ? 'spark' : 'turn', K.silver, /^Background|^A side|^CI /.test(ask) ? 'Started by' : 'You asked', ask, open),
     <Box key="ls-m" flexDirection="row" gap={1} flexWrap="wrap">
       {t.metric('ls-f', 'file', e.files.length ? K.sage : K.silver, String(e.files.length), e.files.length === 1 ? 'file changed' : 'files changed', '40%')}
-      {t.metric('ls-t', 'test', e.tests.ran ? (e.tests.failed ? K.rose : K.emerald) : K.silver, e.tests.ran ? `${e.tests.ran - e.tests.failed}/${e.tests.ran}` : '–', 'checks passed', '40%')}
+      {t.metric('ls-t', 'test', e.tests.ran ? (e.tests.failed && !e.tests.lastOk ? K.rose : K.emerald) : K.silver, e.tests.ran ? `${e.tests.ran - e.tests.failed}/${e.tests.ran}` : '–', 'checks passed', '40%')}
       {t.metric('ls-c', 'commit', e.commits ? K.sage : K.silver, String(e.commits), e.commits === 1 ? 'commit' : 'commits', '40%')}
       {t.metric('ls-o', 'spark', K.silver, k(e.outTokens), 'tokens written', '40%')}
     </Box>,
     e.done ? said(els, u, 'ls-done', 'check', K.emerald, 'Done', e.done, open) : null,
     e.next ? said(els, u, 'ls-next', 'pending', K.amber, 'Next', e.next, open) : null,
-    <Box key="ls-foot" flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap">
+    // the footer sits at the card's bottom edge, level with the buttons of the card beside it
+    <Box key="ls-foot" flexGrow={1} flexDirection="column" justifyContent="flex-end"><Box flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap">
       <Text size="caption" color={K.muted}>{e.commands.length ? `Ran ${e.commands.length} command${e.commands.length === 1 ? '' : 's'}${e.commands.length <= 2 ? `: ${[...new Set(e.commands.map(cmdLabel))].join(' · ')}` : ''}` : 'No commands run'}</Text>
       {long ? <Button key="ls-more" plain onPress={() => { void toggleExpanded($, `last-${e.id}`) }}><Text size="caption" color={K.label}>{open ? 'Collapse' : 'Expand'}</Text></Button> : null}
-    </Box>,
+    </Box></Box>,
   ])
 }
 
@@ -83,7 +85,7 @@ export function savingsCard(u: Kit, t: Tiles, s: StatusView, hit: number | null,
   )
   return u.card('save', width, [
     u.head('save-h', 'Savings', 'this chat'),
-    row('sv-c', 'spark', K.emerald, 'Cortex adds to each message', '0 tokens'),
+    row('sv-c', 'spark', (s.footprint?.duplicates ?? 0) ? K.amber : K.emerald, 'Cortex adds to each message', s.footprint ? `~${k(s.footprint.tokens)} tokens` : '–'),
     row('sv-h', 'check', hit === null ? K.silver : hit < 50 ? K.amber : K.sage, 'Last reply read from cache', hit !== null ? `${hit}%` : '–'),
     row('sv-w', 'alert', waste >= 5000 ? K.amber : K.silver, waste ? 'Unused tools, per message' : 'Unused tools loaded', waste ? k(waste) : '0'),
     row('sv-u', 'turn', K.silver, 'This chat used so far', used !== undefined ? k(used) : '–'),
@@ -97,7 +99,7 @@ export function readyToSwitch($: Dollar, els: ElementTable, u: Kit, t: Tiles, s:
   const pv = s.handoff.preview
   if (!s.handoff.exists || !pv) return [u.illo(`${key}-none`, illoHandoff(150), 'No handoff yet', [<Text key={`${key}-none-t`} weight="semibold" color={K.text}>Ready to switch chats</Text>, u.muted(`${key}-none-d`, 'The handoff appears after the first reply here.')])]
   const cold = l?.context.tokens ?? 0
-  const failed = /FAILED/i.test(pv.lastCheck)
+  const failed = /FAILED/.test(pv.lastCheck) // capitals only: "failed earlier and were fixed" is a pass
   const pinned = (pv.instructions ?? 0) + (pv.decisions ?? 0)
   const flagged = Math.max(pv.flagged ?? 0, toReview(s))
   const clean = (x?: string) => (x ?? '').replace(/^\(pasted\) /, '').replace(/^_|_$/g, '')
@@ -117,7 +119,7 @@ export function readyToSwitch($: Dollar, els: ElementTable, u: Kit, t: Tiles, s:
     </Box>,
     flagged ? u.tag(`${key}-mem`, 'alert', K.amber, `${flagged} memory note${flagged === 1 ? '' : 's'} flagged: the handoff tells the new chat not to rely on ${flagged === 1 ? 'it' : 'them'}`, K.label) : null,
     pv.lastCheck ? u.tag(`${key}-c`, failed ? 'cross' : 'test', failed ? K.rose : K.emerald, `Last check: ${pv.lastCheck}`, K.label) : null,
-    <Box key={`${key}-t`} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} rowGap={1} flexWrap="wrap">
+    <Box key={`${key}-t`} flexGrow={1} flexDirection="column" justifyContent="flex-end"><Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} rowGap={1} flexWrap="wrap">
       <Box flexDirection="row" gap={1} alignItems="center" flexShrink={1}>
         {t.badge(`${key}-tk`, `≈${k(pv.tokens)} tokens to start`, K.emerald)}
         {cold > 50_000 ? <Text size="caption" color={K.muted}>{`instead of re-reading ${k(cold)}`}</Text> : null}
@@ -126,6 +128,6 @@ export function readyToSwitch($: Dollar, els: ElementTable, u: Kit, t: Tiles, s:
         <Button key="or-go" variant="secondary" onPress={() => { void setTab($, 'data'); void setSub($, 'handoff') }}>See the handoff</Button>
         <Button key="or-hand" variant="secondary" onPress={() => { void (flagged ? setFlow($, 'confirm') : handOff($)) }}>Hand off now</Button>
       </Box> : null}
-    </Box>,
+    </Box></Box>,
   ]
 }

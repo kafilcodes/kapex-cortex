@@ -7,6 +7,7 @@ export const K = {
   card: 'rgba(127,127,127,0.07)', // a bento card: one step up from the app's canvas
   pill: 'rgba(127,127,127,0.11)', // inner pills, tracks, cells
   hairline: 'rgba(127,127,127,0.20)', // 1px card borders
+  edge: 'rgba(127,127,127,0.13)', // softer 1px edge on inner tiles, so their rounded corners match the cards
   emerald: '#10B981', // brand, healthy, primary fills, headings, the active tab
   sage: '#34D399', // secondary accent, cache warmth, positive deltas
   pine: '#047857', // deeper emerald for fills that need contrast in light mode
@@ -38,3 +39,8 @@ export const FONT = `font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI',
 /** What "Resume" sends: plain words (a prompt starting with "/" is refused, it would run a command as you), which the
  * cortex-resume skill picks up. */
 export const RESUME = 'Resume from the Kapex Cortex handoff: read .vault/STATE.md and continue from where we left off.'
+
+/** What "Check with fresh eyes" sends: a Goldfish check (from Google's Elephant-Goldfish model). A subagent that shares
+ * none of this chat's assumptions reads only the handoff and the files it names, and says where a stranger would stall;
+ * this chat (the Elephant) then fixes the handoff. Nothing is added to later messages. */
+export const GOLDFISH = 'Fresh-eyes check of the Kapex Cortex handoff: start a new subagent (general-purpose, not a fork of this chat) that knows nothing of our conversation. Tell it to read only .vault/STATE.md and the files it names, then reply in at most 8 bullets: what it could not act on without asking (a vague goal or next action, a missing path, a term it can\'t find in the code, a check it can\'t run), then one line: "Ready" or "Not ready". Show me its report, then fix each gap with /cortex-handoff (a sharper goal, next action and decisions).'
