@@ -1,6 +1,6 @@
 {
   "name": "kapex-cortex",
-  "version": "3.8.1",
+  "version": "3.8.2",
   "description": "Kapex Cortex for Claude Code: a status strip and cost/cache panel, lossless handoffs between chats (and to OpenCode), Dreams that check Claude's own memory against what really happened, and a safety check for autonomous runs.",
   "license": "MIT",
   "types": "./types/index.d.ts",

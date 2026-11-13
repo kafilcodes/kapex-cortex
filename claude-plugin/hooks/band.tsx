@@ -8,8 +8,9 @@ import { tipFor } from './tips'
 import { iconPaths } from './icons'
 import { kit } from './kit'
 import { logoSvg } from './logo'
-import { esc, FONT, K, levelColor, RESUME } from './theme'
+import { esc, FONT, K, levelColor, RESUME, textWidth } from './theme'
 import { flaggedNotes } from './switch'
+import { readPulse } from './pulse'
 
 // The status strip above the prompt, like a phone's status bar: what Claude Code doesn't show you at a glance.
 // One line, never wrapping: the logo, one pill (context · cache · 5-hour plan), one more pill (the tip that matters
@@ -18,7 +19,6 @@ import { flaggedNotes } from './switch'
 // Claude Code's own background in light and dark mode. No timers: the cache bar empties through one SVG animation.
 type BandEvent = Parameters<Hook<'ui.render'>>[1]
 
-const CW = 6.3 // ≈ width of one 11 px character
 const H = 22
 type Part = (x: number) => [string, number]
 
@@ -27,7 +27,7 @@ function pill(parts: Part[]): string {
   let x = 9
   const out: string[] = []
   parts.forEach((p, i) => {
-    if (i) { out.push(`<circle cx="${x + 3}" cy="11" r="1.2" fill="${K.ink}" fill-opacity="0.6"/>`); x += 12 }
+    if (i) { out.push(`<circle cx="${x + 6}" cy="11" r="1.2" fill="${K.ink}" fill-opacity="0.6"/>`); x += 12 }
     const [svg, w] = p(x)
     out.push(svg)
     x += w
@@ -35,7 +35,7 @@ function pill(parts: Part[]): string {
   const W = Math.ceil(x + 9)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="${H / 2 - 0.5}" fill="${K.pill}" stroke="${K.hairline}"/>${out.join('')}</svg>`
 }
-const label = (t: string, color: string = K.ink, weight = 400): Part => (x) => [`<text x="${x}" y="15" ${FONT} font-size="11" font-weight="${weight}" fill="${color}">${esc(t)}</text>`, t.length * CW]
+const label = (t: string, color: string = K.ink, weight = 400): Part => (x) => [`<text x="${x}" y="15" ${FONT} font-size="11" font-weight="${weight}" fill="${color}">${esc(t)}</text>`, textWidth(t, 11, weight)]
 const ring = (share: number, color: string): Part => (x) => {
   const r = 6, len = 2 * Math.PI * r
   return [`<circle cx="${x + r}" cy="11" r="${r}" fill="none" stroke="${K.hairline}" stroke-width="2.6"/><circle cx="${x + r}" cy="11" r="${r}" fill="none" stroke="${color}" stroke-width="2.6" stroke-dasharray="${(Math.max(0, Math.min(1, share)) * len).toFixed(1)} ${len.toFixed(1)}" transform="rotate(-90 ${x + r} 11)" stroke-linecap="round"/>`, 2 * r + 5]
@@ -46,12 +46,14 @@ const bar = (share: number, color: string, drainSec = 0, w = 28): Part => (x) =>
   return [`<rect x="${x}" y="8" width="${w}" height="6" rx="3" fill="${K.hairline}"/><rect x="${x}" y="8" width="${f.toFixed(1)}" height="6" rx="3" fill="${color}">${anim}</rect>`, w + 5]
 }
 const glyph = (name: string, color: string): Part => (x) => [`<g transform="translate(${x} 4) scale(0.58)" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${iconPaths(name)}</g>`, 18]
+/** An icon on its own: its drawn width, without the gap kept for words after it (so it sits centred in its pill). */
+const alone = (part: Part): Part => (x) => [part(x)[0], 14]
 /** Two parts drawn as one (an indicator and its words). */
 const both = (a: Part, b: Part): Part => (x) => { const [s1, w1] = a(x); const [s2, w2] = b(x + w1); return [s1 + s2, w1 + w2] }
 
 /** The tip as a pill: its icon and words; the full reason shows on hover (an SVG title). */
-export function tipPill(t: Tip): string {
-  const svg = pill([both(glyph(t.icon, t.color), label(t.text, t.color === K.rose ? K.rose : K.ink, 600))])
+export function tipPill(t: Tip, compact = false): string {
+  const svg = pill([compact ? alone(glyph(t.icon, t.color)) : both(glyph(t.icon, t.color), label(t.text, t.color === K.rose ? K.rose : K.ink, 600))])
   return svg.replace(/(<svg[^>]*>)/, `$1<title>${esc(t.detail)}</title>`)
 }
 
@@ -59,19 +61,31 @@ export type Strip = { ctx: number | null; compactAt?: number; cacheShare: number
 
 /** The two pill drawings, and the same in words (for screen readers and the terminal). With a tip, the plan moves
  * out of the main pill (the tip says when the plan matters), so the line keeps its width. */
-export function stripParts(o: Strip, tip: Tip | null = null): { main: string; side: string; words: string } {
+export function stripParts(o: Strip, tip: Tip | null = null, room = Infinity): { main: string; side: string; words: string } {
   const near = (gap: number) => o.compactAt !== undefined && o.ctx !== null && o.ctx / 100 >= o.compactAt - gap
   const ctxColor = near(0.05) ? K.rose : near(0.15) ? K.amber : K.emerald
   const parts: Part[] = []
   if (o.ctx !== null) parts.push(both(ring(o.ctx / 100, ctxColor), label(`${Math.round(o.ctx)}% context`)))
   parts.push(both(bar(o.cacheShare, o.cacheColor, o.cacheSec, 22), label(o.cacheText, o.cacheColor === K.rose ? K.rose : K.ink)))
-  if (o.plan !== null && !tip) parts.push(both(bar(o.plan / 100, levelColor(o.plan / 100, 0.7, 0.9), 0, 22), label(`5h ${o.plan}%`)))
+  if (o.plan !== null && !tip) parts.push(both(bar(o.plan / 100, levelColor(o.plan / 100, 0.7, 0.9), 0, 22), label(`plan ${o.plan}%`)))
   const words = [o.ctx !== null ? `context ${o.ctx}%` : '', o.cacheText, o.plan !== null ? `5h ${o.plan}%` : '', o.week !== null ? `week ${o.week}%` : '', o.handoff === 'ready' ? 'handoff ready' : '', o.waiting ? `${o.waiting} to review` : ''].filter(Boolean).join(' · ')
   const main = pill(parts).replace(/(<svg[^>]*>)/, `$1<title>${esc(words)}</title>`)
   const hc = o.handoff === 'ready' ? K.amber : o.handoff === 'saved' ? K.emerald : K.ink
   // no tip: all is well. Say so (and that the handoff is kept), so the strip never looks like it wants something
-  const side = tip ? tipPill(tip) : o.handoff === 'ready' ? pill([both(glyph('link', K.amber), label('resume ready', K.amber))]) : pill([both(glyph('check', K.emerald), label(o.handoff === 'saved' ? 'All good · handoff saved' : 'All good', K.ink, 600))])
+  const full = tip ? tipPill(tip) : o.handoff === 'ready' ? pill([both(glyph('link', K.emerald), label('handoff ready', K.ink, 600))]) : pill([both(glyph('check', K.emerald), label(o.handoff === 'saved' ? 'All good · handoff saved' : 'All good', K.ink, 600))])
+  // a narrow chat column: the side pill keeps its icon and colour, its words move to the hover (never clipped by the buttons)
+  const w = (svg: string) => Number(/width="(\d+)"/.exec(svg)?.[1] ?? 0)
+  const side = w(main) + w(full) + 8 <= room ? full
+    : (tip ? tipPill(tip, true) : pill([alone(glyph(o.handoff === 'ready' ? 'link' : 'check', K.emerald))])).replace(/(<svg[^>]*>)(?!<title>)/, `$1<title>${esc(tip ? tip.text : o.handoff === 'ready' ? 'handoff ready' : 'All good')}</title>`)
   return { main, side, words }
+}
+
+/** Pixels left for the two pills: the band's width (Claude Code passes it in cells) less the logo, the buttons and gaps. */
+function room(e: BandEvent, tip: Tip | null, waiting: number): number {
+  const cols = (e as { props?: { bodyColumns?: number } }).props?.bodyColumns
+  if (!cols) return Infinity
+  const buttons = 44 + textWidth(`Open Cortex${waiting ? ` · ${waiting}` : ''}`, 13) + 28 + (tip?.action ? textWidth(ACTION_LABEL[tip.action] ?? '', 13) + 28 : 0)
+  return cols * 7.2 - 16 - buttons - 5 * 8
 }
 
 const ACTION_LABEL: Record<string, string> = { handoff: 'Hand off', dream: 'Dream', review: 'Review', costs: 'Costs', resume: 'Resume' }
@@ -90,6 +104,7 @@ async function doTip($: Dollar, action: string, s: NonNullable<Awaited<ReturnTyp
 }
 
 export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) => unknown): Promise<unknown> {
+  await readPulse($) // read so the heartbeat's changes (cache cooling, a plan reset) redraw the strip without a turn
   const { l, cv, vw } = await snapshot($)
   const s = await statusOrSaved($) // after a restart or an app update: the last good status at once, refreshed behind it
   const failed = await readFail($)
@@ -129,7 +144,7 @@ export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) =
     cacheColor: { warm: K.sage, cooling: K.amber, cold: K.rose, unknown: K.ink }[cs.state],
     plan: limits.find(x => x.kind === 'five_hour')?.percentUsed ?? null, week: limits.find(x => x.kind === 'seven_day')?.percentUsed ?? null,
     handoff: s.handoff.ready ? 'ready' : s.handoff.exists ? 'saved' : 'none', waiting,
-  }, tip)
+  }, tip, room(e, tip, waiting))
   const openLabel = <Text>{'Open Cortex'}{waiting ? <Text color={K.amber} weight="semibold">{` · ${waiting}`}</Text> : null}</Text>
   if (!u.Svg) return <Box flexDirection="row" gap={1} alignItems="center" justifyContent="space-between"><Text size="caption" color={waiting || (tip && tip.level !== 'ok') ? K.amber : undefined}>{`Cortex · ${tip ? `${tip.text} · ` : ''}${parts.words}`}</Text><Box flexDirection="row" gap={1}><Button key="kc-refresh" plain onPress={() => { void refreshNow($) }}>↻</Button><Button key="kc-open" plain onPress={open}>Open Cortex</Button></Box></Box>
   const Svg = u.Svg

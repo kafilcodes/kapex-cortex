@@ -35,12 +35,22 @@ export function gitEvents(root: string, limit = 25): TimelineEvent[] {
   });
 }
 
+/** A chat named in a few words: its title, or the first words you typed in it (cut on a word, with …). */
+export function chatLabel(t: string, n = 48): string {
+  const one = t.replace(/\s+/g, " ").replace(/^\(pasted\)\s*/i, "").trim();
+  return one.length <= n ? one : `${one.slice(0, n).replace(/\s+\S*$/, "")}…`;
+}
+
 /** Any date string as UTC ISO ("" when it isn't a date). */
 const iso = (ts: string) => { const t = Date.parse(ts); return Number.isNaN(t) ? "" : new Date(t).toISOString(); };
 
 export function buildTimeline(p: RepoPaths, history: History, dreams: DreamReport[]): TimelineEvent[] {
   const ev: TimelineEvent[] = [];
-  for (const e of readEpisodes(p, 40)) {
+  const eps = readEpisodes(p, 40);
+  // the first thing you typed in each chat (episodes are newest first, so the last one seen is the oldest)
+  const firstAsk = new Map<string, string>();
+  for (const e of eps) if (e.ask) firstAsk.set(e.session, e.ask);
+  for (const e of eps) {
     const tags: string[] = [];
     if (e.files.length) tags.push(`${e.files.length} file${e.files.length === 1 ? "" : "s"}`);
     const red = e.tests.failed > 0 && e.tests.lastOk !== true; // a failure fixed later in the turn is a pass
@@ -52,7 +62,10 @@ export function buildTimeline(p: RepoPaths, history: History, dreams: DreamRepor
     ev.push({ id: `turn-${e.id}`, ts: e.end, kind: "turn", title: e.ask || "Follow-up turn (no new message from you)", detail: e.done || undefined, tags, tone });
   }
   ev.push(...gitEvents(p.root));
-  for (const h of history.states) ev.push({ id: `hand-${h.session}-${h.at}`, ts: h.at, kind: "handoff", title: "Handoff saved", detail: h.goal || undefined, tags: [h.from || "unknown tool"], tone: "info" });
+  for (const h of history.states) {
+    const chat = chatLabel(h.chat || firstAsk.get(h.session) || "");
+    ev.push({ id: `hand-${h.session}-${h.at}`, ts: h.at, kind: "handoff", title: chat ? `Handoff from “${chat}”` : "Handoff saved", detail: h.goal || undefined, tags: [h.from || "unknown tool", ...(h.copies ? [`×${h.copies} chats`] : h.session ? [`chat ${h.session.slice(0, 8)}`] : [])], tone: "info" });
+  }
   for (const d of dreams.filter((x) => x.status !== "replaced")) { // a replaced Dream is noise: the newer one says it all
     const n = d.findings.filter((f) => f.action.op !== "none").length;
     const title = d.status === "failed" ? "Dream failed" : d.status === "applied" ? `Dream applied: ${n} change${n === 1 ? "" : "s"}` : d.status === "undone" ? "Dream undone" : d.status === "discarded" ? "Dream discarded" : d.status === "replaced" ? "Dream (replaced by a newer one)" : n ? `Dream: ${n} change${n === 1 ? "" : "s"} to review` : d.findings.length ? `Dream: ${d.findings.length} note${d.findings.length === 1 ? "" : "s"} for you to check` : "Dream: memory matches what happened";

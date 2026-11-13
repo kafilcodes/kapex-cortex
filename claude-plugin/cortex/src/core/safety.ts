@@ -8,7 +8,7 @@ import type { RepoPaths } from "./paths.ts";
  * The safety check for autonomous runs (auto mode, long sessions): three things Claude Code's own docs recommend and
  * that are easy to miss. Read-only until you press Apply, and every Apply can be undone.
  *   1. Secrets: Read deny rules for .env files and ~/.ssh, so Claude's file tools never open them (deny rules are
- *      checked before auto mode's classifier, which still lets about 1 in 10 risky actions through).
+ *      checked before auto mode's own safety check).
  *   2. Sandbox: on or off. Cortex never turns it on for you (it limits network and files for every shell command,
  *      which can break installs); it explains, and points to /sandbox.
  *   3. A check before Claude finishes: a Stop hook that runs the project's check and sends Claude back when it fails.
@@ -58,7 +58,7 @@ export function auditSafety(p: RepoPaths): SafetyView {
   const here = secretsHere(p.root);
   findings.push(env && ssh
     ? { id: "secrets", level: "ok", title: "Secrets are off limits", detail: "Deny rules keep Claude's file tools away from .env files and ~/.ssh. They're checked before auto mode decides anything." }
-    : { id: "secrets", level: here.length || !ssh ? "warn" : "info", title: here.length ? `${here.join(", ")} can be read` : "~/.ssh can be read", detail: `Add deny rules for ${[!env ? ".env files" : "", !ssh ? "~/.ssh" : ""].filter(Boolean).join(" and ")} (and ~/.aws/credentials). Deny rules are checked before auto mode's classifier, which still lets about 1 in 10 risky actions through.`, fix: "secrets" });
+    : { id: "secrets", level: here.length || !ssh ? "warn" : "info", title: here.length ? `${here.join(", ")} can be read` : "~/.ssh can be read", detail: `Add deny rules for ${[!env ? ".env files" : "", !ssh ? "~/.ssh" : ""].filter(Boolean).join(" and ")} (and ~/.aws/credentials). Deny rules are checked before auto mode's own safety check, so they hold even when it would allow the read.`, fix: "secrets" });
 
   const sbSsh = (sandbox?.filesystem?.denyRead ?? []).some((x) => /\.ssh|^~\/?$/.test(x)) || (sandbox?.credentials?.files ?? []).some((x) => /\.ssh/.test(x.path) && x.mode !== "allow");
   findings.push(sandbox?.enabled

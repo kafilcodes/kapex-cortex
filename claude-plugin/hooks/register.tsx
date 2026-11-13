@@ -2,6 +2,7 @@ import type { Register } from 'claude-code'
 
 import { renderBand } from './band'
 import { noteCwd, openPane, PANE, refresh, stampCache } from './data'
+import { startPulse, stopPulse, turnEnded, turnStarted } from './pulse'
 import { renderPane } from './panel'
 
 // Kapex Cortex: hook wiring only. State and refresh live in data.ts, the pane in panel.tsx + tabs.tsx.
@@ -12,14 +13,23 @@ export const register: Register = on => {
     // lets the model open the panel when asked ("show me Cortex"); behind ToolSearch, so it costs only its name per request
     await $.tool.register({ name: 'open_panel', description: 'Open the Kapex Cortex panel beside the chat: project rules, approvals, handoffs, compactions and cache. Use when the user asks to see Cortex, its panel or dashboard.', inputSchema: { type: 'object', properties: {} } })
     void refresh($)
+    startPulse($) // the strip stays true between turns: see pulse.ts
     return next(e)
   })
+  // the main thread's turn: the first request warms the cache, and the strip's numbers follow the turn live
+  on('turn.start', async ($, e, next) => {
+    const r = await next(e)
+    if ((e as { agentId?: string }).agentId === undefined) { void stampCache($); turnStarted($) }
+    return r
+  })
+  on('session.end', async ($, e, next) => { stopPulse(); return next(e) })
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     const u = (e as { usage?: { input_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number }; agentId?: string })
     if (!u.agentId) {
       const usage = u.usage
       await stampCache($, usage)
+      turnEnded($)
     }
     void refresh($)
     return r

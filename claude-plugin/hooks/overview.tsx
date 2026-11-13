@@ -5,7 +5,7 @@ import { cacheState, clock, k } from './charts'
 import { act, ago, animateFor, minsSince, setSub, setTab, toReview, type Dollar } from './data'
 import type { Kit } from './kit'
 import { lastTurnCard, readyToSwitch, savingsCard } from './cards'
-import { K, levelColor } from './theme'
+import { K, levelColor, textWidth } from './theme'
 import { tiles } from './tiles'
 import { heroRow } from './hero'
 import { switchDue } from './switch'
@@ -51,6 +51,8 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
   // one KPI cell: icon and title over the bar on the left, the value large on the right across both lines, then a
   // small caption (and an action, e.g. Save) underneath. Cells grow to fill the card, so no empty strip is left below.
   const barPx = Math.max(60, cellPx - 64)
+  // a caption is a few facts joined by " · ": keep as many whole facts as fit, never a word cut with …
+  const fit = (caption: string, px: number) => { const parts = caption.split(' · '); while (parts.length > 1 && textWidth(parts.join(' · '), 12) > px) parts.pop(); return parts.join(' · ') }
   const cell = (key: string, icon: string, label: string, value: string, color: string, visual: JSX.Element | null, caption: string, action?: JSX.Element) => (
     <Box key={key} width={cellW} flexGrow={1} minWidth={16} flexDirection="column" justifyContent="space-between" gap={1} backgroundColor={K.pill} {...u.inset()} paddingX={1} paddingY={1}>
       <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>
@@ -61,7 +63,7 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
         <Box flexShrink={0}><Text size="title" weight="semibold" tabular color={color}>{value}</Text></Box>
       </Box>
       <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>
-        <Box flexGrow={1} flexShrink={1} minWidth={6}>{u.line(`${key}-c`, caption, false, K.muted, 'caption')}</Box>
+        <Box flexGrow={1} flexShrink={1} minWidth={6}>{u.line(`${key}-c`, fit(caption, cellPx - 24 - (action ? 40 : 0)), false, K.muted, 'caption')}</Box>
         {action ?? null}
       </Box>
     </Box>
@@ -76,7 +78,7 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
 
       <Box key="hero" flexDirection="row" flexWrap="wrap" gap={1}>
         {u.card('ctx', wCtx, [
-          u.head('ctx-h', 'Context', compactAt ? `compacts at ${Math.round(compactAt * 100)}%` : undefined),
+          u.head('ctx-h', 'Context', compactAt ? `Claude summarizes at ${Math.round(compactAt * 100)}%` : undefined),
           l ? (
             <Box key="ctx-row" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={2} rowGap={1}>
               {u.graphic('g-gauge', arcGauge({ pct, threshold: compactAt, size: Math.min(200, Math.max(140, cardPx)), label: `${k(l.context.tokens ?? 0)} of ${k(win)}`, animate: animateFor('gauge', `${pct}`) }), `Context ${pct}% full`)}
@@ -94,7 +96,7 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
         {u.card('kpi', wKpi, [
           u.head('kpi-h', 'Plan, cache and handoff', hit !== null ? `${hit}% of the last reply cached` : undefined),
           <Box key="cells" flexDirection="row" flexWrap="wrap" gap={1} flexGrow={1}>
-            {cell('c5', 'pending', '5 Hr Plan', five ? `${five.percentUsed}%` : '–', five ? levelColor(five.percentUsed / 100, 0.7, 0.9) : K.muted,
+            {cell('c5', 'pending', '5-hour plan', five ? `${five.percentUsed}%` : '–', five ? levelColor(five.percentUsed / 100, 0.7, 0.9) : K.muted,
               five ? u.graphic('g5', micro({ share: five.percentUsed / 100, width: barPx, animate: animateFor('p5', `${five.percentUsed}`) }), `${five.percentUsed}% used`) : null,
               five ? (five.rolled ? `new window since ${clock(Date.parse(five.resetsAt!))} · updates after a reply` : `${five.resetsAt ? `resets ${clock(Date.parse(five.resetsAt))}` : ''}${planRate > 0.01 && five.percentUsed < 100 ? ` · limit ≈${clock(Date.now() + ((100 - five.percentUsed) / planRate) * 60_000)}` : ''}${stale}`) : 'appears after a reply')}
             {cell('c7', 'decision', 'This week', week ? `${week.percentUsed}%` : '–', week ? levelColor(week.percentUsed / 100, 0.7, 0.9) : K.muted,
@@ -102,16 +104,17 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
             {cell('cc', 'spark', 'Cache', cs.state === 'unknown' ? 'Idle' : cs.state === 'cold' ? 'Cold' : `${cs.leftMin} min`, { warm: K.sage, cooling: K.amber, cold: K.rose, unknown: K.muted }[cs.state],
               cs.state === 'unknown' ? null : u.graphic('gc', drain({ share: cs.leftMin / (ttlMs / 60_000), seconds: 0, width: barPx }), `${cs.leftMin} minutes of cache left`),
               cs.until ? (cs.state === 'cold' ? 'expired: the next reply re-reads everything' : `warm until ${clock(cs.until)}`) : 'warms up with your next reply')}
-            {cell('ch', 'link', 'Handoff', s.handoff.exists ? ago(minsSince(s.stateAt)) : 'none', s.handoff.ready ? K.amber : s.handoff.exists ? K.emerald : K.muted,
-              null, s.git ? `${s.git.branch} · ${s.git.dirty} changed${wip ? ` · snapshot ${ago(minsSince(wip.at))}` : ''}` : 'not a git repo',
+            {cell('ch', 'link', 'Handoff', s.handoff.exists ? ago(minsSince(s.stateAt)) : 'none', s.handoff.exists ? K.emerald : K.muted,
+              null, s.git ? `${s.git.dirty} changed · ${s.git.branch}${wip ? ` · snapshot ${ago(minsSince(wip.at))}` : ''}` : 'not a git repo',
               <Button key="kc-hand" plain hotkey="s" onPress={() => { void act($, 'Handoff saved', ['h']) }}><Text size="caption" color={K.label}>Save</Text></Button>)}
           </Box>,
         ])}
       </Box>
 
       <Box key="continuity" flexDirection="row" flexWrap="wrap" gap={1}>
-        {lastTurnCard($, els, u, t, s, vw, w2)}
-        {u.card('ready', w2, readyToSwitch($, els, u, t, s, l, 'or'))}
+        {/* the handoff card holds more text: the wider share keeps both cards the same height (no empty band) */}
+        {lastTurnCard($, els, u, t, s, vw, mid ? '38%' : w2)}
+        {u.card('ready', mid ? '54%' : w2, readyToSwitch($, els, u, t, s, l, 'or'))}
       </Box>
 
       <Box key="diag" flexDirection="row" flexWrap="wrap" gap={1}>

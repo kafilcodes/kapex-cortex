@@ -61,12 +61,12 @@ export function filesBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
           </Box>,
           ...worst.slice(0, 4).map(f => (
             <Box key={`nfh-f-${f.label}`} flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
-              <Box width="34%" minWidth={14}><Text size="caption" color={K.label} wrap="truncate-end">{f.label}</Text></Box>
-              {u.graphic(`nfh-g-${f.label}`, micro({ share: Math.min(1, f.lines / f.limit), width: Math.min(300, px * 0.4), color: f.lines > f.limit ? K.rose : f.lines > f.limit * 0.8 ? K.amber : K.emerald, animate: false }), `${f.lines} of ${f.limit} lines`)}
+              <Box width={px < 700 ? '44%' : '34%'} minWidth={14}><Text size="caption" color={K.label} wrap="truncate-end">{f.label}</Text></Box>
+              {u.graphic(`nfh-g-${f.label}`, micro({ share: Math.min(1, f.lines / f.limit), width: Math.min(300, px * (px < 700 ? 0.22 : 0.4)), color: f.lines > f.limit ? K.rose : f.lines > f.limit * 0.8 ? K.amber : K.emerald, animate: false }), `${f.lines} of ${f.limit} lines`)}
               <Text size="caption" tabular color={K.muted}>{`${f.lines} / ${f.limit} lines`}</Text>
             </Box>
           )),
-          u.muted('nfh-why', 'Keep each under 200 lines; move folder-only rules to .claude/rules/ with paths:. Dream proposes both.'),
+          u.muted('nfh-why', 'Keep each under 200 lines, and move rules for one folder into .claude/rules/ with a paths: list. Dream suggests both.'),
         ])
       })() : null}
       {t.groupHead('nf-ah', 'spark', K.emerald, 'In every session', String(always.length))}

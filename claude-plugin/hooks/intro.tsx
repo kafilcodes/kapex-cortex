@@ -38,7 +38,7 @@ const dots = (at: number) => `<svg xmlns="http://www.w3.org/2000/svg" width="44"
 type Point = [icon: string, title: string, text: string]
 const STEPS: { kicker: string; title: string; text: string; art: (w: number) => string; alt: string; points: Point[] }[] = [
   { kicker: 'Live strip and costs', title: 'See what every message costs', text: 'A strip above your prompt shows the chat, the cache and your plan at a glance. Costs shows what each tool adds to every message.', art: illoStrip, alt: 'A chat with the Cortex strip above the prompt and a small costs chart',
-    points: [['turn', 'Context', 'How full this chat is, and turns left'], ['pending', 'Cache', 'How long until the next reply re-reads everything'], ['spark', 'Costs', 'Tools you never use, off in one press']] },
+    points: [['turn', 'Context', 'How full this chat is, and turns left'], ['pending', 'Cache', 'How long until the next reply re-reads everything'], ['spark', 'Unused tools', 'Turn off tools you never use, in one press']] },
   { kicker: 'Lossless handoff', title: 'Switch chats without losing your place', text: 'After every reply Cortex saves where you are. In a new chat, type /cortex-resume and Claude carries on.', art: (w) => illoHandoff(w), alt: 'A full chat handing a small packet to a fresh one',
     points: [['star', 'Pinned', 'The goal and your instructions, word for word'], ['commit', 'Trail', 'One line per turn, and the commits'], ['link', 'Last exchanges', 'Word for word, so a plan survives whole']] },
   { kicker: 'Dream', title: 'Keep Claude\'s memory true', text: 'A Dream checks what Claude remembers against what really happened, and proposes fixes.', art: illoDreamCheck, alt: 'Memory notes checked against test runs and commits',

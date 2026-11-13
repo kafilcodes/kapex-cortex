@@ -21,7 +21,7 @@ export type StatusView = {
   name?: string
   episodes?: EpisodeView[]
   timeline?: TimelineEventView[]
-  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal?: string; next?: string; instructions?: number; decisions?: number; trail?: number; commits?: number; flagged?: number } }
+  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; chat?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal?: string; next?: string; instructions?: number; decisions?: number; trail?: number; commits?: number; flagged?: number } }
   native: { files: NativeFileView[]; alwaysTokens: number; alwaysLines: number; autoMemory: { dir: string; enabled: boolean } }
   dream: { running: { since: string } | null; recent: DreamView[] }
   git: { branch: string; dirty: number; untracked: number; wip: { ref: string; sha: string; at: string } | null } | null
@@ -95,6 +95,7 @@ declare module 'claude-code' {
       warned: Shaped<string[]>
       view: Shaped<ViewState>
       fail: Shaped<string>
+      pulse: Shaped<string>
     }
   }
 }

@@ -7,6 +7,8 @@ import type { RepoPaths } from "./paths.ts";
 import { openItems, readExchanges } from "./exchanges.ts";
 import { readEpisodes, TEST } from "./episodes.ts";
 import { scrub } from "./scrub.ts";
+import { carry } from "./carry.ts";
+import { readTurns } from "./turns.ts";
 import { buildBrief } from "./brief.ts";
 import { budgets } from "./prefs.ts";
 import { buildTiers } from "./tiers.ts";
@@ -131,11 +133,12 @@ export function renderState(p: RepoPaths, inp: StateInput, gi: GitInfo | null): 
   const repo = p.root.split("/").pop();
   const user = inp.lastUser ? scrub(inp.lastUser).text : "";
   const asst = inp.lastAssistant ? scrub(inp.lastAssistant).text : "";
-  const brief = buildBrief(p, { session: inp.session, lastAssistant: inp.lastAssistant, handoff, heading: firstHeading(p.root), now });
+  const carried = carry(p, inp.session, readTurns(p, inp.session));
+  const brief = buildBrief(p, { session: inp.session, lastAssistant: inp.lastAssistant, handoff, heading: firstHeading(p.root), now, carry: carried });
   const { goal, next } = brief;
   const max = budgets(p).state;
   const lean = !budgets(p).lastReply;
-  const tiers = buildTiers(p, { session: inp.session, goal, handoff, recentTurns: lean ? 1 : 3, git: !!gi, room: { pinned: Math.max(1_500, Math.round(max * 0.14)), trail: Math.max(1_200, Math.round(max * 0.18)) } });
+  const tiers = buildTiers(p, { session: inp.session, goal, handoff, recentTurns: lean ? 1 : 3, git: !!gi, carry: carried, room: { pinned: Math.max(1_500, Math.round(max * 0.14)), trail: Math.max(1_200, Math.round(max * 0.18)) } });
   const sections = [
     `# STATE — ${repo} · ${gi?.branch ?? "no git"} · updated ${now.toISOString()} · from ${inp.harness}${inp.model ? "/" + inp.model : ""} · session ${inp.session}`,
     "",
@@ -246,7 +249,9 @@ function workingContext(p: RepoPaths, inp: StateInput, gi: GitInfo | null): stri
   const rel = (f: string) => { const r = relative(p.root, f); return (r && !r.startsWith("..") && !isAbsolute(r) ? r : f).replace(/\\/g, "/"); };
   const edited = [...new Set(eps.slice(0, 5).flatMap((e) => e.files).map(rel))].slice(0, 20);
   const changed = (gi?.diffStat ?? "").split("\n").map((l) => l.trim()).filter((l) => l && !/^…|files? changed/.test(l)).slice(0, 20);
-  const tested = eps.find((e) => e.tests.ran);
+  // the newest check of this chat; else the newest one in the journal (an earlier chat), so "did it pass?" has an answer
+  const tested = eps.find((e) => e.tests.ran) ?? readEpisodes(p, 60).find((e) => e.tests.ran);
+  const earlier = !!tested && tested.session !== inp.session;
   const testCmd = shortCommand(tested?.commands.find((c) => TEST.test(c)) ?? "tests");
   const open = [...new Set([...openItems(inp.lastAssistant ?? ""), ...eps.slice(0, 3).map((e) => e.next).filter(Boolean)])].slice(0, 12);
   return [
@@ -255,7 +260,7 @@ function workingContext(p: RepoPaths, inp: StateInput, gi: GitInfo | null): stri
     changed.length ? "Uncommitted:\n```\n" + changed.join("\n") + "\n```" : "",
     "",
     "## Last check",
-    tested ? `\`${testCmd.slice(0, 80)}\` ${!tested.tests.failed ? "passed" : tested.tests.lastOk ? `passed on the last run (${tested.tests.failed} of ${tested.tests.ran} runs failed earlier and were fixed)` : `FAILED on the last run (${tested.tests.failed} of ${tested.tests.ran} runs failed)`}, ${ago(Date.now() - Date.parse(tested.end))} ago.` : "_No test or check run in the last turns._",
+    tested ? `\`${testCmd.slice(0, 80)}\` ${!tested.tests.failed ? "passed" : tested.tests.lastOk ? `passed on the last run (${tested.tests.failed} of ${tested.tests.ran} runs failed earlier and were fixed)` : `FAILED on the last run (${tested.tests.failed} of ${tested.tests.ran} runs failed)`}, ${ago(Date.now() - Date.parse(tested.end))} ago${earlier ? " (in an earlier chat)" : ""}.` : "_No test or check run in the last turns._",
     "",
     ...(open.length ? ["## Open items", open.map((o) => `- [ ] ${o}`).join("\n"), ""] : []),
   ];

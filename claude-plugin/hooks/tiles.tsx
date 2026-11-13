@@ -63,7 +63,7 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[]) 
       {u.node(`${key}-n`, icon, color, 20)}
       <Box flexDirection="column" flexShrink={1} minWidth={6}>
         <Text weight="semibold" tabular color={color === K.silver ? K.text : color}>{value}</Text>
-        <Text size="caption" color={K.muted} wrap="truncate-end">{label}</Text>
+        <Text size="caption" color={K.muted}>{label}</Text>
       </Box>
     </Box>
   )
@@ -96,7 +96,7 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[]) 
         </Box>
         <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} rowGap={1} flexWrap="wrap">
           <Box flexDirection="row" gap={1} flexWrap="wrap" flexShrink={1}>{(t.badges ?? []).filter((b): b is [string, string?, string?] => !!b).map(([text, color, ic], i) => badge(`tb-${t.id}-${i}`, text, color, ic))}</Box>
-          <Box flexDirection="row" gap={1} alignItems="center">
+          <Box flexDirection="row" gap={1} alignItems="center" flexGrow={1} justifyContent="flex-end">
             {t.quick ?? null}
             {more ? <Button key={`tx-${t.id}`} plain onPress={() => { void toggleExpanded($, t.id) }}><Text size="caption" color={K.label}>{open ? 'Collapse' : 'Expand'}</Text></Button> : null}
           </Box>

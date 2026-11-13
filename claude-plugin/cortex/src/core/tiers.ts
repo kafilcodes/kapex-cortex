@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import type { Carry } from "./carry.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { askOf, noRefs } from "./brief.ts";
@@ -79,7 +80,7 @@ function commitsSince(p: RepoPaths, since: string): string[] {
 export interface Tiers { pinned: string; trail: string; counts: { instructions: number; decisions: number; flagged: number; trail: number; commits: number } }
 
 /** Tier 1 and Tier 2 as markdown, each kept within its share of the packet. */
-export function buildTiers(p: RepoPaths, a: { session: string; goal?: string; handoff?: { session?: string; ts: string; decisions?: string[] } | null; recentTurns: number; room: { pinned: number; trail: number }; git: boolean }): Tiers {
+export function buildTiers(p: RepoPaths, a: { session: string; goal?: string; handoff?: { session?: string; ts: string; decisions?: string[] } | null; recentTurns: number; room: { pinned: number; trail: number }; git: boolean; carry?: Carry | null }): Tiers {
   const turns = readTurns(p, a.session);
   const asks = turns.map((t, i) => ({ n: i + 1, ts: t.ts, text: scrub(askOf(t)).text })).filter((x) => x.text.length >= 15);
   const first = asks[0];
@@ -87,14 +88,21 @@ export function buildTiers(p: RepoPaths, a: { session: string; goal?: string; ha
   // decisions from /cortex-handoff belong to the session that recorded them (or one started before they were written)
   const h = a.handoff;
   const mine = !!h && (h.session === a.session || (!!turns[0] && h.ts >= turns[0].ts));
-  const decisions = mine ? (h!.decisions ?? []).filter(Boolean).slice(0, 8) : [];
+  const c = a.carry;
+  const same = (x: string, list: string[]) => list.some((y) => y.toLowerCase() === x.toLowerCase());
+  const decisions = [...(mine ? (h!.decisions ?? []).filter(Boolean) : [])];
+  for (const d of c?.decisions ?? []) if (!same(d, decisions)) decisions.push(d);
+  decisions.splice(8);
+  // instructions given in the chat this one continues still stand (yours win when they say the same thing)
+  const carriedRules = (c?.rules ?? []).filter((r) => !same(r, rules.map((x) => oneLine(x.text, 240)))).slice(0, 8);
   const mc = readMemoryCheck(p);
   const flagged = mc?.open ?? [];
 
   const pinnedLines = [
     first && !(a.goal ?? "").startsWith(oneLine(first.text, 120).replace(/…$/, "")) ? `**Started with** (turn 1, ${hhmm(first.ts)}): ${oneLine(first.text, 420)}` : "",
-    rules.length ? `**Your standing instructions** (your words, from this session):\n${rules.map((r) => `- ${oneLine(r.text, 240)} _(turn ${r.n})_`).join("\n")}` : "",
+    rules.length || carriedRules.length ? `**Your standing instructions** (your words${carriedRules.length ? ", this chat and the one it continues" : ", from this session"}):\n${[...rules.map((r) => `- ${oneLine(r.text, 240)} _(turn ${r.n})_`), ...carriedRules.map((r) => `- ${r} _(earlier chat)_`)].join("\n")}` : "",
     decisions.length ? `**Decisions recorded at handoff:**\n${decisions.map((d) => `- ${oneLine(d, 240)}`).join("\n")}` : "",
+    c?.milestones.length ? `**Continued from “${oneLine(c.chat, 60)}”** (session ${c.from.slice(0, 8)}); what it got done:\n${c.milestones.map((m) => `- ${m}`).join("\n")}` : "",
     flagged.length ? `**Memory notes flagged, not fixed yet** (Claude Code loaded them anyway: don't rely on them, and mention them to the user):\n${flagged.slice(0, 5).map((f) => `- \`${f.label}${f.line ? `:${f.line}` : ""}\` ${f.kind}: ${oneLine(f.why, 160)}`).join("\n")}` : "",
   ].filter(Boolean);
   let pinned = pinnedLines.length ? `## Pinned for this session (kept whatever the last turns were about)\n${pinnedLines.join("\n\n")}\n` : "";
@@ -115,5 +123,5 @@ export function buildTiers(p: RepoPaths, a: { session: string; goal?: string; ha
   while (trailLines.length > 1 && head.length + trailLines.join("\n").length + tail.length > a.room.trail) trailLines = trailLines.slice(1);
   const dropped = older.length - trailLines.length;
   const trail = older.length || commits.length ? `${head}${dropped ? `- … ${dropped} earlier turn${dropped === 1 ? "" : "s"}\n` : ""}${trailLines.join("\n")}${tail}\n` : "";
-  return { pinned, trail, counts: { instructions: rules.length, decisions: decisions.length, flagged: flagged.length, trail: older.length, commits: commits.length } };
+  return { pinned, trail, counts: { instructions: rules.length + carriedRules.length, decisions: decisions.length, flagged: flagged.length, trail: older.length, commits: commits.length } };
 }

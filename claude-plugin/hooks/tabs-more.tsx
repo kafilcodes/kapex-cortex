@@ -36,14 +36,12 @@ export function detailsBody($: Dollar, o: Ctx, t: Tiles): JSX.Element {
   return (
     <Box flexDirection="column" gap={1}>
       {u.intro('d-in', sceneSvg('costs', 120), 'Cortex counting tokens', 'What it costs', 'Per message and for this project, from Claude Code\'s own numbers.')}
-      {u.card('d-speed', '100%', [
-        u.head('d-speed-h', 'Speed and plan'),
-        line('d-hook-l', 'Hook speed, real runs (p95)', s.hooks.p95 !== null ? `${s.hooks.p95} ms of ${s.hooks.cap} ms · ${s.hooks.samples} runs` : 'no runs yet'),
-        recent.length > 1 ? u.graphic('d-hook-g', area({ values: recent, width: w, height: 48, limit: s.hooks.cap, color: levelColor((s.hooks.p95 ?? 0) / s.hooks.cap, 0.7, 0.95), animate: animateFor('hooks', recent.join(',')) }), `Hook times, last ${recent.length} runs`) : null,
-        line('d-plan-l', 'Plan usage, 5-hour window', five ? `${five.percentUsed}%${five.resetsAt ? ` · resets ${clock(Date.parse(five.resetsAt))}` : ''}` : 'no data'),
+      {u.card('d-now', '100%', [
+        u.head('d-now-h', 'Right now', l ? `${l.turns} turns in this chat${l.costUsd !== undefined ? ` · $${l.costUsd.toFixed(2)} at API prices` : ''}` : undefined),
+        line('d-plan-l', '5-hour plan used', five ? `${five.percentUsed}%${five.resetsAt ? ` · resets ${clock(Date.parse(five.resetsAt))}` : ''}` : 'shows after a reply'),
         u.graphic('d-plan-g', micro({ share: (five?.percentUsed ?? 0) / 100, width: w, animate: animateFor('dplan', `${five?.percentUsed}`) }), `${five?.percentUsed ?? 0}% used`),
-        line('d-mem', 'Memory Claude loads in every session', `${k(s.native.alwaysTokens)} tokens · ${s.native.alwaysLines} lines`),
-        line('d-cx', 'What Cortex adds to your messages', s.footprint ? `~${k(s.footprint.tokens)} tokens: its ${s.footprint.skills} skill descriptions${s.footprint.duplicates ? `, ${s.footprint.duplicates} listed twice (old copies in ~/.claude/skills)` : ''}; plus one short note when a chat opens with a handoff waiting` : 'its skill descriptions, plus one short note when a chat opens with a handoff waiting'),
+        line('d-mem', 'Memory Claude loads in every chat', `${k(s.native.alwaysTokens)} tokens · ${s.native.alwaysLines} lines`),
+        line('d-cx', 'What Cortex adds to each message', s.footprint ? `~${k(s.footprint.tokens)} tokens: its ${s.footprint.skills} skill descriptions${s.footprint.duplicates ? `, ${s.footprint.duplicates} listed twice (old copies in ~/.claude/skills)` : ''}` : 'its skill descriptions'),
       ])}
       {rows.length ? u.card('fixed', '100%', [
         u.head('fx-t', 'Loaded into every message', `${k(rows.reduce((a, r) => a + r.tokens, 0))} tokens before you type`),
@@ -81,7 +79,12 @@ export function detailsBody($: Dollar, o: Ctx, t: Tiles): JSX.Element {
       {idle.some(x => x.kind === 'skills') ? u.muted('lo-sk', 'Plugin skills: turn off with /plugin, or in Claude Desktop → Customize.') : null}
       {spendCard($, o.els, u, t, s, o.px)}
       {savedCard(u, t, s)}
-      {u.muted('d-turns', `${l ? `${l.turns} turns this session` : ''}${l?.costUsd !== undefined ? ` · $${l.costUsd.toFixed(2)} at API prices` : ''}`)}
+      {u.card('d-speed', '100%', [
+        // Cortex's own cost in time, last: it matters, but it is not what you came here to see
+        u.head('d-speed-h', 'How fast Cortex is'),
+        line('d-hook-l', 'Time Cortex takes after each reply (slowest 1 in 20)', s.hooks.p95 !== null ? `${s.hooks.p95} ms · limit ${s.hooks.cap} ms · ${s.hooks.samples} replies` : 'no replies yet'),
+        recent.length > 1 ? u.graphic('d-hook-g', area({ values: recent, width: w, height: 48, limit: s.hooks.cap, color: levelColor((s.hooks.p95 ?? 0) / s.hooks.cap, 0.7, 0.95), animate: animateFor('hooks', recent.join(',')) }), `Hook times, last ${recent.length} runs`) : null,
+      ])}
     </Box>
   )
 }

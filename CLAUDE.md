@@ -11,6 +11,7 @@ Cortex adds what Claude Code doesn't have: a Desktop status strip and cost/cache
 - Keep every source file under 300 lines.
 - Cortex never writes to the Obsidian vault outside its `machine/` folder.
 - A Dream never changes a file until the user presses Apply, and every Apply can be undone.
+- Before a release, `node scripts/benchmark.ts` keeps Dream at 6/6 with 0 false positives and the handoff at 10/10. The plugin's own tests run with `claude plugin test claude-plugin` (not part of `npm test`).
 
 ## Facts
 - The plugin's hooks run `claude-plugin/cortex/hook.mjs`, one JS file `npm run bundle` builds from `src/hook.ts` (Node's TypeScript stripping cost ~30 ms per hook launch). Edit `src/`, then bundle.

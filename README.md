@@ -6,13 +6,17 @@
 
 **See what every Claude Code message costs, switch chats without losing your place, and keep Claude's memory true.**
 
-![version](https://img.shields.io/badge/version-3.8.1-10B981)
+![version](https://img.shields.io/badge/version-3.8.2-10B981)
 ![license](https://img.shields.io/badge/license-MIT-10B981)
 ![deps](https://img.shields.io/badge/runtime%20deps-0-8b949e)
 ![always-on context](https://img.shields.io/badge/always--on%20context-~250%20tokens-10B981)
 ![Stop hook p95](https://img.shields.io/badge/Stop%20hook%20p95-~50%20ms-10B981)
 
 </div>
+
+<p align="center"><img src="docs/screenshots/strip.png" width="640" alt="The status strip above the prompt: context ring, cache countdown, plan use and the handoff state"></p>
+
+<p align="center"><img src="docs/screenshots/overview.png" width="860" alt="The Cortex panel, Overview page: context gauge, plan, cache and handoff cells, the last turn and what a new chat would get"></p>
 
 ## Install (10 seconds)
 
@@ -31,11 +35,11 @@ Kapex Cortex is an open-source **Claude Code plugin** (MIT, zero runtime depende
 
 | | What it adds | Why it matters |
 |---|---|---|
-| **Status strip** | One line above the prompt: context ring, cache countdown, 5-hour plan, and a traffic-light tip: green "All good", amber "fine to continue" (cache cooling, filling up, a Dream due), red with the move and what it saves ("82% full · hand off, save ~800k"), one press to act | Claude Code shows no cache timer, and plan use is behind `/usage` |
+| **Status strip** | One line above the prompt, live between replies (it notices the cache going cold or a plan window resetting without a new message): context ring, cache countdown, 5-hour plan, and a traffic-light tip: green "All good", amber "fine to continue" (cache cooling, filling up, a Dream due), red with the move and what it saves ("82% full · hand off, save ~800k"), one press to act | Claude Code shows no cache timer, and plan use is behind `/usage` |
 | **Costs panel** | What each MCP server and skill adds to *every* message, with one press to turn off the unused ones; tokens this project used today, this week, all time | Unused tools can cost thousands of tokens per message, unseen |
 | **Lossless handoff** | After every reply, `.vault/STATE.md`: the session's goal and your standing instructions, the trail of earlier turns, and the last exchanges word for word. `/cortex-resume` continues in a new chat (or in OpenCode after a usage limit) | A new chat starts from about 2k–7k tokens and keeps the plan, instead of a cold re-read or a lossy summary |
 | **Dream** | Checks `CLAUDE.md`, `.claude/rules/` and auto memory against what really happened (your chats, test runs, git), and proposes fixes you Apply and Undo | One wrong note ("`npm test` is broken") is trusted by every future chat |
-| **Safety for long runs** | Checks for readable secrets, the sandbox, and a test gate that sends Claude back when checks fail; one press to fix, one to undo | Auto mode's classifier still lets about 1 in 10 risky actions through; deny rules and a real gate don't |
+| **Safety for long runs** | Checks for readable secrets, the sandbox, and a test gate that sends Claude back when checks fail; one press to fix, one to undo | Deny rules hold before auto mode's own safety check, and a real gate stops Claude finishing on red tests |
 
 ## Common questions
 
@@ -75,13 +79,15 @@ It follows Claude Code's light or dark mode and fits a half-width pane.
 
 After every reply Cortex rewrites `.vault/STATE.md` from what it already stored (no model, 0 tokens), in three parts, each with its own share of the budget so a run of small final turns can't push the session's purpose out:
 
-1. **Pinned for this session:** the request it started with, your standing instructions in your own words, the decisions `/cortex-handoff` recorded, and memory notes a check flagged but nobody fixed.
+1. **Pinned for this session:** the request it started with, your standing instructions in your own words, the decisions `/cortex-handoff` recorded, and memory notes a check flagged but nobody fixed. A chat that starts with `/cortex-resume` **carries the chat it continues**: its goal, instructions, decisions and milestones (turns that committed or fixed a failing check, with their files), so chat 3 still knows what chat 1 decided.
 2. **Session trail:** one line per earlier turn and the session's commits.
 3. **Where we left off:** the last three exchanges word for word, the files edited, the last check, open items, and a git snapshot at handoff moments.
 
 At 80% full (70% with a cold cache) Overview offers a fresh chat. At a usage limit the handoff is stamped ready: type `/cortex-resume` in OpenCode (free models work), and the handoff comes back when that session goes idle.
 
 **Fresh-eyes check.** One press sends a helper that knows nothing of your chat to read only the handoff and the files it names, and say where it would get stuck. It's the "Goldfish" from Google's [Elephant-Goldfish model](https://github.com/google/elephant-goldfish-model); for design docs and spec drift, use that plugin.
+
+<p align="center"><img src="docs/screenshots/timeline.png" width="620" alt="The Timeline page: an activity chart, then turns, commits, handoffs (named after the chat they came from) and Dreams as tiles"></p>
 
 ## Dream: memory that stays true
 
@@ -93,6 +99,24 @@ At 80% full (70% with a cold cache) Overview offers a fresh chat. At a usage lim
 6. **Proposes, never writes.** Apply, Keep or Undo per finding; before and after copies in `.vault/dreams/`.
 
 A **Quick check** runs the program-only checks in the background when files change: no model, no tokens.
+
+## Benchmarks
+
+`node scripts/benchmark.ts` lives a dummy project through **25 turns in two chats** (the second starts with `/cortex-resume`) with the real hooks, then measures. No model, no tokens, nothing outside temp folders. Three rounds of 50 runs on an M4 MacBook Air, Node 26:
+
+| What | Result |
+|---|---|
+| Dream Quick check on 6 planted problems (a false note, a stale colour, a stale path, a duplicate, a broken link, a 207-line CLAUDE.md) among 204 valid rules | **6/6 found, 0 false positives** (precision and recall 100%), plus 1 suggestion (a rule that could be path-scoped) |
+| Apply, then Undo | every memory file back **byte for byte** |
+| Handoff after 25 turns: does `STATE.md` hold the answers to 10 fixed questions (goal, a turn-3 decision, a turn-14 bug and its file, the next step…)? | **10/10**, about 900 tokens |
+| The same 10 questions to a zero-memory agent that reads only `STATE.md` ([the Goldfish test](bench/goldfish.md)) | **10/10** |
+| Stop hook, whole process | p50 46 ms · p95 51–53 ms (limit 150) · 60 MB peak |
+| SessionStart hook | p50 28 ms · p95 30–32 ms |
+| Quick check: deciding it isn't needed · running it | 0.1 ms · p95 94–99 ms |
+
+On a real repo (this one, a 12 MB transcript) the Stop hook measures p50 52 ms, p95 67 ms. Inside Claude Desktop the hook's own log shows slower outliers (up to ~150 ms) when the machine is busy as a reply ends; the Costs page shows yours.
+
+Three independent AI design reviewers (Opus, Sonnet and Fable, shown only screenshots) scored the panel about 5–6 out of 10 for ease and craft, and 4 for plain language, before this release's wording pass. That is the bar we're working on, not a claim of polish.
 
 ## Safety for long runs
 
@@ -128,7 +152,7 @@ Settings → **Safety for long runs** checks three things Claude Code's docs rec
 
 ## Honest limits
 
-- **Dream quality is measured on planted bugs, not yet on months of real use.** The test suite plants a false, a stale and a duplicate note and checks that a Dream finds, fixes and undoes all three.
+- **Dream quality is measured on planted bugs, not yet on months of real use.** The benchmark plants six kinds among 204 valid rules (above); real memory files are messier.
 - **The program checks are narrow by design.** Without a model, a Dream finds only what it can prove.
 - **"Saved" means measured:** context a resumed chat didn't re-read, and context a message no longer carries because of turned-off servers. Cache reads count at about a tenth of the price, never as full savings.
 - **Claude Code keeps transcripts 30 days by default**, so a Dream sees at most that far back.

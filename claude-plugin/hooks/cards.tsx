@@ -57,14 +57,16 @@ export function lastTurnCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: 
     said(els, u, 'ls-ask', /^Background|^A side|^CI /.test(ask) ? 'spark' : 'turn', K.silver, /^Background|^A side|^CI /.test(ask) ? 'Started by' : 'You asked', ask, open),
     <Box key="ls-m" flexDirection="row" gap={1} flexWrap="wrap">
       {t.metric('ls-f', 'file', e.files.length ? K.sage : K.silver, String(e.files.length), e.files.length === 1 ? 'file changed' : 'files changed', '40%')}
-      {t.metric('ls-t', 'test', e.tests.ran ? (e.tests.failed && !e.tests.lastOk ? K.rose : K.emerald) : K.silver, e.tests.ran ? `${e.tests.ran - e.tests.failed}/${e.tests.ran}` : '–', 'checks passed', '40%')}
+      {t.metric('ls-t', 'test', e.tests.ran ? (e.tests.failed && !e.tests.lastOk ? K.rose : K.emerald) : K.silver, e.tests.ran ? `${e.tests.ran - e.tests.failed}/${e.tests.ran}` : '–', 'check runs passed', '40%')}
       {t.metric('ls-c', 'commit', e.commits ? K.sage : K.silver, String(e.commits), e.commits === 1 ? 'commit' : 'commits', '40%')}
-      {t.metric('ls-o', 'spark', K.silver, k(e.outTokens), 'tokens written', '40%')}
+      {t.metric('ls-o', 'spark', K.silver, k(e.outTokens), 'tokens Claude wrote', '40%')}
     </Box>,
     e.done ? said(els, u, 'ls-done', 'check', K.emerald, 'Done', e.done, open) : null,
     e.next ? said(els, u, 'ls-next', 'pending', K.amber, 'Next', e.next, open) : null,
-    // the footer sits at the card's bottom edge, level with the buttons of the card beside it
-    <Box key="ls-foot" flexGrow={1} flexDirection="column" justifyContent="flex-end"><Box flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap">
+    // no summary from Claude (an interrupted turn, a limit): what changed is the next most useful thing to show
+    !e.done && !e.next && e.files.length ? <Text key="ls-files" size="caption" color={K.muted}>{`Files: ${e.files.slice(0, 6).map(f => f.split(/[\\/]/).slice(-2).join('/')).join(', ')}${e.files.length > 6 ? ` and ${e.files.length - 6} more` : ''}`}</Text> : null,
+    // the footer follows the content: pinned to the bottom it left an empty band mid-card beside a taller card
+    <Box key="ls-foot" flexDirection="column"><Box flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap">
       <Text size="caption" color={K.muted}>{e.commands.length ? `Ran ${e.commands.length} command${e.commands.length === 1 ? '' : 's'}${e.commands.length <= 2 ? `: ${[...new Set(e.commands.map(cmdLabel))].join(' · ')}` : ''}` : 'No commands run'}</Text>
       {long ? <Button key="ls-more" plain onPress={() => { void toggleExpanded($, `last-${e.id}`) }}><Text size="caption" color={K.label}>{open ? 'Collapse' : 'Expand'}</Text></Button> : null}
     </Box></Box>,
@@ -105,16 +107,16 @@ export function readyToSwitch($: Dollar, els: ElementTable, u: Kit, t: Tiles, s:
   const clean = (x?: string) => (x ?? '').replace(/^\(pasted\) /, '').replace(/^_|_$/g, '')
   return [
     <Box key={`${key}-h`} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap">
-      <Box flexDirection="row" gap={1} alignItems="center"><Text size="caption" weight="medium" color={K.label}>Ready to switch chats</Text>{t.badge(`${key}-b`, s.handoff.ready ? 'Resume ready' : 'Ready', K.emerald)}</Box>
+      <Box flexDirection="row" gap={1} alignItems="center"><Text size="caption" weight="medium" color={K.label}>Ready to switch chats</Text>{t.badge(`${key}-b`, s.handoff.ready ? 'Handoff ready' : 'Ready', K.emerald)}</Box>
       <Text size="caption" color={K.muted}>{`saved ${ago(minsSince(s.stateAt))}`}</Text>
     </Box>,
     pv.goal ? said(els, u, `${key}-goal`, 'star', K.emerald, 'Goal', clean(pv.goal), false, 110) : null,
     pv.next && !/^Continue from the last assistant message/.test(pv.next) ? said(els, u, `${key}-next`, 'pending', K.amber, 'Next', clean(pv.next), false, 110) : null,
     <Text key={`${key}-ok`} size="caption" color={K.label}>A new chat with /cortex-resume gets, in three parts:</Text>,
     <Box key={`${key}-g`} flexDirection="row" gap={1} flexWrap="wrap">
-      {t.metric(`${key}-p`, 'star', pinned ? K.emerald : K.silver, String(pinned), pinned === 1 ? 'pinned instruction or decision' : 'pinned instructions and decisions', '40%')}
-      {t.metric(`${key}-tr`, 'commit', pv.trail ? K.sage : K.silver, String(pv.trail ?? 0), `earlier turns${pv.commits ? ` · ${pv.commits} commit${pv.commits === 1 ? '' : 's'}` : ''}`, '40%')}
-      {t.metric(`${key}-x`, 'turn', K.sage, String(pv.exchanges || 1), 'last exchanges, word for word', '40%')}
+      {t.metric(`${key}-p`, 'star', pinned ? K.emerald : K.silver, String(pinned), pinned === 1 ? 'instruction or decision' : 'instructions and decisions', '40%')}
+      {t.metric(`${key}-tr`, 'commit', pv.trail ? K.sage : K.silver, String(pv.trail ?? 0), `earlier turn${pv.trail === 1 ? '' : 's'}${pv.commits ? ` · ${pv.commits} commit${pv.commits === 1 ? '' : 's'}` : ''}`, '40%')}
+      {t.metric(`${key}-x`, 'turn', K.sage, String(pv.exchanges || 1), (pv.exchanges || 1) === 1 ? 'last exchange, word for word' : 'last exchanges, word for word', '40%')}
       {t.metric(`${key}-o`, 'pending', pv.openItems ? K.amber : K.silver, String(pv.openItems), `open item${pv.openItems === 1 ? '' : 's'} · ${pv.files} active file${pv.files === 1 ? '' : 's'}`, '40%')}
     </Box>,
     flagged ? u.tag(`${key}-mem`, 'alert', K.amber, `${flagged} memory note${flagged === 1 ? '' : 's'} flagged: the handoff tells the new chat not to rely on ${flagged === 1 ? 'it' : 'them'}`, K.label) : null,

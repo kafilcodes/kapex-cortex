@@ -54,17 +54,18 @@ export function heroRow($: Dollar, els: ElementTable, u: Kit, o: { s: StatusView
       s.dream.running ? null : row('hero-b', [<Button key="hero-review" variant="primary" onPress={() => { void setTab($, 'data'); void setSub($, 'dream') }}>Review</Button>])]
   } else {
     title = mood === 'hi' ? 'Ready when you are' : mood === 'working' ? 'Keeping an eye on things' : 'All calm'
-    body = [u.line('hero-d', summary, false, K.label, 'caption')]
+    body = [u.line('hero-d', summary, true, K.label, 'caption')]
   }
 
-  const w = o.cols >= 150 ? 170 : o.cols >= 84 ? 150 : 120
+  // the mascot always sits beside the words (never alone on a line below them, leaving the right side empty)
+  const w = o.cols >= 150 ? 170 : o.cols >= 84 ? 150 : 96
   return (
-    <Box key="hero-top" flexDirection="row" alignItems="center" justifyContent="space-between" columnGap={2} rowGap={1} flexWrap="wrap" paddingX={1}>
-      <Box flexDirection="column" gap={1} flexGrow={1} flexShrink={1} minWidth={30}>
+    <Box key="hero-top" flexDirection="row" alignItems="center" justifyContent="space-between" columnGap={2} flexWrap="nowrap" paddingX={1}>
+      <Box flexDirection="column" gap={1} flexGrow={1} flexShrink={1} minWidth={20}>
         <Text size="heading" weight="semibold" color={mood === 'calm' || mood === 'hi' ? K.text : COLOR[mood]}>{title}</Text>
         {body}
       </Box>
-      {u.Svg ? <u.Svg key="hero-mascot" source={moodSvg(mood, w)} alt={`Cortex: ${mood}`} width={w} height={Math.round(w * 0.7)} /> : null}
+      {u.Svg ? <Box key="hero-m" flexShrink={0}><u.Svg key="hero-mascot" source={moodSvg(mood, w)} alt={`Cortex: ${mood}`} width={w} height={Math.round(w * 0.7)} /></Box> : null}
     </Box>
   )
 }

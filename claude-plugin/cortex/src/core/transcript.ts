@@ -5,7 +5,7 @@ import { atomicWriteIfChanged } from "../util/atomic.ts";
 import type { RawUserTurn } from "./turns.ts";
 import type { RepoPaths } from "./paths.ts";
 
-export interface Cursor { offset?: number; seq?: number; path?: string; lastFailure?: string; lastFailureTs?: string; sent?: Record<string, string> }
+export interface Cursor { offset?: number; seq?: number; path?: string; lastFailure?: string; lastFailureTs?: string; sent?: Record<string, string>; /** the chat's title as Claude Code names it (its latest custom-title line) */ title?: string }
 
 function cursorFile(p: RepoPaths, key: string) {
   return join(p.cursors, `${key.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
@@ -33,8 +33,15 @@ export function claudeUserText(entry: Record<string, unknown>): string | null {
   }
   text = text.trim();
   if (!text) return null;
-  // Slash-command echoes and local command output are harness chatter, not intent.
-  if (/^<(command-name|command-message|local-command-[a-z]+)>/.test(text)) return null;
+  // Local command output is harness chatter. A slash command is chatter too, unless you wrote something after it
+  // (its arguments are your words: "/cortex-resume <a long brief>") or it is /cortex-resume (a chat continuing another).
+  if (/^<local-command-[a-z]+>/.test(text)) return null;
+  if (/^<command-(?:name|message)>/.test(text)) {
+    const name = (/<command-name>\/?([^<]+)<\/command-name>/.exec(text)?.[1] ?? "").trim();
+    const args = (/<command-args>([\s\S]*?)<\/command-args>/.exec(text)?.[1] ?? "").trim();
+    if (args.length >= 15) return `/${name} ${args}`;
+    return /cortex-resume$/.test(name) ? `/${name}` : null;
+  }
   // Hook feedback ("Stop hook feedback: …") is stored as a user message but the harness wrote it.
   if (/^(Stop|PreToolUse|PostToolUse|UserPromptSubmit) hook (feedback|error)/.test(text)) return null;
   return text;
@@ -74,18 +81,20 @@ export function claudeNewTurns(p: RepoPaths, session: string, transcriptPath: st
     const out: RawUserTurn[] = [];
     let lastFailure = cur.lastFailure;
     let lastFailureTs = cur.lastFailureTs;
+    let title = cur.title;
     for (const line of chunk.split("\n")) {
       if (!line) continue;
       let entry: Record<string, unknown>;
       try { entry = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
       observe?.(entry);
+      if (entry.type === "custom-title" && typeof entry.customTitle === "string" && entry.customTitle.trim()) title = entry.customTitle.trim().slice(0, 120);
       const text = claudeUserText(entry);
       if (text) out.push({ text, ref: String(entry.uuid ?? `${transcriptPath}@${offset}`), ts: entry.timestamp as string | undefined });
       const fail = claudeToolError(entry);
       if (fail) { lastFailure = fail; lastFailureTs = entry.timestamp as string | undefined; }
     }
     offset += lastNl + 1;
-    writeCursor(p, key, { path: transcriptPath, offset, lastFailure, lastFailureTs });
+    writeCursor(p, key, { ...cur, path: transcriptPath, offset, lastFailure, lastFailureTs, ...(title ? { title } : {}) });
     return out;
   } finally {
     closeSync(fd);

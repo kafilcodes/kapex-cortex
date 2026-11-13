@@ -1,0 +1,72 @@
+{
+ "at": "2026-11-13T07:06:21.418Z",
+ "node": "v26.8.1",
+ "runs": 50,
+ "turns": 25,
+ "chats": 2,
+ "dream": {
+  "planted": 6,
+  "found": 6,
+  "advice": [
+   "CLAUDE.md:3:scope"
+  ],
+  "truePositives": 6,
+  "falsePositives": [],
+  "precision": 1,
+  "recall": 1,
+  "applied": "Applied 6 changes to 3 file(s). Undo puts them back.",
+  "changedOnApply": true,
+  "undone": "Undone: every file is back as it was at the Dream.",
+  "byteIdenticalAfterUndo": true
+ },
+ "handoff": {
+  "stateTokens": 910,
+  "answerable": 10,
+  "of": 10,
+  "missed": []
+ },
+ "speedMs": {
+  "stopHook": {
+   "p50": 45.3,
+   "p95": 50,
+   "n": 50
+  },
+  "sessionStartHook": {
+   "p50": 26.9,
+   "p95": 29.1,
+   "n": 50
+  },
+  "quickGateUnchanged": {
+   "p50": 0,
+   "p95": 0.1,
+   "n": 50
+  },
+  "quickGateChanged": {
+   "p50": 0.1,
+   "p95": 0.1,
+   "n": 20
+  },
+  "quickCheckRun": {
+   "p50": 83.4,
+   "p95": 88.1,
+   "n": 20
+  },
+  "spendCached": {
+   "p50": 0,
+   "p95": 0,
+   "n": 50
+  },
+  "statusRead": {
+   "p50": 147.4,
+   "p95": 155.2,
+   "n": 20
+  }
+ },
+ "stopHookPeakMemoryMB": 60,
+ "bars": {
+  "stopP95": 150,
+  "quickGateUnchanged": 1,
+  "quickCheckRun": 350,
+  "spendCached": 10
+ }
+}

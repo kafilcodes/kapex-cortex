@@ -11,7 +11,7 @@ import { nativeSummary, type NativeFile } from "./native.ts";
 import type { RepoPaths } from "./paths.ts";
 import { readPrefs, type Prefs } from "./prefs.ts";
 import { shortCommand, statePath } from "./state.ts";
-import { buildTimeline, type TimelineEvent } from "./timeline.ts";
+import { buildTimeline, chatLabel, type TimelineEvent } from "./timeline.ts";
 import { toolUsage, type Usage } from "./usage.ts";
 import { projectSpend, type Spend } from "./spend.ts";
 import { parkView, type ParkView } from "./park.ts";
@@ -28,7 +28,7 @@ export interface Status {
   episodes: EpisodeView[];
   timeline: TimelineEvent[];
   /** what a new chat will know after /cortex-resume, and what that costs */
-  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal: string; next: string; instructions: number; decisions: number; trail: number; commits: number; flagged: number } };
+  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; /** the chat it came from, in a few words */ chat?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal: string; next: string; instructions: number; decisions: number; trail: number; commits: number; flagged: number } };
   /** Claude Code's own memory files: what loads into every session, and what each costs */
   native: { files: NativeFile[]; alwaysTokens: number; alwaysLines: number; autoMemory: { dir: string; enabled: boolean } };
   /** Dreams: one running now, and the recent ones (newest first) */
@@ -105,6 +105,7 @@ export function computeStatus(p: RepoPaths): Status {
       ready: /HANDOFF READY/.test(head),
       session: /· session ([^\s·]+)/.exec(head.split("\n")[0] ?? "")?.[1] ?? "",
       from: /· from ([^ ]+)/.exec(head.split("\n")[0] ?? "")?.[1] ?? "",
+      chat: chatLabel(history.states.find((h) => h.session === (/· session ([^\s·]+)/.exec(head.split("\n")[0] ?? "")?.[1] ?? "-"))?.chat ?? "") || undefined,
       preview: head ? {
         exchanges: (head.match(/^### You /gm) ?? []).length,
         files: (/^Edited in the last turns: (.+)$/m.exec(head)?.[1]?.match(/`/g)?.length ?? 0) / 2,

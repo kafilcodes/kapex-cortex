@@ -1,6 +1,6 @@
 // Copied next to the mod by scripts/preview.ts (never run by the normal tests): mounts each page and the strip
 // with a real status and prints the drawn trees for the HTML preview.
-import { test } from 'claude-code/testing'
+import { mock, test } from 'claude-code/testing'
 
 const STATUS = __STATUS__
 const COLS: number[] = __COLS__
@@ -23,12 +23,13 @@ function engine(on: any) {
 const out = (name: string, tree: unknown) => console.log('@@PREVIEW ' + JSON.stringify({ name, tree }))
 
 test('preview', async ($, on) => {
+  mock.clock(on, { now: Date.now() })
   engine(on)
   on('turn.complete', () => ({ text: '' }))
   await $.session.start({ cwd: STATUS.root, surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
   await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1', usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 9_700, cache_creation_input_tokens: 200 } } as any)
-  const band: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: {} } as any)
+  const band: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: { bodyColumns: 80 } } as any)
   out('strip', await band.drawn()); await band.unmount()
   for (const bodyColumns of COLS) {
     const ui: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'Pane', requestId: 'kapex-cortex', surface: 'desktop', props: { title: 'Kapex Cortex', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } } as any)

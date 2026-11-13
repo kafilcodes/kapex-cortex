@@ -7,7 +7,7 @@
 //   lanes     → the timeline as swimlanes over time (turns, code, memory, sessions), one dot per event
 // Pure functions: data in, SVG text out. Animation plays only when the caller says the values changed.
 import { iconPaths } from './icons'
-import { esc, FONT, K, levelColor } from './theme'
+import { esc, FONT, K, levelColor, textWidth } from './theme'
 
 
 const svg = (w: number, h: number, body: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${body}</svg>`
@@ -67,7 +67,7 @@ export function tiles(o: { items: { label: string; value: number; color: string;
     const x = i * (s + gap)
     const strong = it.value > 0
     const col = strong ? it.color : K.ink
-    const labelW = it.label.length * 5.6 + (it.icon ? 13 : 0)
+    const labelW = textWidth(it.label, 10) + (it.icon ? 13 : 0)
     const lx = x + s / 2 - labelW / 2
     const ic = it.icon ? `<g transform="translate(${lx.toFixed(1)} ${(s + 7).toFixed(1)}) scale(0.46)" fill="none" stroke="${col}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${iconPaths(it.icon)}</g>` : ''
     return `<g>${o.animate ? `<animate attributeName="opacity" from="0" to="1" dur="${(0.3 + i * 0.07).toFixed(2)}s" fill="freeze"/>` : ''}`

@@ -13,6 +13,10 @@ export type TipAction = 'handoff' | 'dream' | 'review' | 'costs' | 'resume'
 export type Tip = { level: 'act' | 'warn' | 'ok'; icon: string; text: string; detail: string; color: string; action?: TipAction }
 
 const DAY = 24 * 60
+// Model economics (API prices, checked 2026-11-13; see .claude/rules/engineering.md): Fable 5.2 is $8/$40 per M tokens,
+// Opus 5.5 $4/$20. The plan is the scarce thing on a subscription, so the tip says it only when the plan runs low.
+const onFable = (l: LiveView | null) => /fable|mythos/i.test(l?.model ?? '')
+const FABLE_NOTE = ' You are on Fable, about twice the price of Opus 5.5 per token: for routine edits and test loops, /model opus stretches the plan; keep Fable for deep design and audits.'
 
 export function tipFor(s: StatusView, l: LiveView | null, cv: CacheView, limits: LiveView['limits'], sw: { pct: number } | null = null): Tip | null {
   const ctx = l?.context.tokens ?? 0
@@ -32,12 +36,17 @@ export function tipFor(s: StatusView, l: LiveView | null, cv: CacheView, limits:
   // red: a move that saves real tokens or work now
   if (cs.state === 'cold' && ctx > 150_000) return { level: 'act', icon: 'alert', color: K.rose, action: 'handoff', text: `Cold cache · hand off, save ~${k(save)}`, detail: `Your next message here re-reads all ${k(ctx)} tokens at full price.${fresh}` }
   if (sw || (ctx > 100_000 && pct / 100 >= Math.min(at, compactAt - 0.05))) return { level: 'act', icon: 'link', color: K.rose, action: 'handoff', text: `${pct}% full · hand off, save ~${k(save)}`, detail: `Every message here carries ${k(ctx)} tokens, and Claude summarizes the chat near ${Math.round(compactAt * 100)}%.${fresh}` }
-  if (five >= 90) return { level: 'act', icon: 'alert', color: K.rose, action: 'handoff', text: `5h plan ${five}% · hand off`, detail: 'Save the handoff, then continue in OpenCode (free models) with /cortex-resume, or wait for the reset.' }
+  if (five >= 90) return { level: 'act', icon: 'alert', color: K.rose, action: 'handoff', text: `5h plan ${five}% · hand off`, detail: `Save the handoff, then continue in OpenCode (free models) with /cortex-resume, or wait for the reset.${onFable(l) ? FABLE_NOTE : ''}` }
+
+  // green, ahead of the amber ones: a fresh chat, and a recent handoff written by another chat. Continuing is the move
+  const other = !s.handoff.session || !l?.sessionId || s.handoff.session !== l.sessionId
+  if (l && l.turns === 0 && other && s.handoff.exists && s.handoff.ageMinutes !== null && s.handoff.ageMinutes < 3 * DAY) return { level: 'ok', icon: 'link', color: K.emerald, action: 'resume', text: `Continue: /cortex-resume · ${ago(s.handoff.ageMinutes)}`, detail: `A handoff from ${s.handoff.chat ? `“${s.handoff.chat}”` : s.handoff.from || 'your last session'} is saved.${fresh}` }
 
   // amber: worth knowing, fine to continue
+  if (cs.state === 'cold' && ctx > 50_000) return { level: 'warn', icon: 'pending', color: K.amber, action: 'handoff', text: `Cache cold · next reply re-reads ${k(ctx)}`, detail: `The cache expired ${ago(Math.round((Date.now() - cs.until!) / 60_000))}. Your next message here is read again at full price; a new chat with /cortex-resume starts at about ${k(start)}.` }
   if (cs.state === 'cooling' && ctx > 50_000) return { level: 'warn', icon: 'pending', color: K.amber, text: `Cache cools at ${clock(cs.until!)} · reply before`, detail: `After that, your next message re-reads ${k(ctx)} tokens at full price. Fine to continue.` }
   if (ctx > 100_000 && pct / 100 >= Math.min(at, compactAt) - 0.15) return { level: 'warn', icon: 'turn', color: K.amber, text: `${pct}% full · fine to continue`, detail: `Cortex suggests a fresh chat at ${Math.round(at * 100)}%.${fresh}` }
-  if (five >= 70) return { level: 'warn', icon: 'pending', color: K.amber, text: `5h plan ${five}% · fine to continue`, detail: 'At 90% Cortex suggests handing off, so you can continue in OpenCode or after the reset.' }
+  if (five >= 70) return { level: 'warn', icon: 'pending', color: K.amber, text: `5h plan ${five}% · fine to continue`, detail: `At 90% Cortex suggests handing off, so you can continue in OpenCode or after the reset.${onFable(l) ? FABLE_NOTE : ''}` }
   const waiting = toReview(s)
   if (waiting) return { level: 'warn', icon: 'dream', color: K.amber, action: 'review', text: `${waiting} memory fix${waiting === 1 ? '' : 'es'} to review`, detail: 'A Dream or Quick check found notes that look wrong or stale. Decide before a new chat trusts them.' }
   // the last turn filled this chat with tool output: a subagent would have kept it out (measured from the journal)
@@ -56,9 +65,6 @@ export function tipFor(s: StatusView, l: LiveView | null, cv: CacheView, limits:
   const sessions = new Set(since.map(e => e.session)).size
   if (!s.dream.running && sessions >= 3 && since.length >= 10 && (!last || (minsSince(last) ?? 0) > 3 * DAY)) return { level: 'warn', icon: 'dream', color: K.amber, action: 'dream', text: `Dream due · ${last ? `last ${ago(minsSince(last))}` : 'none yet'}`, detail: `${sessions} chats since${last ? ' the last Dream' : ''}. A Dream checks Claude's memory against them in the background and only proposes changes.` }
 
-  // green: a fresh chat, and a recent handoff written by another chat
-  const other = !s.handoff.session || !l?.sessionId || s.handoff.session !== l.sessionId
-  if ((l?.turns ?? 0) === 0 && other && s.handoff.exists && s.handoff.ageMinutes !== null && s.handoff.ageMinutes < 3 * DAY) return { level: 'ok', icon: 'link', color: K.emerald, action: 'resume', text: 'Continue: type /cortex-resume', detail: `A handoff from ${s.handoff.from || 'your last session'} is saved.${fresh}` }
   return null
 }
 

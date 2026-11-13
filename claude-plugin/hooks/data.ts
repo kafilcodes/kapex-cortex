@@ -74,7 +74,19 @@ async function cacheTtl($: Dollar, hasPlanLimits: boolean): Promise<{ ttl: '5m' 
   return hasPlanLimits ? { ttl: '1h', source: 'assumed for subscription' } : { ttl: '5m', source: 'API default' }
 }
 
+/** The files other chats and tools write here (handoff, journal, Dreams, git): their times, joined. Read by the
+ * strip's heartbeat to know, with four stats and no Node, that a full refresh would show something new. */
+export async function vaultStamp($: Dollar, root: string): Promise<string> {
+  const at = (f: string) => $.fs.stat(`${root}/${f}`).then(x => String(x.mtimeMs), () => '-')
+  return (await Promise.all(['.vault/STATE.md', '.vault/private/episodes.jsonl', '.vault/dreams', '.git/logs/HEAD'].map(at))).join(':')
+}
+let seenStamp = ''
+/** The stamp the last full refresh started from ('' before the first). */
+export const lastStamp = () => seenStamp
+
 export async function refresh($: Dollar): Promise<void> {
+  const root = (await read($, status))?.root
+  if (root) seenStamp = await vaultStamp($, root).catch(() => '')
   let r = await kc($, ['status', '--json'])
   let s: StatusView | null = null
   if (!r.ok) {
@@ -91,10 +103,27 @@ export async function refresh($: Dollar): Promise<void> {
   if (!s && failed) s = (await read($, status)) ?? ((await $.store.get(STORE_STATUS)) as StatusView | undefined) ?? null
   if ((await read($, fail)) !== failed) await update($, fail, () => failed)
   if (r.ok && s) void $.store.set(STORE_STATUS, s).catch(() => undefined) // instant strip after a restart or app update
-  let l: LiveView | null = null
+  if (!root && s?.root) seenStamp = await vaultStamp($, s.root).catch(() => '')
+  const l = await liveNow($)
+  if (l) {
+    const t = await cacheTtl($, l.limits.some(x => x.kind === 'five_hour'))
+    const cur = await read($, cache)
+    if (cur.ttl !== t.ttl || cur.ttlSource !== t.source) await update($, cache, c => ({ ...c, ttl: t.ttl, ttlSource: t.source }))
+    // after an app restart this chat's last reply time is gone: the journal has it (the Stop hook wrote it)
+    const ep = !cur.lastAt && l.turns > 0 && l.sessionId ? s?.episodes?.find(e => e.session === l.sessionId) : undefined
+    if (ep && Date.parse(ep.end)) await update($, cache, c => (c.lastAt ? c : { ...c, lastAt: Date.parse(ep.end) }))
+  }
+  const sj = JSON.stringify(s)
+  if (sj !== lastJson.s) { lastJson.s = sj; await update($, status, () => s) }
+  await putLive($, l)
+  if (s && l) void autoPark($, s, l)
+}
+
+/** Claude Code's own numbers for this chat (in-process: no command, no tokens), or null where they can't be read. */
+async function liveNow($: Dollar): Promise<LiveView | null> {
   try {
     const u = await $.session.usage({ breakdown: 'summary' })
-    l = {
+    return {
       model: await $.session.model(),
       turns: await $.session.turns(),
       context: { tokens: u.context.tokens, window: u.context.breakdown?.maxTokens ?? u.context.window, percent: u.context.percent, rows: (u.context.breakdown?.categories ?? []).filter(c => !c.isDeferred).map(c => ({ name: c.name, tokens: c.tokens })) },
@@ -104,15 +133,16 @@ export async function refresh($: Dollar): Promise<void> {
       sessionId: await $.session.id().catch(() => undefined),
       loadout: loadout(u.context.breakdown),
     }
-    const t = await cacheTtl($, u.rateLimits.some(x => x.kind === 'five_hour'))
-    const cur = await read($, cache)
-    if (cur.ttl !== t.ttl || cur.ttlSource !== t.source) await update($, cache, c => ({ ...c, ttl: t.ttl, ttlSource: t.source }))
-  } catch { l = null }
-  const sj = JSON.stringify(s)
+  } catch { return null }
+}
+/** Live numbers only, while a turn runs: the strip's ring climbs as the chat grows, without starting Node. */
+export async function refreshLive($: Dollar): Promise<void> { const l = await liveNow($); if (l) await putLive($, l) }
+/** Writes the live numbers only when they changed (a write redraws the strip and panel). */
+async function putLive($: Dollar, l: LiveView | null): Promise<void> {
   const lj = JSON.stringify(l)
-  if (sj !== lastJson.s) { lastJson.s = sj; await update($, status, () => s) }
-  if (lj !== lastJson.l) { lastJson.l = lj; await update($, live, () => l) }
-  if (s && l) void autoPark($, s, l)
+  if (lj === lastJson.l) return
+  lastJson.l = lj
+  await update($, live, () => l)
   // plan use is only reported after a reply: keep the last known numbers across chats instead of an empty card
   if (l?.limits.length) void $.store.set(STORE_LIMITS, { at: Date.now(), limits: l.limits }).catch(() => undefined)
   const fiveNow = l?.limits.find(x => x.kind === 'five_hour')?.percentUsed
@@ -145,6 +175,7 @@ export async function snapshot($: Dollar) {
   return { s: await read($, status), l: await read($, live), cv: await read($, cache), msg: await read($, note), chosen: await read($, tab), hist: await read($, history), ph: await read($, planHist), vw: await read($, view) }
 }
 export async function readStatus($: Dollar) { return read($, status) }
+export async function readCache($: Dollar) { return read($, cache) }
 export async function readOff($: Dollar) { return { o: await read($, off), dir: await read($, project) } }
 export async function chooseProject($: Dollar, dir: string): Promise<void> { await update($, project, () => dir); await refresh($) }
 export async function setTab($: Dollar, t: Tab): Promise<void> { await update($, tab, () => t) }
@@ -216,8 +247,9 @@ export function refreshSoon($: Dollar): void {
   lastTry = Date.now()
   void refresh($).catch(() => undefined)
 }
+/** One tile open at a time (an accordion): opening one closes the other, so the list stays calm and short. */
 export async function toggleExpanded($: Dollar, id: string): Promise<void> {
-  await update($, view, v => ({ ...v, expanded: v.expanded.includes(id) ? v.expanded.filter(x => x !== id) : [...v.expanded.slice(-40), id] }))
+  await update($, view, v => ({ ...v, expanded: v.expanded.includes(id) ? [] : [id] }))
 }
 export async function setSub($: Dollar, sub: string): Promise<void> { await update($, view, v => ({ ...v, sub })) }
 /** First-run intro: the step to show, or -1 once finished or skipped. */

@@ -67,12 +67,12 @@ export function kit(els: ElementTable, surface: string) {
     ),
     /** a page's opening line: a title, one short caption and its drawing on the right; no card behind it */
     intro: (key: string, svg: string, alt: string, title: string, caption: string) => (
-      <Box key={key} flexDirection="row" alignItems="center" justifyContent="space-between" columnGap={2} flexWrap="wrap" paddingX={1}>
-        <Box flexDirection="column" gap={0} flexGrow={1} flexShrink={1} minWidth={24}>
+      <Box key={key} flexDirection="row" alignItems="center" justifyContent="space-between" columnGap={2} flexWrap="nowrap" paddingX={1}>
+        <Box flexDirection="column" gap={0} flexGrow={1} flexShrink={1} minWidth={16}>
           <Text weight="semibold" color={K.text}>{title}</Text>
           <Text size="caption" color={K.label}>{caption}</Text>
         </Box>
-        {Svg ? <Svg key={`${key}-i`} source={svg} alt={alt} width={size(svg, 'width')} height={size(svg, 'height')} /> : null}
+        {Svg ? <Box key={`${key}-b`} flexShrink={0}><Svg key={`${key}-i`} source={svg} alt={alt} width={size(svg, 'width')} height={size(svg, 'height')} /></Box> : null}
       </Box>
     ),
     /** a section heading in Kapex Emerald */

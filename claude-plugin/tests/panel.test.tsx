@@ -65,7 +65,8 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
   await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
   await $.command.run({ command: 'kc' } as any)
   let ui: any = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  for (const t of ['Opus 5.5', 'main', /^875 memory tokens$/, 'OpenCode ready']) expect(await ui.find({ type: 'Text', text: t })).toBeDefined()
+  for (const t of ['Opus 5.5', 'main', /^875 memory tokens$/]) expect(await ui.find({ type: 'Text', text: t })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'OpenCode ready' })).toBeUndefined() // 70 columns: it would wrap alone onto a line
   expect(await ui.find({ type: 'Text', text: '2 to review' })).toBeDefined() // the Dream's change and the note that's yours to decide
   expect(await ui.find({ type: 'Text', text: /^A new chat with \/cortex-resume gets, in three parts:$/ })).toBeDefined()
   expect(await ui.find({ key: 'sw-yes' })).toBeUndefined() // 42% full: no hand-off question
@@ -79,7 +80,7 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
   expect(await ui.find({ type: 'Text', text: /^Cortex adds to each message$/ })).toBeDefined()
   // anti-slop: words, not glyph icons, in labels and buttons
   expect(await ui.find({ text: /[≡⇪◷◔⚙⇅◫↻◆⎇✓]/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /compacts at 84%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Claude summarizes at 84%/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /warms up with your next reply/ })).toBeDefined()
   await ui.unmount()
 
@@ -110,9 +111,9 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
     expect(await ui.find({ key: 'sel-dreamModel' })).toBeDefined()
     expect(await ui.find({ key: 'sel-tokenMode' })).toBeDefined()
     await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-details' })
-    expect(await ui.find({ type: 'Text', text: /92 ms of 150 ms · 40 runs/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /92 ms · limit 150 ms · 40 replies/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^Loaded into every message$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /minimize it/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Minimize the panel to hide it/ })).toBeDefined()
     await ui.press({ key: 'tab-overview' })
     await ui.unmount()
   }

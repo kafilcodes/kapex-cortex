@@ -55,6 +55,15 @@ function tracked(root: string): Set<string> {
 
 const resolveRef = (root: string, ref: string) => (ref.startsWith("~/") ? join(homedir(), ref.slice(2)) : isAbsolute(ref) ? ref : resolve(root, ref));
 
+/** Two notes say the same thing: one holds all of the other's words, or they share 80% of all their words. Sharing
+ * 80% of the shorter one's words was too loose: "Log parsers before merging" is not "Prefer parsers before merging". */
+export function isCopy(a: string, b: string): boolean {
+  const wa = new Set(contentWords(a)), wb = new Set(contentWords(b));
+  const shared = [...wa].filter((w) => wb.has(w)).length;
+  const small = Math.min(wa.size, wb.size), union = wa.size + wb.size - shared;
+  return small > 0 && (shared === small || shared / union >= 0.8);
+}
+
 export function mechanicalChecks(root: string, files: NativeFile[], ents: Entry[], ev: Evidence[]): Finding[] {
   const out: Omit<Finding, "id">[] = [];
   const fileOf = new Map(files.map((f) => [f.path, f]));
@@ -117,12 +126,15 @@ export function mechanicalChecks(root: string, files: NativeFile[], ents: Entry[
   }
 
   // 5. duplicates: the same note twice; the copy in the weaker place goes (yours and CLAUDE.md win over auto memory)
-  const pool = ents.filter((e) => contentWords(e.text).length >= 4 && !/\]\([^)\s]+\.md\)/.test(e.text));
+  // a note an earlier check already flagged is reported once, not again as a copy
+  const flaggedAt = new Set(out.filter((f) => f.line).map((f) => `${f.file}:${f.line}`));
+  const pool = ents.filter((e) => contentWords(e.text).length >= 4 && !/\]\([^)\s]+\.md\)/.test(e.text) && !flaggedAt.has(`${e.file}:${e.line}`));
   const dropped = new Set<Entry>();
   for (let i = 0; i < pool.length; i++) {
     for (let j = i + 1; j < pool.length; j++) {
       const a = pool[i]!, b = pool[j]!;
-      if (dropped.has(a) || dropped.has(b) || overlap(a.text, b.text) < 0.8) continue;
+      // "X is broken" and "run X" share words but say opposite things: a contradiction is not a copy
+      if (dropped.has(a) || dropped.has(b) || !isCopy(a.text, b.text) || NEG.test(a.text) !== NEG.test(b.text)) continue;
       const ra = RANK[fileOf.get(a.file)?.scope ?? "auto"] ?? 3, rb = RANK[fileOf.get(b.file)?.scope ?? "auto"] ?? 3;
       const [keep, lose] = rb < ra ? [b, a] : [a, b];
       if (!editable(lose)) continue;

@@ -27,7 +27,7 @@ export function spendCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: Sta
   )
   return u.card('spend', '100%', [
     u.head('sp-h', 'Tokens this project used', `from Claude Code's own counts · kept since ${sp.since ?? '–'}`),
-    <Box key="sp-c" flexDirection="row" gap={1} flexWrap="wrap">{col('sp-d', 'Today', sp.today)}{col('sp-w', 'Last 7 days', sp.week)}{col('sp-a', 'All kept', sp.all)}</Box>,
+    <Box key="sp-c" flexDirection="row" gap={1} flexWrap="wrap">{col('sp-d', 'Today', sp.today)}{col('sp-w', 'Last 7 days', sp.week)}{total(sp.all) !== total(sp.week) ? col('sp-a', 'All kept', sp.all) : null}</Box>,
     <Box key="sp-l" flexDirection="row" flexWrap="wrap" columnGap={3}>{PARTS.map(([f, l, c]) => <Box key={`spl-${f}`} flexDirection="row" gap={1} alignItems="center">{u.dot(`spd-${f}`, c)}<Text size="caption" color={K.label}>{l}</Text></Box>)}</Box>,
     u.muted('sp-n', 'Cache reads: the chat re-read with each message, at about 1/10 the price. Subagents included.'),
   ])
@@ -43,7 +43,8 @@ export function savedCard(u: Kit, t: Tiles, s: StatusView): JSX.Element | null {
     t.metric('sv-r', 'link', sp?.resumed ? K.emerald : K.silver, sp?.resumed ? k(sp.resumedContext) : '0', sp?.resumed ? `tokens not re-read: ${sp.resumed} chat${sp.resumed === 1 ? '' : 's'} started from a handoff instead of continuing a big one (first message)` : 'no chat started from a handoff yet', '100%'),
     t.metric('sv-p', 'spark', perMsg ? K.emerald : K.silver, perMsg ? k(perMsg) : '0', perMsg ? `fewer tokens per message in new chats (${parkedHere.length} unused server${parkedHere.length === 1 ? '' : 's'} off)` : 'no unused servers turned off yet', '100%'),
     t.metric('sv-s', 'move', scoped ? K.sage : K.silver, scoped ? k(scoped) : '0', 'tokens of rules that load only for their files (path-scoped)', '100%'),
-    t.metric('sv-z', 'check', K.emerald, '0', 'tokens Cortex adds to your messages', '100%'),
+    // honest both ways: what Cortex itself costs sits beside what it saved (the Costs card above says the same)
+    t.metric('sv-z', 'spark', K.silver, s.footprint ? `~${k(s.footprint.tokens)}` : '–', 'tokens Cortex itself adds to each message (its skill descriptions)', '100%'),
   ])
 }
 

@@ -78,12 +78,12 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
         {u.node('dr-n', 'dream', K.emerald, 26)}
         <Box flexDirection="column">
           <Text weight="semibold" color={K.text}>Dream</Text>
-          <Text size="caption" color={K.muted}>{running ? `Dreaming… started ${ago(minsSince(running.since))}` : last ? `Last one ${ago(minsSince(last.ts))} · ${last.status}` : 'Not run yet'}</Text>
+          <Text size="caption" color={K.muted}>{running ? `Dreaming… started ${ago(minsSince(running.since))}` : last ? `Last one ${ago(minsSince(last.ts))} · ${last.status === 'proposed' && !last.findings.length ? 'clean' : last.status === 'proposed' ? 'waiting for you' : last.status}` : 'Not run yet'}</Text>
         </Box>
       </Box>
       <Box flexDirection="row" gap={1} alignItems="center">
-        <Button key="kc-dream-checks" onPress={() => { void act($, 'Checked', ['dream', 'run', '--no-model']) }}>Quick check</Button>
-        <Button key="kc-dream" variant="primary" onPress={() => { void act($, 'Dream started', ['dream']) }}>{running ? 'Dreaming…' : 'Dream now'}</Button>
+        <Button key="kc-dream-checks" onPress={() => { void act($, 'Checked', ['dream', 'run', '--no-model']) }}>Quick check · free</Button>
+        <Button key="kc-dream" variant="primary" onPress={() => { void act($, 'Dream started', ['dream']) }}>{running ? 'Dreaming…' : 'Dream now · 1–2 min'}</Button>
       </Box>
     </Box>,
     <Box key="dr-m" flexDirection="row" gap={1} flexWrap="wrap">
@@ -92,12 +92,12 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
       {t.metric('dm-n', 'rule', K.silver, last ? String(last.entryCount) : '–', 'notes checked', '40%')}
       {t.metric('dm-f', 'alert', last?.findings.length ? K.amber : K.emerald, last ? String(last.findings.length) : '–', 'findings', '40%')}
     </Box>,
-    u.tag('dr-cost', 'spark', K.silver, `Dream now: ${model}, about 10–25k tokens, 1–2 min. Quick check: free, no model.`, K.muted),
+    // what each button costs is on the button; this line only says who does the work
+    u.tag('dr-cost', 'spark', K.silver, `Quick check: Cortex's own checks, no model. Dream: also asks ${model} (about 10–25k tokens of your plan).`, K.muted),
   ], K.emerald)
 
   // earlier Dreams worth a tile: the applied ones (Undo works); the rest is one line
   const earlier = recent.slice(1).filter(d => d.status === 'applied').slice(0, 5)
-  const quiet = recent.slice(1).length - earlier.length
   const list = last ? [...last.findings].sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || ORDER[a.severity] - ORDER[b.severity]) : []
   const actions = live && last.findings.length
     ? <Box key="dr-act" flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={1} rowGap={1} flexWrap="wrap">
@@ -127,7 +127,6 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
       {list.length ? t.stack('dr-fl', list.map(f => findingTile(last!, f))) : null}
       {last?.kept ? u.muted('dr-kept', `${last.kept} note${last.kept === 1 ? '' : 's'} you kept before ${last.kept === 1 ? 'was' : 'were'} not flagged again.`) : null}
       {earlier.length ? t.groupHead('dr-hh', 'pending', K.silver, 'Earlier Dreams you can undo', String(earlier.length)) : null}
-      {quiet ? u.muted('dr-hq', `${quiet} older Dream${quiet === 1 ? '' : 's'} discarded or replaced: nothing to undo.`) : null}
       {earlier.map(d => t.tile({
         id: `dh-${d.id}`, icon: 'dream', color: d.status === 'failed' ? K.rose : d.status === 'applied' ? K.emerald : K.silver, title: `${d.findings.length} finding${d.findings.length === 1 ? '' : 's'}`, time: ago(minsSince(d.ts)),
         badges: [[d.status, d.status === 'applied' ? K.emerald : d.status === 'failed' ? K.rose : K.label], [d.model ?? 'checks only']],

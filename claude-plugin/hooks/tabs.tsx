@@ -43,10 +43,10 @@ export function dataPage($: Dollar, o: Ctx): JSX.Element {
         {u.intro('h-in', illoHandoff(150), 'A full chat handing off to a fresh one', 'Handing off to a new chat', 'What /cortex-resume gives the next chat, saved after every reply.')}
         {u.card('h-ready', '100%', readyToSwitch($, o.els, u, t, s, o.l, 'hr'), K.emerald)}
         <Box key="h-act" flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" columnGap={1} rowGap={1}>
-          {u.tag('h1', 'link', s.handoff.ready ? K.amber : K.emerald, `Saved after every reply${s.handoff.from ? ` · last from ${s.handoff.from}` : ''}`, K.label)}
+          {u.tag('h1', 'link', s.handoff.ready ? K.amber : K.emerald, `Saved after every reply${s.handoff.chat ? ` · last from “${s.handoff.chat}”` : s.handoff.from ? ` · last from ${s.handoff.from}` : ''}`, K.label)}
           <Box flexDirection="row" gap={1}>
             <Button key="kc-hand2" onPress={() => { void act($, 'Handoff saved', ['h']) }}>Save now</Button>
-            <Button key="kc-resume" variant="primary" onPress={() => { void $.prompt.submit({ text: RESUME }) }}>Resume here</Button>
+            <Button key="kc-resume" variant="secondary" onPress={() => { void $.prompt.submit({ text: RESUME }) }}>Continue it here</Button>
           </Box>
         </Box>
         {u.card('h-fish', '100%', [
@@ -55,12 +55,11 @@ export function dataPage($: Dollar, o: Ctx): JSX.Element {
               {u.node('h-fish-n', 'lesson', K.sage, 22)}
               <Box flexDirection="column" gap={0} flexShrink={1}>
                 <Text weight="semibold" color={K.text}>Check with fresh eyes</Text>
-                <Text size="caption" color={K.label}>A helper that knows nothing of this chat reads only the handoff and the files it names, and says where it would get stuck. Runs once in this chat (roughly 20–50k tokens, more when the handoff names many files); nothing is added to later messages.</Text>
+                <Text size="caption" color={K.label}>A helper with no memory of this chat reads only the handoff and says where it would get stuck. Once, about 20–50k tokens.</Text>
               </Box>
             </Box>
             <Button key="kc-fish" variant="secondary" onPress={() => { void $.prompt.submit({ text: GOLDFISH }) }}>Check now</Button>
           </Box>,
-          u.muted('h-fish-egm', 'The idea is the Goldfish from Google\'s Elephant-Goldfish model. For design docs and spec drift, its own plugin (egm) does the same.'),
         ])}
         {u.card('h-git', '100%', [
           u.head('h-git-h', 'Code state', s.git ? s.git.branch : undefined),

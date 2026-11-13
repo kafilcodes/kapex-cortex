@@ -12,7 +12,8 @@ const OUT = join(ROOT, "docs/preview");
 const cols = process.argv.slice(2).map(Number).filter(Boolean);
 const COLS = cols.length ? cols : [70, 160];
 
-const status = spawnSync(process.execPath, [join(ROOT, "src/cli.ts"), "status", "--json"], { cwd: ROOT, encoding: "utf8" }).stdout.trim();
+// PREVIEW_PROJECT: draw another project's status instead (the README shots use the benchmark's dummy project)
+const status = spawnSync(process.execPath, [join(ROOT, "src/cli.ts"), "status", "--json"], { cwd: process.env.PREVIEW_PROJECT || ROOT, encoding: "utf8" }).stdout.trim();
 const mod = mkdtempSync(join(tmpdir(), "cortex-preview-"));
 cpSync(join(ROOT, "claude-plugin"), mod, { recursive: true });
 rmSync(join(mod, "tests"), { recursive: true, force: true });
@@ -72,7 +73,8 @@ function draw(e: El): string {
       return `<span class="${cls}">${p.label ? esc(String(p.label)) : kids}</span>`; // the app draws the label when there is one
     }
     case "Svg": if (!p.alt) return ""; // like the app: an Svg with an empty alt is not drawn
-      return `<img src="data:image/svg+xml;utf8,${encodeURIComponent(String(p.source ?? ""))}" width="${p.width}" height="${p.height}" alt="${esc(String(p.alt ?? ""))}" title="${esc(String(p.alt ?? ""))}" style="flex:none">`;
+      // inline, like Desktop's frame: the system font resolves (an <img> SVG falls back to a wider one)
+      return `<span role="img" aria-label="${esc(String(p.alt ?? ""))}" title="${esc(String(p.alt ?? ""))}" style="flex:none;display:inline-flex;width:${p.width}px;height:${p.height}px">${String(p.source ?? "").replace(/^<svg([^>]*?) width="[\d.]+" height="[\d.]+"/, `<svg$1 width="${p.width}" height="${p.height}"`)}</span>`;
     case "Input": return `<span class="in"><span class="t" style="font-size:12px;color:var(--subtle)">${esc(String(p.label ?? ""))}</span><span class="field">${esc(String(p.value ?? p.placeholder ?? ""))}</span></span>`;
     case "Select": {
       const opts = (p.options as { value: string; label?: string }[] | undefined) ?? [];
@@ -93,7 +95,7 @@ function page(title: string, frames: { theme: keyof typeof THEMES; width: number
   .b.primary{background:var(--text);color:var(--bg);border-color:transparent}.b.primary .t{color:inherit!important}.b.plain{border:none;background:none;padding:2px 4px;color:var(--text);text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px}
   .in{display:flex;flex-direction:column;gap:2px;min-width:160px}.field{border:1px solid var(--border);border-radius:7px;padding:4px 8px}`;
   const vars = (t: keyof typeof THEMES) => Object.entries(THEMES[t]).map(([k, v]) => `--${k}:${v}`).join(";");
-  return `<!doctype html><meta charset="utf-8"><title>${esc(title)}</title><style>${style}</style><div class="frames">${frames.map((f) => `<div class="f" style="${vars(f.theme)};width:${f.width}px"><div style="padding:0">${draw(f.tree)}</div></div>`).join("")}</div>`;
+  return `<!doctype html><meta charset="utf-8"><title>${esc(title)}</title><style>${style}</style><div class="frames">${frames.map((f) => `<div class="f" style="${vars(f.theme)};width:${f.width}px"><div style="padding:0">${draw(f.tree)}</div></div>`).join("")}</div><script>if (location.hash) document.body.style.zoom = location.hash.slice(1)</script>`; // #0.6 shrinks a page to fit a small window
 }
 
 mkdirSync(OUT, { recursive: true });

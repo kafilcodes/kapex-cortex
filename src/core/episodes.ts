@@ -1,3 +1,4 @@
+import { nextFromReply } from "./brief.ts";
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readJsonl } from "../util/atomic.ts";
@@ -107,6 +108,18 @@ export function accumulate(p: RepoPaths, session: string, entries: Record<string
 const pick = (reply: string, label: string) =>
   (new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*\\*)?${label}(?:\\*\\*)?\\s*[:：]\\s*(?:\\*\\*)?\\s*(.+)$`, "im").exec(reply)?.[1] ?? "").replace(/\*\*/g, "").trim().slice(0, 300);
 
+/** What the reply says was done, when it has no "Done:" line: its first real sentence (not "Sure!" or "Let me look"),
+ * outside headings, tables and code. */
+export function summary(reply: string): string {
+  const prose = reply.replace(/```[\s\S]*?```/g, " ").split("\n").filter((l) => !/^\s*(?:#|\||>|[-*]\s*\[)/.test(l)).join(" ");
+  // a sentence ends at . ! or ? followed by a space: "src/totals.ts" stays whole
+  for (const part of prose.split(/(?<=[.!?])\s+/)) {
+    const t = part.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+    if (t.length >= 20 && !/^(?:(?:sure|okay|ok|got it|great|let me|i'll|i will|now i|first,? i)\b|next(?: step| action)?\s*[:：])/i.test(t)) return t.slice(0, 200);
+  }
+  return "";
+}
+
 /** Close the turn at Stop: the episode is written once, with the AI's own Done/Next lines. Empty turns are dropped. */
 export function finalize(p: RepoPaths, session: string, lastAssistant = ""): Episode | null {
   const f = openFile(p, session);
@@ -116,7 +129,7 @@ export function finalize(p: RepoPaths, session: string, lastAssistant = ""): Epi
   rmSync(f, { force: true });
   if (!ep.ask && !Object.keys(ep.tools).length) return null;
   const { pending: _pending, ...rest } = ep;
-  const done: Episode = { id: ulid(), ...rest, done: pick(lastAssistant, "Done"), next: pick(lastAssistant, "Next") };
+  const done: Episode = { id: ulid(), ...rest, done: pick(lastAssistant, "Done") || summary(lastAssistant), next: pick(lastAssistant, "Next") || nextFromReply(lastAssistant) };
   appendFileSync(file(p), JSON.stringify(done) + "\n");
   return done;
 }

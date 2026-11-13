@@ -14,6 +14,7 @@ import { K } from './theme'
 import { timelinePage } from './timeline'
 import { switchDue } from './switch'
 import { tipFor } from './tips'
+import { readPulse } from './pulse'
 
 // The Cortex panel: a greeting header and four pages (Overview · Timeline · Dream & Memory · Settings), so nothing is
 // crammed onto one page. Transparent, so it follows Claude Code's light or dark mode. No timers.
@@ -21,12 +22,17 @@ type PaneEvent = Parameters<Hook<'ui.render'>>[1]
 const PAGES: [Tab, string, string][] = [['overview', 'Overview', '1'], ['timeline', 'Timeline', '2'], ['data', 'Dream & Memory', '3'], ['settings', 'Settings', '4']]
 const LEGACY: Partial<Record<Tab, [Tab, string]>> = { waiting: ['data', 'dream'], rules: ['data', 'files'], failed: ['data', 'files'], handoff: ['data', 'handoff'], compactions: ['data', 'dream'], details: ['data', 'details'] }
 
+/** The last drawing and what it was drawn from. A redraw with the same inputs (the pane scrolled, the window moved)
+ * returns the same tree, so nothing on screen reloads: no chart frame blinking, no scroll position lost. */
+let memo: { key: string; tree: JSX.Element | null } = { key: '', tree: null }
+
 const greet = (name: string) => {
   const h = new Date().getHours()
   return `${h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${name ? `, ${name}` : ''}`
 }
 
 export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> {
+  const pulse = await readPulse($) // the heartbeat: time-driven changes (cache, plan reset, day) redraw without a turn
   const els = $.ui.resolve(e)
   const { Box, Text, Button } = els
   const u = kit(els, e.surface)
@@ -74,22 +80,24 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
   if (legacy && vw.sub !== legacy[1]) void setSub($, legacy[1])
   const waiting = toReview(s)
   const over = s.native.files.filter(f => f.over && f.loads === 'first-200').length
-  const needs = [waiting ? `${waiting} to review` : '', s.dream.running ? 'dreaming' : '', over ? 'memory over its limit' : '', s.handoff.ready ? 'handoff ready' : '', failed ? 'refresh failed' : ''].filter(Boolean)
+  const needs = [waiting ? `${waiting} to review` : '', s.dream.running ? 'dreaming' : '', over ? 'memory over its limit' : '', failed ? 'refresh failed' : ''].filter(Boolean)
   const metaTags = [
     u.tag('m-model', 'model', K.emerald, prettyModel(l?.model ?? '?')),
     s.git ? u.tag('m-branch', 'branch', K.silver, s.git.branch) : null,
     u.tag('m-mem', 'rule', K.silver, `${k(s.native.alwaysTokens)} memory tokens`),
-    s.opencode.plugin ? u.tag('m-oc', 'link', K.silver, 'OpenCode ready') : null,
+    s.opencode.plugin && cols >= 100 ? u.tag('m-oc', 'link', K.silver, 'OpenCode ready') : null, // narrow: it wrapped alone onto a line
     dir && o ? u.tag('m-dir', 'file', K.silver, `chat in ${o.cwd.split('/').pop()}`) : null,
   ]
   const intro = !(await introSeen($, s, vw))
+  const key = JSON.stringify([e.surface, cols, intro ? bodyRows : 0, pulse, snap, s, failed, o, dir, limits, limitsAt, new Date().getHours()])
+  if (memo.key === key && memo.tree) return memo.tree
   const body = intro ? introPage($, els, u, vw, px, bodyRows)
     : page === 'timeline' ? timelinePage($, els, u, s, vw, px)
     : page === 'data' ? dataPage($, { els, u, s, l, current: page, wip: s.git?.wip, five: limits.find(x => x.kind === 'five_hour'), px, vw })
     : page === 'settings' ? settingsBody($, els, u, s, cols >= 120)
     : overviewPage($, els, u, { s, l, cv, hist, ph, vw, limits, limitsAt, tip, cols, px })
 
-  return (
+  const tree = (
     <Box flexDirection="column" gap={2} padding={1}>
       <Box key="hdr" flexDirection="row" gap={1} alignItems="center" justifyContent="space-between" flexWrap="wrap">
         <Box flexDirection="row" gap={2} alignItems="center">
@@ -113,7 +121,9 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
 
       {body}
 
-      {u.muted('tip', 'To hide the panel, minimize it (closing it while maximized leaves a blank screen).')}
+      {u.muted('tip', 'Minimize the panel to hide it.')}
     </Box>
   )
+  memo = { key, tree }
+  return tree
 }

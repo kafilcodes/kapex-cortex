@@ -1,6 +1,7 @@
 import { segments } from "./judge.ts";
 import type { RepoPaths } from "./paths.ts";
 import type { HandoffNote } from "./state.ts";
+import type { Carry } from "./carry.ts";
 import { readTurns, type Turn } from "./turns.ts";
 
 /**
@@ -42,22 +43,28 @@ export function askOf(t: Turn): string {
 
 /** A "Next:" / "Next step:" / "Next action:" line in the assistant's last reply, if it wrote one. */
 export function nextFromReply(reply: string): string {
-  const m = /^\s*(?:[-*]\s*)?(?:\*\*)?next(?: action| step)?(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(.+)$/im.exec(reply);
+  const m = /^\s*(?:[-*]\s*)?(?:\*\*)?next(?: action| step)?(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(.+)$/im.exec(reply)
+    // also mid-paragraph, after a sentence ends: "Docs done. Next: add CSV export." (the last such one wins)
+    ?? [...reply.matchAll(/[.!?)]\s+(?:\*\*)?Next(?: action| step)?(?:\*\*)?\s*[:：]\s*(.+)/g)].at(-1) ?? null;
   return m ? oneLine(m[1]!.replace(/\*\*/g, ""), 300) : "";
 }
 
-export function buildBrief(p: RepoPaths, a: { session: string; lastAssistant?: string; handoff: HandoffNote | null; heading: string; now: Date }): Brief {
+export function buildBrief(p: RepoPaths, a: { session: string; lastAssistant?: string; handoff: HandoffNote | null; heading: string; now: Date; carry?: Carry | null }): Brief {
   const asks = readTurns(p, a.session).map((t) => ({ ts: t.ts, text: askOf(t) })).filter((t) => t.text.length >= 15);
   const first = asks[0];
   const latest = asks.at(-1);
   // the current goal is the most recent real task statement ("Yes, do it" replies don't count), else the first ask
-  const task = [...asks].reverse().find((t) => t.text.length >= 60) ?? first;
+  // …unless you named it: an explicit "Goal: …" wins over the longest recent message
+  const named = [...asks].reverse().find((t) => /^(?:the )?goal\s*[:：-]/i.test(t.text));
+  const task = named ?? [...asks].reverse().find((t) => t.text.length >= 60) ?? first;
   const h = a.handoff;
   const thisSession = !!h && (h.session === a.session || (!!first && h.ts >= first.ts));
   const handoffAge = h ? age(a.now.getTime() - Date.parse(h.ts)) : "";
 
   let goal: string;
+  const stated = asks.some((t) => t.text.length >= 60); // a real task said in this chat, not just "docs pass 2"
   if (thisSession && h?.goal) goal = h.goal;
+  else if (a.carry?.goal && !stated) goal = `${a.carry.goal}\n\n_Carried from the chat this one continues (“${a.carry.chat}”)._`;
   else if (task) goal = oneLine(task.text, 300) + (h?.goal ? `\n\n_Earlier handoff goal (${handoffAge} ago, another session; may be done): ${oneLine(h.goal, 200)}_` : "");
   else if (h?.goal) goal = `${h.goal}\n\n_From an earlier session (${handoffAge} ago). It may be done: check the working tree and git log first._`;
   else goal = a.heading || "_Not set. Run /cortex-handoff to record one._";
