@@ -37,7 +37,7 @@ export function pluginInstalled(home = process.env.HOME ?? process.env.USERPROFI
 }
 
 /** What Kapex Cortex itself adds to every message: the names and descriptions of its skills, which Claude Code lists
- * in each session (the same figure `claude plugin details kapex-cortex` reports, about 250 tokens), counted twice
+ * in each session (the same figure `claude plugin details kapex-cortex` reports, about 280 tokens with /kc), counted twice
  * when an older install also left copies in ~/.claude/skills. Hooks and the panel add nothing to the model's context. */
 export function cortexFootprint(skillsDir = join(import.meta.dirname, "..", "..", "..", "skills"), userSkills = join(claudeHome(), "skills")): { tokens: number; skills: number; duplicates: number } {
   const dirs = [skillsDir, join(import.meta.dirname, "..", "skills"), join(import.meta.dirname, "..", "..", "claude-plugin", "skills")].filter((d) => existsSync(d));
@@ -49,7 +49,7 @@ export function cortexFootprint(skillsDir = join(import.meta.dirname, "..", ".."
     } catch { return 0; }
   };
   let tokens = 0, skills = 0, duplicates = 0;
-  for (const name of ["cortex-handoff", "cortex-init", "cortex-resume"]) {
+  for (const name of ["cortex-handoff", "cortex-init", "cortex-resume", "kc"]) { // kc: the plugin's own /kc (never a per-user copy)
     const own = dirs.map((d) => join(d, name, "SKILL.md")).find((f) => existsSync(f));
     if (own) { tokens += cost(own); skills++; }
     const copy = join(userSkills, name, "SKILL.md");

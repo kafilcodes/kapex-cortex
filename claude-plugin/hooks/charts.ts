@@ -17,6 +17,7 @@ export function cacheState(lastAt: number | null, ttlMs: number, now = Date.now(
 }
 
 export const clock = (ms: number) => {
+  if (!Number.isFinite(ms)) return '–' // an unreadable time: a dash, never "NaN:NaN"
   const d = new Date(ms)
   const h = d.getHours()
   return `${((h + 11) % 12) + 1}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`

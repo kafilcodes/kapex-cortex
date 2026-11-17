@@ -56,8 +56,13 @@ export function observe(ep: Open, entry: Record<string, unknown>): void {
   const user = claudeUserText(entry);
   if (user) {
     if (/\[Request interrupted/.test(user)) ep.interrupted = true;
-    const mine = segments(user).filter((s) => s.source === "you").map((s) => s.text.trim()).join(" ").replace(/\s+/g, " ");
-    if (mine && !/^\//.test(mine)) ep.ask = (ep.ask ? `${ep.ask} · ` : "") + mine.slice(0, 400 - ep.ask.length);
+    // your own words: attached file paths (@"…") are names, not words, so they don't use up the 400 characters; after a
+    // leading command (/cortex-resume …) the words you wrote are kept, as the turns log keeps them
+    const mine = segments(user).filter((s) => s.source === "you").map((s) => s.text.trim()).join(" ")
+      .replace(/@"[^"]*"/g, " ").replace(/(^|\s)@[^\s]+/g, " ").replace(/\s+/g, " ").trim();
+    const words = mine.replace(/^\/[\w:-]+(?:\s+|$)/, ""), command = words !== mine;
+    // after a command, only real words count ("/cortex-resume Read the state first…"), not its argument ("/model opus")
+    if (words && (!command || words.length >= 15)) ep.ask = (ep.ask ? `${ep.ask} · ` : "") + words.slice(0, Math.max(0, 400 - ep.ask.length));
     else if (!ep.ask) ep.ask = background(user);
   }
   const msg = entry.message as { content?: unknown; usage?: Record<string, number> } | undefined;
@@ -135,8 +140,14 @@ export function finalize(p: RepoPaths, session: string, lastAssistant = ""): Epi
 }
 
 /** Recent episodes, newest first, with your rating and the model's read of your reaction. */
+const isEpisode = (e: unknown): e is Episode => {
+  const x = e as Partial<Episode> | null;
+  return !!x && typeof x === "object" && typeof x.id === "string" && typeof x.end === "string" && typeof x.ask === "string"
+    && Array.isArray(x.files) && Array.isArray(x.commands) && !!x.tests && typeof x.tests === "object" && typeof x.tools === "object";
+};
 export function readEpisodes(p: RepoPaths, limit = 30): EpisodeView[] {
-  const eps = readJsonl<Episode>(file(p)).items.slice(-limit).reverse();
+  // a line that parses but isn't a whole turn (null, {}, a hand-edited or half-written one) is skipped, never a crash
+  const eps = readJsonl<Episode>(file(p)).items.filter(isEpisode).slice(-limit).reverse();
   const ratings = readJsonl<Rating>(ratingsFile(p)).items;
   return eps.map((e) => ({ ...e, rating: ratings.filter((r) => r.episode === e.id && r.by === "you").at(-1), feedback: ratings.filter((r) => r.episode === e.id && r.by === "model").at(-1) }));
 }

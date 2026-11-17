@@ -75,7 +75,7 @@ function draw(e: El): string {
     case "Svg": if (!p.alt) return ""; // like the app: an Svg with an empty alt is not drawn
       // inline, like Desktop's frame: the system font resolves (an <img> SVG falls back to a wider one)
       return `<span role="img" aria-label="${esc(String(p.alt ?? ""))}" title="${esc(String(p.alt ?? ""))}" style="flex:none;display:inline-flex;width:${p.width}px;height:${p.height}px">${String(p.source ?? "").replace(/^<svg([^>]*?) width="[\d.]+" height="[\d.]+"/, `<svg$1 width="${p.width}" height="${p.height}"`)}</span>`;
-    case "Input": return `<span class="in"><span class="t" style="font-size:12px;color:var(--subtle)">${esc(String(p.label ?? ""))}</span><span class="field">${esc(String(p.value ?? p.placeholder ?? ""))}</span></span>`;
+    case "Input": return `<span class="in"><span class="t" style="font-size:12px;color:var(--subtle)">${esc(String(p.label ?? ""))}</span><span class="field">${esc(String(p.value || p.placeholder || ""))}</span></span>`;
     case "Select": {
       const opts = (p.options as { value: string; label?: string }[] | undefined) ?? [];
       const cur = opts.find((o) => o.value === p.value) ?? opts[0];
@@ -92,7 +92,7 @@ function page(title: string, frames: { theme: keyof typeof THEMES; width: number
   .frames{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}.f{flex:none;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.3)}
   .f>div{background:var(--bg);color:var(--text);box-sizing:border-box}.t{display:inline;overflow-wrap:anywhere}
   .b{display:inline-flex;align-items:center;padding:3px 10px;border:1px solid var(--border);border-radius:7px;background:var(--btn);font-size:13px;white-space:nowrap;flex:none}
-  .b.primary{background:var(--text);color:var(--bg);border-color:transparent}.b.primary .t{color:inherit!important}.b.plain{border:none;background:none;padding:2px 4px;color:var(--text);text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px}
+  .b.primary{background:var(--text);color:var(--bg);border-color:transparent}.b.primary .t{color:inherit!important}.b.plain{border:none;background:none;padding:2px 4px;color:var(--text)}
   .in{display:flex;flex-direction:column;gap:2px;min-width:160px}.field{border:1px solid var(--border);border-radius:7px;padding:4px 8px}`;
   const vars = (t: keyof typeof THEMES) => Object.entries(THEMES[t]).map(([k, v]) => `--${k}:${v}`).join(";");
   return `<!doctype html><meta charset="utf-8"><title>${esc(title)}</title><style>${style}</style><div class="frames">${frames.map((f) => `<div class="f" style="${vars(f.theme)};width:${f.width}px"><div style="padding:0">${draw(f.tree)}</div></div>`).join("")}</div><script>if (location.hash) document.body.style.zoom = location.hash.slice(1)</script>`; // #0.6 shrinks a page to fit a small window

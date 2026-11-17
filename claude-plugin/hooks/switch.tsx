@@ -14,7 +14,7 @@ export type Switch = { pct: number; tokens: number; cold: boolean }
 
 export function switchDue(s: StatusView, l: LiveView | null, cv: CacheView, vw: ViewState, now = Date.now()): Switch | null {
   if (!l || !s.handoff.exists) return null
-  const pct = l.context.percent, tokens = l.context.tokens
+  const pct = l.context.percent ?? 0, tokens = l.context.tokens ?? 0
   const at = s.prefs?.handoffAt ?? 80
   const cold = cacheState(cv.lastAt, cv.ttl === '1h' ? 3_600_000 : 300_000, now).state === 'cold'
   if (tokens < 60_000 || !(pct >= at || (cold && pct >= at - 10))) return null
@@ -42,7 +42,7 @@ export function switchParts($: Dollar, els: ElementTable, u: Kit, s: StatusView,
       ]
     : vw.flow === 'confirm' && flagged
       ? [
-          u.tag('sw-mem', 'alert', K.amber, `${flagged} memory note${flagged === 1 ? ' is' : 's are'} flagged. A new chat loads ${flagged === 1 ? 'it' : 'them'} as-is (and is told not to rely on ${flagged === 1 ? 'it' : 'them'}).`, K.text),
+          u.tag('sw-mem', 'alert', K.amber, `A check flagged ${flagged === 1 ? 'it' : 'them'}. A new chat would still load ${flagged === 1 ? 'it' : 'them'} (and be told not to rely on ${flagged === 1 ? 'it' : 'them'}).`, K.text),
           row('sw-b', [
             <Button key="sw-review" variant="primary" onPress={() => { void setFlow($, ''); void setTab($, 'data'); void setSub($, 'dream') }}>Fix them first</Button>,
             <Button key="sw-anyway" onPress={() => { void handOff($) }}>Hand off anyway</Button>,
@@ -56,5 +56,6 @@ export function switchParts($: Dollar, els: ElementTable, u: Kit, s: StatusView,
             flagged ? <Text key="sw-f" size="caption" color={K.amber}>{`${flagged} memory note${flagged === 1 ? '' : 's'} to check first`}</Text> : null,
           ]),
         ]
-  return { title: `Context ${sw.pct}% full${sw.cold ? ' and the cache is cold' : ''}: continue in a fresh chat?`, body }
+  const title = vw.flow === 'copied' ? 'Handoff saved. Next: open a new chat and paste' : vw.flow === 'confirm' && flagged ? `Before you hand off: ${flagged} memory note${flagged === 1 ? ' looks' : 's look'} wrong` : `Context ${sw.pct}% full${sw.cold ? ' and the cache is cold' : ''}: continue in a fresh chat?`
+  return { title, body }
 }

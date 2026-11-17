@@ -1,30 +1,42 @@
 import type { Hook } from 'claude-code'
 
 import type { StatusView, Tab } from '../types'
-import { k, prettyModel } from './charts'
+import { prettyModel } from './charts'
 import { act, chooseProject, planLimits, readFail, readOff, refresh, refreshNow, refreshSoon, setSub, setTab, snapshot, statusOrSaved, toReview, type Dollar } from './data'
-import { healthRing } from './icons'
+import { healthRing, icon } from './icons'
 import { introPage, introSeen } from './intro'
 import { kit } from './kit'
 import { LOGO_SIZE, LOGO_SVG } from './logo'
 import { overviewPage } from './overview'
 import { settingsBody } from './settings'
-import { dataPage } from './tabs'
+import { dataPage, handoffPage } from './tabs'
+import { costsPage } from './tabs-more'
 import { K } from './theme'
 import { timelinePage } from './timeline'
 import { switchDue } from './switch'
 import { tipFor } from './tips'
 import { readPulse } from './pulse'
+import { beginPass, endPass, readSettle, settleSoon } from './anim'
 
-// The Cortex panel: a greeting header and four pages (Overview · Timeline · Dream & Memory · Settings), so nothing is
-// crammed onto one page. Transparent, so it follows Claude Code's light or dark mode. No timers.
+// The Cortex panel: a greeting header and six flat pages (Overview · Timeline · Memory · Handoff · Costs · Settings), so
+// nothing is crammed onto one page. Transparent, so it follows Claude Code's light or dark mode. No timers.
 type PaneEvent = Parameters<Hook<'ui.render'>>[1]
-const PAGES: [Tab, string, string][] = [['overview', 'Overview', '1'], ['timeline', 'Timeline', '2'], ['data', 'Dream & Memory', '3'], ['settings', 'Settings', '4']]
-const LEGACY: Partial<Record<Tab, [Tab, string]>> = { waiting: ['data', 'dream'], rules: ['data', 'files'], failed: ['data', 'files'], handoff: ['data', 'handoff'], compactions: ['data', 'dream'], details: ['data', 'details'] }
+const PAGES: [Tab, string, string][] = [['overview', 'Overview', '1'], ['timeline', 'Timeline', '2'], ['data', 'Memory', '3'], ['handoff', 'Handoff', '4'], ['details', 'Costs', '5'], ['settings', 'Settings', '6']]
+// tabs from older versions, kept in the app between sessions: each still opens a sensible page
+const LEGACY: Partial<Record<Tab, [Tab, string]>> = { waiting: ['data', 'dream'], rules: ['data', 'files'], failed: ['data', 'files'], compactions: ['data', 'dream'] }
 
 /** The last drawing and what it was drawn from. A redraw with the same inputs (the pane scrolled, the window moved)
  * returns the same tree, so nothing on screen reloads: no chart frame blinking, no scroll position lost. */
 let memo: { key: string; tree: JSX.Element | null } = { key: '', tree: null }
+/** Each input's text form, kept per object: the engine asks for a drawing on every scroll tick, and the big status
+ * object is the same one between refreshes, so it is turned into text once per refresh, not once per tick. */
+const texts = new WeakMap<object, string>()
+const sig = (x: unknown): string => {
+  if (x === null || typeof x !== 'object') return JSON.stringify(x) ?? ''
+  let t = texts.get(x)
+  if (t === undefined) { t = JSON.stringify(x); texts.set(x, t) }
+  return t
+}
 
 const greet = (name: string) => {
   const h = new Date().getHours()
@@ -44,6 +56,18 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
   const px = Math.max(220, Math.min(1400, cols * 7.2))
   const failed = await readFail($)
   const { o, dir } = await readOff($)
+  /** The last action's note as a status chip: an icon that says how it went, then its words (a tick and "Saved",
+   * a pending dot and "Saving the handoff…", an amber alert and the error). Tinted, borderless, like a badge. */
+  const statusChip = (m: string) => {
+    const working = /…$/.test(m), failed = !working && /^(?:Couldn'?t|Could not)|: (?!done$).+/.test(m) && !/^(?:Handoff saved|Refreshed at|Turned (?:off|on))/.test(m)
+    const [ic, c] = working ? ['pending', K.silver] : failed ? ['alert', K.amber] : ['check', K.emerald]
+    return (
+      <Box key="kc-status" flexDirection="row" gap={1} alignItems="center" backgroundColor={`${c}1F`} paddingX={1} flexShrink={1}>
+        {u.Svg ? <u.Svg key="kc-status-i" source={icon(ic, c, 12)} alt={working ? 'Working' : failed ? 'Needs a look' : 'Done'} width={12} height={12} /> : null}
+        <Text size="caption" weight="medium" color={failed ? K.amber : working ? K.label : K.text} wrap="truncate-end">{m.replace(/^Refreshed at /, 'Refreshed ')}</Text>
+      </Box>
+    )
+  }
   const shell = (children: (JSX.Element | null)[]) => <Box flexDirection="column" gap={1} padding={1}>{children}</Box>
 
   if (!s && o?.error) {
@@ -74,29 +98,50 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
   }
 
   const { limits, at: limitsAt } = await planLimits($, l)
-  const tip = tipFor(s, l, cv, limits, switchDue(s, l, cv, vw))
   const legacy = LEGACY[snap.chosen as Tab]
-  const page: Tab = legacy ? legacy[0] : (snap.chosen as Tab) || 'overview'
-  if (legacy && vw.sub !== legacy[1]) void setSub($, legacy[1])
+  // Handoff and Costs used to be sub-pages of the Memory tab: a stored 'data' + 'handoff' / 'details' opens them
+  const moved = snap.chosen === 'data' && (vw.sub === 'handoff' || vw.sub === 'details') ? vw.sub as Tab : null
+  const page: Tab = moved ?? (legacy ? legacy[0] : (snap.chosen as Tab) || 'overview')
+  if (legacy) { void setTab($, legacy[0]); if (vw.sub !== legacy[1]) void setSub($, legacy[1]) } // once: the stored tab becomes the new one
+  if (moved) { void setTab($, moved); void setSub($, 'dream') }
   const waiting = toReview(s)
   const over = s.native.files.filter(f => f.over && f.loads === 'first-200').length
-  const needs = [waiting ? `${waiting} to review` : '', s.dream.running ? 'dreaming' : '', over ? 'memory over its limit' : '', failed ? 'refresh failed' : ''].filter(Boolean)
+  // the headline below says how things stand; the header only adds what it can't (a refresh that failed, a file too long)
+  const needs = [over ? `${over} memory file${over === 1 ? '' : 's'} too long` : '', failed ? 'Couldn\'t refresh' : ''].filter(Boolean)
+  const intro = !(await introSeen($, s, vw))
+  // Only what the open page and the header draw: while Claude works, the live context number changes every 4 s, and
+  // the Timeline (which doesn't show it) must not be rebuilt under your scroll for it. Overview depends on all of it.
+  const head = [s.name, s.project, l?.model, s.git?.branch, dir, o?.cwd, over, failed, msg, waiting]
+  const pageIn = intro ? [vw, bodyRows]
+    : page === 'timeline' ? [sig(s.timeline), sig(s.episodes), vw.expanded, vw.more?.timeline ?? 0, Math.ceil(Date.now() / 600_000), new Date().toDateString()]
+    : page === 'settings' ? [sig(s), cols >= 120]
+    : page === 'data' ? [sig(s), sig(vw)]
+    : page === 'handoff' ? [sig(s), sig(vw), Math.round((l?.context.tokens ?? 0) / 1000)]
+    : [sig(s), sig(snap.l), sig(snap.cv), sig(snap.hist), sig(snap.ph), sig(vw), sig(limits), limitsAt, sig(o)]
+  const key = [e.surface, cols, page, pulse, await readSettle($), new Date().getHours(), sig(head), ...pageIn.map(x => (typeof x === 'string' ? x : sig(x)))].join('\u0001')
+  // the armed render (just opened, or Refresh pressed) is drawn fresh and may animate; any other with the same inputs reuses the last tree
+  const armed = beginPass()
+  if (!armed && memo.key === key && memo.tree) return memo.tree
   const metaTags = [
     u.tag('m-model', 'model', K.emerald, prettyModel(l?.model ?? '?')),
     s.git ? u.tag('m-branch', 'branch', K.silver, s.git.branch) : null,
-    u.tag('m-mem', 'rule', K.silver, `${k(s.native.alwaysTokens)} memory tokens`),
-    s.opencode.plugin && cols >= 100 ? u.tag('m-oc', 'link', K.silver, 'OpenCode ready') : null, // narrow: it wrapped alone onto a line
     dir && o ? u.tag('m-dir', 'file', K.silver, `chat in ${o.cwd.split('/').pop()}`) : null,
   ]
-  const intro = !(await introSeen($, s, vw))
-  const key = JSON.stringify([e.surface, cols, intro ? bodyRows : 0, pulse, snap, s, failed, o, dir, limits, limitsAt, new Date().getHours()])
-  if (memo.key === key && memo.tree) return memo.tree
+  const tip = tipFor(s, l, cv, limits, switchDue(s, l, cv, vw)) // derived from inputs already in the key: computed only on a real redraw
+  const ctx = { els, u, s, l, current: page, wip: s.git?.wip, five: limits.find(x => x.kind === 'five_hour'), px, vw }
   const body = intro ? introPage($, els, u, vw, px, bodyRows)
     : page === 'timeline' ? timelinePage($, els, u, s, vw, px)
-    : page === 'data' ? dataPage($, { els, u, s, l, current: page, wip: s.git?.wip, five: limits.find(x => x.kind === 'five_hour'), px, vw })
+    : page === 'data' ? dataPage($, ctx)
+    : page === 'handoff' ? handoffPage($, ctx)
+    : page === 'details' ? costsPage($, ctx)
     : page === 'settings' ? settingsBody($, els, u, s, cols >= 120)
     : overviewPage($, els, u, { s, l, cv, hist, ph, vw, limits, limitsAt, tip, cols, px })
 
+  // six tabs on one line where they fit, else three and three (never five and a lonely one)
+  const tabBtn = ([t, label, hk]: [Tab, string, string]) => <Button key={`tab-${t}`} hotkey={hk} variant={page === t ? 'primary' : 'secondary'} onPress={() => { void setTab($, t) }}><Text color={page === t ? K.emerald : undefined} weight={page === t ? 'semibold' : undefined}>{t === 'data' && waiting ? `${label} · ${waiting}` : t === 'details' && cols >= 100 ? 'Costs & usage' : label}</Text></Button>
+  const nav = cols >= 80
+    ? <Box key="nav" flexDirection="row" gap={1} flexWrap="wrap">{PAGES.map(tabBtn)}</Box>
+    : <Box key="nav" flexDirection="column" gap={1}><Box key="nav-a" flexDirection="row" gap={1}>{PAGES.slice(0, 3).map(tabBtn)}</Box><Box key="nav-b" flexDirection="row" gap={1}>{PAGES.slice(3).map(tabBtn)}</Box></Box>
   const tree = (
     <Box flexDirection="column" gap={2} padding={1}>
       <Box key="hdr" flexDirection="row" gap={1} alignItems="center" justifyContent="space-between" flexWrap="wrap">
@@ -108,22 +153,19 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
           </Box>
         </Box>
         <Box flexDirection="row" gap={1} alignItems="center">
-          {u.Svg ? <u.Svg key="kc-health" source={healthRing(!needs.length)} alt={needs.length ? 'Needs you' : 'All good'} width={18} height={18} /> : null}
-          <Text size="caption" weight="medium" color={needs.length ? K.amber : K.emerald}>{needs.length ? needs.join(' · ') : 'All good'}</Text>
-          {msg ? <Text size="caption" color={K.muted}>{msg}</Text> : null}
+          {needs.length && u.Svg ? <u.Svg key="kc-health" source={healthRing(false)} alt="Needs you" width={18} height={18} /> : null}
+          {needs.length ? <Text size="caption" weight="medium" color={K.amber}>{needs.join(' · ')}</Text> : null}
+          {msg ? statusChip(msg) : null}
           <Button key="kc-refresh" hotkey="r" variant="secondary" onPress={() => { void refreshNow($) }}>Refresh</Button>
         </Box>
       </Box>
 
-      {intro ? null : <Box key="nav" flexDirection="row" gap={1} flexWrap="wrap">
-        {PAGES.map(([t, label, key]) => <Button key={`tab-${t}`} hotkey={key} variant={page === t ? 'primary' : 'secondary'} onPress={() => { void setTab($, t) }}><Text color={page === t ? K.emerald : undefined} weight={page === t ? 'semibold' : undefined}>{t === 'data' && waiting ? `${label} · ${waiting}` : label}</Text></Button>)}
-      </Box>}
+      {intro ? null : nav}
 
       {body}
-
-      {u.muted('tip', 'Minimize the panel to hide it.')}
     </Box>
   )
-  memo = { key, tree }
+  // a tree with animated drawings is never reused, and a redraw shortly after swaps in the same charts, still
+  if (endPass()) { memo = { key: '', tree: null }; settleSoon($) } else memo = { key, tree }
   return tree
 }

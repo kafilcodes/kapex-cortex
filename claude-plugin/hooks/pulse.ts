@@ -23,15 +23,18 @@ let busy = false
 let running = false
 let lastFull = 0
 let busySince = 0
+let stopped = false
+let runningSince = 0
 
 function schedule($: Dollar, ms: number): void {
+  if (stopped) return // the session ended: a beat still finishing must not start the heartbeat again
   timer?.cancel()
   timer = $.clock.after(ms, () => { timer = null; void beat($) })
 }
 
 /** Session start (and every plugin reload): one timer, first beat soon. */
-export function startPulse($: Dollar): void { busy = false; lastFull = Date.now(); schedule($, 1_500) }
-export function stopPulse(): void { timer?.cancel(); timer = null }
+export function startPulse($: Dollar): void { stopped = false; busy = false; lastFull = Date.now(); schedule($, 1_500) }
+export function stopPulse(): void { stopped = true; timer?.cancel(); timer = null }
 /** A main-thread turn began: fast beats until it ends. */
 export function turnStarted($: Dollar): void { busy = true; busySince = Date.now(); schedule($, FAST) }
 /** It ended: back to idle, with a beat soon to catch what the Stop hook writes just after. */
@@ -41,12 +44,16 @@ export function turnEnded($: Dollar): void { busy = false; schedule($, 2_500) }
  * day. Pure, so it's tested directly. (Anything else that changes the strip arrives as a new status or live value.) */
 export function signal(o: { lastAt: number | null; ttlMs: number; resets: (string | undefined)[] }, now = Date.now()): string {
   const rolled = o.resets.map(r => (r && Date.parse(r) <= now ? 1 : 0)).join('')
-  return [cacheState(o.lastAt, o.ttlMs, now).state, rolled, new Date(now).toDateString()].join('|')
+  const c = cacheState(o.lastAt, o.ttlMs, now)
+  // the minutes left in 5-minute steps too, so "Cache 55 min" and its hourglass move with time between turns
+  return [c.state, c.state === 'warm' || c.state === 'cooling' ? Math.ceil(c.leftMin / 5) : '', rolled, new Date(now).toDateString()].join('|')
 }
 
 async function beat($: Dollar): Promise<void> {
-  if (running) { schedule($, busy ? FAST : IDLE); return }
-  running = true
+  // a beat whose call never came back stops counting as running after a minute, so the heartbeat can't stall for good
+  if (running && Date.now() - runningSince < 60_000) { schedule($, busy ? FAST : IDLE); return }
+  running = true; runningSince = Date.now()
+  const mine = runningSince // a stale beat, let go by the watchdog, must not clear a newer beat's flag
   try {
     // a turn whose end never reached us (a crash, a lost worker) stops counting as running after 30 minutes
     if (busy && Date.now() - busySince > 30 * 60_000) busy = false
@@ -59,7 +66,7 @@ async function beat($: Dollar): Promise<void> {
     const sig = signal({ lastAt: cv.lastAt, ttlMs: cv.ttl === '1h' ? 3_600_000 : 300_000, resets: ((await lastLimits($))?.limits ?? []).map(x => x.resetsAt) })
     if ((await read($, pulse)) !== sig) await update($, pulse, () => sig)
   } catch { /* the strip keeps its last drawing; the next beat tries again */ } finally {
-    running = false
+    if (runningSince === mine) running = false
     if (!timer) schedule($, busy ? FAST : IDLE)
   }
 }

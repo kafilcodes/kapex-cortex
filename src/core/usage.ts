@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { atomicWriteIfChanged } from "../util/atomic.ts";
+import { claudeHome } from "./home.ts";
 import type { RepoPaths } from "./paths.ts";
 
 /**
@@ -32,8 +32,9 @@ function countFile(path: string): Counts {
   return c;
 }
 
-export function toolUsage(p: RepoPaths, home = homedir()): Usage {
-  const dir = join(home, ".claude", "projects", p.root.replace(/[^A-Za-z0-9]/g, "-"));
+export function toolUsage(p: RepoPaths, claude = claudeHome()): Usage {
+  // Claude Code's own folder: CLAUDE_CONFIG_DIR when set (and the tests' CORTEX_CLAUDE_HOME), else ~/.claude
+  const dir = join(claude, "projects", p.root.replace(/[^A-Za-z0-9]/g, "-"));
   const out: Usage = { chats: 0, skills: {}, mcp: {}, tools: {} };
   if (!existsSync(dir)) return out;
   const cacheFile = join(p.priv, "usage-cache.json");

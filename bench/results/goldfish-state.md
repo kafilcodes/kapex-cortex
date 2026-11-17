@@ -1,4 +1,4 @@
-# STATE — invoices · main · updated 2026-11-13T07:06:12.911Z · from claude-code · session bench-chat-b
+# STATE — invoices · main · updated 2026-11-17T03:19:00.151Z · from claude-code · session bench-chat-b
 
 > Handoff packet written by Kapex Cortex at the end of every turn, in three parts: what's pinned for this session, the trail of earlier turns, and the last exchanges word for word. The project's rules load by themselves (CLAUDE.md, .claude/rules, auto memory): read this, then continue from **Next action**.
 
@@ -11,7 +11,7 @@ _Carried from the chat this one continues (“Invoice parser”)._
 add CSV export in src/export.ts with a test.
 
 ## Pinned for this session (kept whatever the last turns were about)
-**Started with** (turn 1, 05:42): Docs pass 1: explain the totals in README.
+**Started with** (turn 1, 01:54): Docs pass 1: explain the totals in README.
 
 **Your standing instructions** (your words, this chat and the one it continues):
 - Decision: we store money as integer cents, never floats. _(earlier chat)_
@@ -39,20 +39,20 @@ README.md | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 ```
 
-WIP snapshot: `refs/cortex/wip/bench-chat-b (f395707def)` (restore with `git stash apply <sha>`).
+WIP snapshot: `refs/cortex/wip/bench-chat-b (968ee4c61f)` (restore with `git stash apply <sha>`).
 
 ## Last failure
 None recorded.
 
 ## Session trail (earlier turns, oldest first; the newest are below, word for word)
-- T1 05:42 · Docs pass 1: explain the totals in README.
-- T2 05:47 · Docs pass 2: explain the totals in README.
-- T3 05:52 · Docs pass 3: explain the totals in README.
-- T4 05:57 · Docs pass 4: explain the totals in README.
-- T5 06:02 · Docs pass 5: explain the totals in README.
-- T6 06:07 · Docs pass 6: explain the totals in README.
-- T7 06:12 · Docs pass 7: explain the totals in README.
-**Commits this session** (newest first): `6213bd8 docs: totals` · `c5f00ca totals: fix the rounding bug (integer cents)` · `5ff17ec parse: cleanups` · `5e96ec6 parse: currency codes` · `7664c3d scaffold the invoice CLI`
+- T1 01:54 · Docs pass 1: explain the totals in README.
+- T2 01:59 · Docs pass 2: explain the totals in README.
+- T3 02:04 · Docs pass 3: explain the totals in README.
+- T4 02:09 · Docs pass 4: explain the totals in README.
+- T5 02:14 · Docs pass 5: explain the totals in README.
+- T6 02:19 · Docs pass 6: explain the totals in README.
+- T7 02:24 · Docs pass 7: explain the totals in README.
+**Commits this session** (newest first): `c89c678 docs: totals` · `a9246b8 totals: fix the rounding bug (integer cents)` · `fcb813b parse: cleanups` · `caeb6a6 parse: currency codes` · `c1a8843 scaffold the invoice CLI`
 
 ## Active files
 Edited in the last turns: `<project>/README.md`
@@ -69,19 +69,19 @@ README.md | 2 +-
 
 ## Where we left off (the last exchanges, oldest first; continue from the newest)
 
-### You (2026-11-13 07:06)
+### You (2026-11-17 03:18)
 Docs pass 8: explain the totals in README.
 
 ### Assistant
 Docs pass 8 done.
 
-### You (2026-11-13 07:06)
+### You (2026-11-17 03:18)
 Docs pass 9: explain the totals in README.
 
 ### Assistant
 Docs pass 9 done.
 
-### You (2026-11-13 07:06)
+### You (2026-11-17 03:18)
 Docs pass 10: explain the totals in README.
 
 ### Assistant

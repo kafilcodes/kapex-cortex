@@ -49,12 +49,14 @@ const STEPS: { kicker: string; title: string; text: string; art: (w: number) => 
 export async function introSeen($: Dollar, s: StatusView, vw: ViewState): Promise<boolean> {
   if (vw.intro === -1) return true
   if (vw.intro !== undefined && vw.intro >= 0) return false
-  if ((s.episodes?.length ?? 0) > 3) return true
-  try { return (await $.store.get(STORE_INTRO)) === true } catch { return true }
+  if ((s.episodes?.length ?? 0) > 3 || seenStored) return true
+  // the stored answer only changes from false to true: once true, kept here instead of read on every redraw
+  try { seenStored = (await $.store.get(STORE_INTRO)) === true; return seenStored } catch { return true }
 }
+let seenStored = false
 
 async function go($: Dollar, step: number): Promise<void> { await setIntro($, step) }
-async function done($: Dollar): Promise<void> { await $.store.set(STORE_INTRO, true).catch(() => undefined); await setIntro($, -1) }
+async function done($: Dollar): Promise<void> { seenStored = true; await $.store.set(STORE_INTRO, true).catch(() => undefined); await setIntro($, -1) }
 /** Settings: show the intro again from its first step. */
 export async function replayIntro($: Dollar): Promise<void> { await setIntro($, 0) }
 

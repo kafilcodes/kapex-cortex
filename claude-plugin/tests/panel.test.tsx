@@ -65,23 +65,23 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
   await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
   await $.command.run({ command: 'kc' } as any)
   let ui: any = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  for (const t of ['Opus 5.5', 'main', /^875 memory tokens$/]) expect(await ui.find({ type: 'Text', text: t })).toBeDefined()
+  for (const t of ['Opus 5.5', 'main']) expect(await ui.find({ type: 'Text', text: t })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'OpenCode ready' })).toBeUndefined() // 70 columns: it would wrap alone onto a line
-  expect(await ui.find({ type: 'Text', text: '2 to review' })).toBeDefined() // the Dream's change and the note that's yours to decide
-  expect(await ui.find({ type: 'Text', text: /^A new chat with \/cortex-resume gets, in three parts:$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Cortex suggests: review 2 memory notes$/ })).toBeDefined() // the Dream's change and the note that's yours to decide
+  expect(await ui.find({ type: 'Text', text: /^tokens to start a new chat/ })).toBeDefined()
   expect(await ui.find({ key: 'sw-yes' })).toBeUndefined() // 42% full: no hand-off question
-  expect(await ui.find({ type: 'Text', text: /^last exchanges, word for word$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^≈1\.8k tokens to start$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /the last (\d+ exchanges|exchange) word for word/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^≈1\.8k$/ })).toBeDefined()
   expect(await ui.find({ key: 'kc-refresh' })).toBeDefined()
   // one chart form per kind of data: a gauge, bento tiles, capsules (found by what they say to a screen reader)
   const alts = ((await ui.findAll({ type: 'Svg' })) as any[]).map(x => String(x.props?.alt ?? ''))
-  for (const alt of [/^Context 42% full$/, /^System prompt 20k/]) expect(alts.some(a => alt.test(a))).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /^Memory Claude loads$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^Cortex adds to each message$/ })).toBeDefined()
+  for (const alt of [/^This chat is 42% full$/, /^System prompt 20k/]) expect(alts.some(a => alt.test(a))).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /^Claude's memory$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Cortex itself adds$/ })).toBeDefined()
   // anti-slop: words, not glyph icons, in labels and buttons
   expect(await ui.find({ text: /[≡⇪◷◔⚙⇅◫↻◆⎇✓]/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /Claude summarizes at 84%/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /warms up with your next reply/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /At 84% Claude shortens the chat into a summary/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /starts with Claude's next reply/ })).toBeDefined()
   await ui.unmount()
 
   // a reply finishes: the cache clock starts, with the real cache share of that reply
@@ -89,7 +89,6 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
   for (const surface of ['desktop', 'terminal'] as const) {
     ui = await $.ui.mount({ ...PANE, surface })
     expect(await ui.find({ type: 'Text', text: /warm until/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /97% of the last reply cached/ })).toBeDefined()
     await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-dream' })
     expect(await ui.find({ type: 'Text', text: /^Not true$/ })).toBeDefined()
     expect(await ui.find({ key: 'kc-dream-apply' })).toBeDefined()
@@ -100,20 +99,22 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
     await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-files' })
     expect(await ui.find({ type: 'Text', text: /^only for src\/api\/\*\*$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^every session \(first 200 lines\)$/ })).toBeDefined()
-    await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-handoff' })
-    expect(await ui.find({ type: 'Text', text: /^abc1234$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^changed files$/ })).toBeDefined()
+    await ui.press({ key: 'tab-handoff' })
+    expect(await ui.find({ type: 'Text', text: /^Saved .+ ago$/ })).toBeDefined() // a time you can read is the headline…
+    expect(await ui.find({ type: 'Text', text: /^snapshot of your changes · commit abc1234$/ })).toBeDefined() // …the commit id is the caption
+    expect(await ui.find({ type: 'Text', text: /^changed files in git$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Ship the parser refactor/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^snapshot abc1234$/ })).toBeDefined()
     await ui.press({ key: 'tab-settings' })
     expect(await ui.find({ type: 'Text', text: /The current handoff is about 1,800 tokens/ })).toBeDefined()
     expect(await ui.find({ key: 'sel-dreamBackend' })).toBeDefined()
-    expect(await ui.find({ key: 'sel-dreamModel' })).toBeDefined()
-    expect(await ui.find({ key: 'sel-tokenMode' })).toBeDefined()
-    await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-details' })
-    expect(await ui.find({ type: 'Text', text: /92 ms · limit 150 ms · 40 replies/ })).toBeDefined()
+    expect(await ui.find({ key: 'opt-dreamModel-sonnet' })).toBeDefined() // a choice of a few is one press, not a menu
+    expect(await ui.find({ key: 'opt-tokenMode-lean' })).toBeDefined()
+    expect(await ui.find({ key: 'opt-quickCheck-off' })).toBeDefined() // on/off settings: two buttons, the current one marked
+    await ui.press({ key: 'tab-details' })
+    expect(await ui.find({ type: 'Text', text: /92 ms · target 150 ms · 40 replies/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^Loaded into every message$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Minimize the panel to hide it/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Minimize the panel to hide it/ })).toBeUndefined() // no footer
     await ui.press({ key: 'tab-overview' })
     await ui.unmount()
   }
@@ -155,7 +156,7 @@ test('every pane width draws (narrow → 4 columns, terminal too)', async ($, on
   for (const bodyColumns of [40, 70, 100, 120, 145, 170, 200, 260, 400]) {
     for (const surface of ['desktop', 'terminal'] as const) {
       const ui = await $.ui.mount({ ...PANE, surface, props: { ...PANE.props, bodyColumns } } as any)
-      expect(await ui.find({ type: 'Text', text: /Context/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /This chat/ })).toBeDefined()
       await ui.unmount()
     }
   }
@@ -177,7 +178,7 @@ test('picking a setting saves it with kc prefs set', async ($, on) => {
   await $.command.run({ command: 'kc' } as any)
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'tab-settings' })
-  await ui.select({ key: 'sel-tokenMode', value: 'lean' })
+  await ui.press({ key: 'opt-tokenMode-lean' })
   expect(calls).toContain('prefs set tokenMode lean')
   await ui.unmount()
 })
@@ -223,7 +224,7 @@ test('details: each MCP server and plugin skill set with its cost; ones unused i
   await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-details' })
+  await ui.press({ key: 'tab-details' })
   expect(await ui.find({ type: 'Text', text: /^MCP · figma$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^unused( lately)?$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^(used )?×5$/ })).toBeDefined()
@@ -231,8 +232,12 @@ test('details: each MCP server and plugin skill set with its cost; ones unused i
   expect(await ui.find({ type: 'Text', text: /^2 unused · about 5\.3k tokens of context in every message$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Skills · kapex-cortex$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /linear/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Tokens this project used$/ })).toBeUndefined() // what you used over time is the Usage view
+  await ui.press({ key: 'sub-usage' })
   expect(await ui.find({ type: 'Text', text: /^Tokens this project used$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^600k$/ })).toBeDefined() // context a resumed chat didn't re-read
+  expect(await ui.find({ type: 'Text', text: /^MCP · figma$/ })).toBeUndefined()
+  await ui.press({ key: 'sub-costs' })
+  expect(await ui.find({ type: 'Text', text: /^600k tokens$/ })).toBeDefined() // context a resumed chat didn't re-read: one wording, as on Overview
   expect(calls.some(c => c.startsWith('park add'))).toBe(false) // you turned figma back on: never auto-parked
   await ui.press({ key: 'park-figma' })
   expect(calls).toContain('park add figma')
@@ -249,17 +254,18 @@ test('status strip: context ring, cache countdown, plan, handoff and waiting cou
   const band = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: {} } as any)
   const strip: any = ((await band.findAll({ type: 'Svg' })) as any[]).find(x => /cache/.test(String(x.props?.alt)))
   expect(strip).toBeDefined()
-  expect(String(strip.props.alt)).toMatch(/^context 42% · cache till .* · 5h 23% · week 41% · 2 to review$/)
+  expect(String(strip.props.alt)).toMatch(/^chat 42% full · cache warm till .* · 5h plan 23% · week 41% · 2 to review$/)
   expect(String(strip.props.source)).toMatch(/<animate attributeName="width"/)
   await band.unmount()
   const term = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'terminal', props: {} } as any)
-  expect(await term.find({ type: 'Text', text: /^Cortex · 2 memory fixes to review · context 42%/ })).toBeDefined()
+  expect(await term.find({ type: 'Text', text: /^Cortex · 2 memory fixes to review · chat 42% full/ })).toBeDefined()
   await term.unmount()
 })
 
 test('timeline tiles and the Dream page: leave a finding out, apply, undo, dream now — each one press, 0 tokens', async ($, on) => {
   const ep = (i: number) => ({ id: `E${i}`, session: 's', start: '2026-11-09T10:00:00Z', end: '2026-11-09T10:05:00Z', ask: `Request number ${i}`, tools: { Edit: 1 }, files: ['/a.ts'], commands: ['npm test'], tests: { ran: 1, failed: i === 1 ? 1 : 0 }, commits: 1, errors: 0, interrupted: false, skills: [], mcp: [], outTokens: 1200, contextTokens: 9000, done: `did thing ${i}`, next: '' })
-  const timeline = [{ id: 'turn-E2', ts: '2026-11-09T10:05:00Z', kind: 'turn', title: 'Request number 2', tags: ['1 file'], tone: 'ok' }, { id: 'dream-1', ts: '2026-11-09T10:04:30Z', kind: 'dream', title: 'Dream: 2 findings to review', tags: ['claude · sonnet'], tone: 'warn' }, { id: 'git-abc', ts: '2026-11-09T10:04:00Z', kind: 'commit', title: 'fix parser', tags: ['abc', 'pushed'], tone: 'info' }]
+  const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString() // relative: the chart shows the last 7 days of real time
+  const timeline = [{ id: 'turn-E2', ts: ago(55), kind: 'turn', title: 'Request number 2', tags: ['1 file'], tone: 'ok' }, { id: 'dream-1', ts: ago(55.5), kind: 'dream', title: 'Dream: 2 findings to review', tags: ['claude · sonnet'], tone: 'warn' }, { id: 'git-abc', ts: ago(56), kind: 'commit', title: 'fix parser', tags: ['abc', 'pushed'], tone: 'info' }]
   const applied = { ...DREAM, id: '01JC0000000000000000000009', status: 'applied', applied: { at: '2026-11-09T09:00:00Z' } }
   const calls: string[] = []
   on('settings.read', () => ({ value: {} }))
@@ -277,7 +283,7 @@ test('timeline tiles and the Dream page: leave a finding out, apply, undo, dream
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await ui.find({ type: 'Text', text: 'Request number 1' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^1 of 1 checks failed$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^did thing 1$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Did thing 1$/ })).toBeDefined()
   await ui.press({ key: 'tab-timeline' })
   expect(await ui.find({ type: 'Text', text: 'Dream: 2 findings to review' })).toBeDefined()
   expect(((await ui.findAll({ type: 'Svg' })) as any[]).some(x => /1 dreams/.test(String(x.props?.alt)))).toBe(true)
@@ -306,7 +312,8 @@ test('tips: a cold cache on a big chat warns with the handoff; a cooling cache s
   expect(cold?.text).toMatch(/^Cold cache · hand off, save ~75\dk$/)
   expect(cold?.level).toBe('act')
   expect(cold?.action).toBe('handoff')
-  expect(cold?.detail).toMatch(/re-reads all 758k tokens/)
+  expect(cold?.detail).toMatch(/^The cache went cold\. A new chat saves about 7\d\dk tokens \(this one re-reads 758k at full price\)\.$/)
+  expect(cold?.head).toBe('Cortex suggests: hand off now')
   const cooling = tipFor(s, live(300_000, 30) as any, { lastAt: Date.now() - 55 * 60_000, read: 0, write: 0, input: 0, ttl: '1h', ttlSource: 'x' }, [])
   expect(cooling?.text).toMatch(/^Cache cools at /)
   expect(tipFor({ ...s, dream: { running: null, recent: [] }, handoff: { ...s.handoff, exists: false } }, live(20_000, 2) as any, { lastAt: Date.now(), read: 0, write: 0, input: 0, ttl: '1h', ttlSource: 'x' }, [])).toBeNull()
@@ -320,7 +327,7 @@ test('stress: every button on every page and sub-page presses without breaking t
   await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
   await $.command.run({ command: 'kc' } as any)
   const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 160 } })
-  const pages: [string, string?][] = [['tab-overview'], ['tab-timeline'], ['tab-data', 'sub-dream'], ['tab-data', 'sub-files'], ['tab-data', 'sub-handoff'], ['tab-data', 'sub-details'], ['tab-settings']]
+  const pages: [string, string?][] = [['tab-overview'], ['tab-timeline'], ['tab-data', 'sub-dream'], ['tab-data', 'sub-files'], ['tab-handoff'], ['tab-details'], ['tab-settings']]
   const go = async (pg: [string, string?]) => { await ui.press({ key: pg[0] }); if (pg[1]) await ui.press({ key: pg[1] }) }
   let pressed = 0
   for (const pg of pages) {
@@ -415,7 +422,7 @@ test('first run: a three-step intro with drawings; Start hides it for good; Sett
   await ui.unmount()
 })
 
-test('safety card: findings with Block / Add gate / Undo send kc safety; the handoff page offers a fresh-eyes check', async ($, on) => {
+test('safety card: findings with Protect them / Add the check / Undo send kc safety; the handoff page offers a fresh-eyes check', async ($, on) => {
   const calls: string[] = []
   const safety = { command: 'npm test', undo: true, findings: [
     { id: 'secrets', level: 'warn', title: '.env can be read', detail: 'Add deny rules.', fix: 'secrets' },
@@ -428,12 +435,12 @@ test('safety card: findings with Block / Add gate / Undo send kc safety; the han
   await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
   await $.command.run({ command: 'kc' } as any)
   const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 160 } })
-  expect(JSON.stringify(await ui.drawn())).toContain('~498 tokens')
+  expect(JSON.stringify(await ui.drawn())).toContain('~498 a message')
   await ui.press({ key: 'tab-settings' })
   expect(JSON.stringify(await ui.drawn())).toContain('Safety for long runs')
   await ui.press({ key: 'sf-fix-secrets' }); await ui.press({ key: 'sf-fix-gate' }); await ui.press({ key: 'sf-undo' })
   for (const c of ['safety apply secrets', 'safety apply gate', 'safety undo']) expect(calls).toContain(c)
-  await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-handoff' })
+  await ui.press({ key: 'tab-handoff' })
   await ui.press({ key: 'kc-fish' })
   expect(sent.some(t => /Fresh-eyes check/.test(t) && /not a fork/.test(t) && /\.vault\/STATE\.md/.test(t))).toBe(true)
   await ui.unmount()

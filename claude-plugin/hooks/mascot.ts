@@ -5,7 +5,8 @@
 import { K } from './theme'
 
 export type Mood = 'hi' | 'calm' | 'working' | 'stressed' | 'dream'
-export type Scene = 'timeline' | 'dream' | 'memory' | 'costs' | 'settings'
+export type Scene = 'timeline' | 'dream' | 'memory' | 'costs' | 'settings' | 'fresh' | 'saved' | 'handoff'
+export type Mini = 'handoff' | 'dream' | 'safety' | 'you'
 
 const E = K.emerald, S = K.sage, A = K.amber, R = K.rose
 const G = '#9CA3AF', SCREEN = '#1F2937', GLOW = '#34D399'
@@ -82,6 +83,14 @@ const SCENES: Record<Scene, () => string> = {
   dream: () => MOODS.dream(),
   memory: () => `<g transform="translate(-26 0)">${bot({ eyes: 'happy', mouth: 'smile', arms: 'down' })}</g>${note(140, 40, 36, 44)}${note(150, 54, 36, 44)}<circle cx="182" cy="104" r="11" fill="${E}"/><path d="M176.5 104l4 4 7-8" stroke="#fff" stroke-width="2.6"/>${star(140, 26, 3.5)}`,
   costs: () => `<g transform="translate(-28 0)">${bot({ eyes: 'focus', mouth: 'smile', arms: 'down' })}</g>${[0, 1, 2, 3].map(i => `<ellipse cx="150" cy="${120 - i * 8}" rx="13" ry="4.5" fill="${A}" fill-opacity="${0.35 + i * 0.12}" stroke="${A}" stroke-width="1.6"/>`).join('')}<path d="M172 120V92M182 120V74M192 120V100" stroke="${E}" stroke-width="7"/>${star(176, 54, 3.5)}`,
+  // fresh eyes: a wide-eyed bot reading one note through a lens, nothing else in sight
+  fresh: () => `<g transform="translate(-30 0)">${bot({ eyes: 'open', mouth: 'o', arms: 'front' })}</g>${note(138, 52, 40, 50)}${lens(166, 70)}${star(150, 30, 4)}${star(186, 40, 2.6, E)}`,
+  // what Cortex saved: a happy bot beside a growing stack of tokens and a tick
+  saved: () => `<g transform="translate(-28 0)">${bot({ eyes: 'happy', mouth: 'grin', arms: 'up' })}</g>${[0, 1, 2, 3, 4].map(i => `<ellipse cx="164" cy="${122 - i * 9}" rx="16" ry="5" fill="${E}" fill-opacity="${0.3 + i * 0.13}" stroke="${E}" stroke-width="1.6"/>`).join('')}<circle cx="164" cy="52" r="12" fill="${E}"/><path d="M158 52l4 4 7-8" stroke="#fff" stroke-width="2.6"/>${star(186, 30, 3.5)}${star(140, 34, 2.6, E)}`,
+  // a handoff: the bot holds out its note, which travels along a dotted arc to whoever picks the work up next
+  handoff: () => `<g transform="translate(-36 0)">${bot({ eyes: 'happy', mouth: 'smile', arms: 'front' })}</g>`
+    + `<path d="M112 70Q150 22 190 52" stroke="${E}" stroke-width="2.4" stroke-dasharray="1 7"/><path d="M183 44l8 8-11 3" stroke="${E}" stroke-width="2.4"/>`
+    + `<g transform="rotate(-10 152 52)">${note(138, 34, 28, 34)}<path d="M144 60H158" stroke="${E}" stroke-width="2.4"/></g>${star(176, 20, 4)}${star(122, 34, 2.6, E)}`,
   settings: () => `<g transform="translate(-28 0)">${bot({ eyes: 'open', mouth: 'smile', arms: 'down' })}</g>${gear(160, 50, 16, E)}${gear(186, 30, 8, S)}<path d="M140 92H192M140 106H192M140 120H192" stroke="${G}" stroke-opacity="0.45" stroke-width="3"/><circle cx="160" cy="92" r="5" fill="${E}"/><circle cx="178" cy="106" r="5" fill="${S}"/><circle cx="150" cy="120" r="5" fill="${E}"/>`,
 }
 
@@ -89,5 +98,14 @@ const SCENES: Record<Scene, () => string> = {
 export const moodSvg = (mood: Mood, width = 150) => memo(`m-${mood}-${Math.round(width)}`, () => wrap(width, MOODS[mood]()))
 /** A page's scene drawing at `width` px. */
 export const sceneSvg = (scene: Scene, width = 120) => memo(`s-${scene}-${Math.round(width)}`, () => wrap(width, SCENES[scene]()))
+// a card-header badge: the bot's head and shoulders with one prop, in a square frame (Settings card headers)
+const MINI: Record<Mini, () => string> = {
+  handoff: () => `${bot({ eyes: 'happy', mouth: 'smile', arms: 'down' })}${note(124, 74, 26, 32)}`,
+  dream: () => `${bot({ eyes: 'sleep', mouth: 'o', arms: 'down' })}${moon(146, 28)}`,
+  safety: () => `${bot({ eyes: 'focus', mouth: 'flat', arms: 'down' })}<path d="M140 74l14 6v10c0 10-6 15-14 19-8-4-14-9-14-19V80z" fill="${E}" fill-opacity="0.9"/><path d="M134 91l4.5 4.5 8-9" stroke="#fff" stroke-width="2.8"/>`,
+  you: () => `${bot({ eyes: 'open', mouth: 'grin', arms: 'wave' })}`,
+}
+/** A Settings card's header drawing at `size` px square. */
+export const miniSvg = (kind: Mini, size = 32) => memo(`n-${kind}-${Math.round(size)}`, () => `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(size)}" height="${Math.round(size)}" viewBox="50 6 116 116" fill="none" stroke-linecap="round" stroke-linejoin="round">${MINI[kind]()}</svg>`)
 /** For tests: how many drawings are cached (bounded at 64). */
 export const cachedDrawings = () => cache.size

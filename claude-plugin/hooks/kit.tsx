@@ -6,11 +6,14 @@ import { K } from './theme'
 // Styled pieces for the panel. Backgrounds are see-through over Claude Code's own canvas and text uses the app's theme
 // colours, so it looks native in light and dark mode. Elevation by lightness: canvas → card → pill.
 export type Kit = ReturnType<typeof kit>
+const W_RE = /width="(\d+)"/, H_RE = /height="(\d+)"/
+/** The engine draws an Svg 1 to 4096 px each way and refuses the whole page otherwise: outside that, words instead. */
+const fits = (n: number) => n >= 1 && n <= 4096
 
 export function kit(els: ElementTable, surface: string) {
   const { Box, Text } = els
   const Svg = surface === 'terminal' ? undefined : (els as unknown as { Svg?: (p: SvgProps) => JSX.Element }).Svg
-  const size = (svg: string, d: 'width' | 'height') => Number(new RegExp(`${d}="(\\d+)"`).exec(svg)?.[1] ?? 0)
+  const size = (svg: string, d: 'width' | 'height') => Number((d === 'width' ? W_RE : H_RE).exec(svg)?.[1] ?? 0)
   // The desktop rounds a Box only when it has a border, so inner tiles (metric cells, KPI cells) get a soft round edge
   // to match the cards' corners. Never on badges and chips: a bordered Box gets the card's padding and turns a chip
   // into a tall button. The terminal draws borders as extra rows of box characters, so there they stay plain.
@@ -21,7 +24,8 @@ export function kit(els: ElementTable, surface: string) {
     inset,
     /** a drawing, or its words where drawings can't show (the terminal) */
     graphic: (key: string, svg: string, alt: string, interactive = false) =>
-      Svg ? <Svg key={key} source={svg} alt={alt} width={size(svg, 'width')} height={size(svg, 'height')} {...(interactive ? { isInteractive: true } : {})} /> : <Text key={key} color={K.label}>{alt}</Text>,
+      // past the engine's 131,072-character limit the whole tree would be refused (a blank page): words instead
+      Svg && svg.length <= 120_000 && fits(size(svg, 'width')) && fits(size(svg, 'height')) ? <Svg key={key} source={svg} alt={alt} width={size(svg, 'width')} height={size(svg, 'height')} {...(interactive ? { isInteractive: true } : {})} /> : <Text key={key} color={K.label}>{alt}</Text>,
     /** a bento card: charcoal surface, hairline border, roomy padding. Its width is a starting share: it grows to fill
      * what its row leaves (padding and gaps never push it to a new line, and a card alone on its row spans it).
      * "100%" means "the whole width": no width at all, so it stretches inside its column and never overflows. */
@@ -30,10 +34,10 @@ export function kit(els: ElementTable, surface: string) {
         {children}
       </Box>
     ),
-    /** card heading: small, quiet label with an optional right-hand value */
+    /** card heading: the card's name in full-strength text (one step above its captions), an optional quiet value on the right */
     head: (key: string, label: string, right?: string, rightColor?: string) => (
-      <Box key={key} flexDirection="row" justifyContent="space-between" flexWrap="wrap" columnGap={1}>
-        <Text size="caption" weight="medium" color={K.label}>{label}</Text>
+      <Box key={key} flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" columnGap={1}>
+        <Text weight="semibold" color={K.text}>{label}</Text>
         {right ? <Text size="caption" tabular color={rightColor ?? K.muted}>{right}</Text> : null}
       </Box>
     ),
@@ -66,13 +70,17 @@ export function kit(els: ElementTable, surface: string) {
       </Box>
     ),
     /** a page's opening line: a title, one short caption and its drawing on the right; no card behind it */
-    intro: (key: string, svg: string, alt: string, title: string, caption: string) => (
+    intro: (key: string, svg: string, alt: string, title: string, caption: string, companion?: { svg: string; alt: string }) => (
       <Box key={key} flexDirection="row" alignItems="center" justifyContent="space-between" columnGap={2} flexWrap="nowrap" paddingX={1}>
         <Box flexDirection="column" gap={0} flexGrow={1} flexShrink={1} minWidth={16}>
           <Text weight="semibold" color={K.text}>{title}</Text>
           <Text size="caption" color={K.label}>{caption}</Text>
         </Box>
-        {Svg ? <Box key={`${key}-b`} flexShrink={0}><Svg key={`${key}-i`} source={svg} alt={alt} width={size(svg, 'width')} height={size(svg, 'height')} /></Box> : null}
+        {Svg ? <Box key={`${key}-b`} flexShrink={0} flexDirection="row" alignItems="flex-end" columnGap={1}>
+          <Svg key={`${key}-i`} source={svg} alt={alt} width={size(svg, 'width')} height={size(svg, 'height')} />
+          {/* the blocky companion: Cortex's second mascot, small, standing beside the robot */}
+          {companion ? <Svg key={`${key}-c`} source={companion.svg} alt={companion.alt} width={size(companion.svg, 'width')} height={size(companion.svg, 'height')} /> : null}
+        </Box> : null}
       </Box>
     ),
     /** a section heading in Kapex Emerald */

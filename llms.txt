@@ -1,6 +1,6 @@
 # Kapex Cortex
 
-> Kapex Cortex is an open-source Claude Code plugin (MIT, zero runtime dependencies, Node.js 23.6+) that adds a live status strip and a costs panel, lossless handoffs between chats, Dreams that check Claude's memory files against what really happened, and a safety check for long autonomous runs. It never rewrites or compresses prompts; its always-on context cost is about 250 tokens (three skill descriptions).
+> Kapex Cortex is an open-source Claude Code plugin (MIT, zero runtime dependencies, Node.js 23.6+) that adds a live status strip and a costs panel, lossless handoffs between chats, Dreams that check Claude's memory files against what really happened, and a safety check for long autonomous runs. It never rewrites or compresses prompts; its always-on context cost is about 280 tokens (four short skill descriptions).
 
 Install in Claude Code: `/plugin marketplace add kafilcodes/kapex-cortex` then `/plugin install kapex-cortex@kapex-cortex`. Open the panel with `/kc`.
 

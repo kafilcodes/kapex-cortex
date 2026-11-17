@@ -29,25 +29,32 @@ export function runHook(name: string, fromPlugin = false): void {
   if (process.env.CORTEX_CLASSIFIER) return; // a model call Cortex started itself: nothing to capture
   const raw = readStdin();
   let input: Record<string, unknown> = {};
-  try { input = raw.trim() ? (JSON.parse(raw) as Record<string, unknown>) : {}; } catch { /* keep empty */ }
+  try { const j: unknown = raw.trim() ? JSON.parse(raw) : {}; input = j && typeof j === "object" && !Array.isArray(j) ? (j as Record<string, unknown>) : {}; } catch { /* keep empty */ }
   const start = String(input.cwd ?? input.directory ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd());
-  const root = resolveProject(start);
-  if (!root) return; // project not initialised: stay silent
-  const p = repoPaths(root);
+  let p: ReturnType<typeof repoPaths>;
   const [harness, event] = name.toLowerCase().split(".");
-  // the plugin's hooks and an older per-project install can both fire: the plugin wins, the copy steps aside
-  if (harness === "claude" && !pluginHooksTurn(p, fromPlugin)) return;
+  try {
+    const root = resolveProject(start);
+    if (!root) return; // project not initialised: stay silent
+    p = repoPaths(root);
+    // the plugin's hooks and an older per-project install can both fire: the plugin wins, the copy steps aside
+    if (harness === "claude" && !pluginHooksTurn(p, fromPlugin)) return;
+  } catch { return; } // a folder Cortex can't read: no hook output, exit 0
   try {
     mkdirSync(p.priv, { recursive: true });
     const out = harness === "claude" ? handleClaude(event ?? "", p, input) : harness === "opencode" ? handleOpencode(event ?? "", p, input) : "";
     if (out) process.stdout.write(out);
-    recordHookTime(p.priv, Math.round(process.uptime() * 1000)); // whole process: what the harness waits for
+    // whole process, what the harness waits for: the reply-end hook only (Stop; OpenCode's idle), the one the panel's
+    // "time after each reply" and its 150 ms target are about. Other events (a compaction's snapshot) are not replies.
+    if (event === "stop" || event === "idle" || event === "session.idle") recordHookTime(p.priv, Math.round(process.uptime() * 1000));
   } catch (err) {
     try { appendFileSync(p.errors, `${new Date().toISOString()} ${name} ${(err as Error).stack ?? err}\n`); } catch { /* nowhere to log */ }
   }
 }
 
 if (!IS_BINARY && process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  // the hard rule: a hook never breaks the harness, so even an error nothing caught exits 0
+  process.on("uncaughtException", () => process.exit(0));
   const args = process.argv.slice(2);
   runHook(args[0] ?? "", args.includes("--plugin"));
 }

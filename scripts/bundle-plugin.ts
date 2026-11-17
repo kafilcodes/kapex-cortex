@@ -15,7 +15,15 @@ const PARTS = ["src", "templates"];
 const SKILLS = join(ROOT, "claude-plugin", "skills");
 const PLUGIN_RUN = 'node "${CLAUDE_PLUGIN_ROOT}/cortex/src/cli.ts"';
 /** The plugin's own skills: same text as the per-user ones, pointing at the bundled CLI. */
-const pluginSkills = () => Object.entries(skillFiles("node", "", PLUGIN_RUN)).map(([n, t]) => [join("skills", n, "SKILL.md"), t] as const);
+/** /kc as a skill of the plugin only (not the per-user or OpenCode copies): listed from disk when a chat starts, so
+ * Claude Desktop knows /kc at once; the plugin's command.run hook answers it with no model call (register.tsx). */
+const KC_SKILL = `---
+name: kc
+description: Open the Kapex Cortex panel beside the chat.
+---
+Call the \`open_panel\` tool of the kapex-cortex plugin to open the Kapex Cortex panel, then reply with one short line saying it is open.
+`;
+const pluginSkills = () => [...Object.entries(skillFiles("node", "", PLUGIN_RUN)), ["kc", KC_SKILL] as const].map(([n, t]) => [join("skills", n, "SKILL.md"), t] as const);
 /** Git on Windows may check text out with CRLF: compare content, not line endings. */
 const same = (a: string | undefined, b: string) => a !== undefined && a.replace(/\r\n/g, "\n") === b.replace(/\r\n/g, "\n");
 const HOOK = join(OUT, "hook.mjs");

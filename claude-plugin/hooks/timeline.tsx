@@ -8,37 +8,60 @@ import { outcome } from './cards'
 import type { Kit } from './kit'
 import { K } from './theme'
 import { tiles } from './tiles'
+import type { Lead } from './leads'
 import { lanes } from './viz'
+import { tidy } from './text'
+import { companion } from './blocky'
 
-// The Timeline page: the activity chart (swimlanes over time: turns, code, handoffs, Dreams), then every event
-// newest first, grouped by day, as tiles that open for the details (a turn's numbers and files, a commit's tags,
+// The Timeline page: the activity chart (swimlanes over time: replies, commits, handoffs, Dreams), then every event
+// newest first, grouped by day, as tiles joined by a connector on the left, that open for the details (a turn's numbers and files, a commit's tags,
 // a handoff's goal, what a Dream found).
 const KIND: Record<string, { icon: string; label: string; lane: number }> = {
-  turn: { icon: 'turn', label: 'Turn', lane: 0 },
+  turn: { icon: 'turn', label: 'Reply', lane: 0 },
   commit: { icon: 'commit', label: 'Commit', lane: 1 }, merge: { icon: 'merge', label: 'Merge', lane: 1 },
   handoff: { icon: 'link', label: 'Handoff', lane: 2 },
   dream: { icon: 'dream', label: 'Dream', lane: 3 },
 }
-const LANES: [string, string][] = [['Turns', K.emerald], ['Code', K.silver], ['Handoffs', K.amber], ['Dreams', '#14B8A6']]
+// one colour per row (failures in rose); amber is kept for warnings, so handoffs get the deep emerald
+const LANES: [string, string][] = [['Replies', K.emerald], ['Commits', K.silver], ['Handoffs', K.pine], ['Dreams', '#14B8A6']]
+/** Events per page of the list: the newest page, then this many more per press of "Show older". */
+const PAGE = 24
 const TONE: Record<string, string> = { ok: K.emerald, warn: K.amber, bad: K.rose, info: K.silver }
 const dayOf = (iso: string) => {
+  if (!Number.isFinite(Date.parse(iso))) return 'Earlier' // an unreadable time: grouped last, never "Invalid Date"
   const d = new Date(iso), now = new Date()
   const same = (a: Date, b: Date) => a.toDateString() === b.toDateString()
   if (same(d, now)) return 'Today'
   if (same(d, new Date(now.getTime() - 86_400_000))) return 'Yesterday'
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 }
-const time = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+/** The drawing that leads an event's tile, and its words. A reply's face says how its checks went. */
+function leadOf(ev: TimelineEventView, res: { color: string; text: string } | null): { kind: Lead; alt: string; tint?: string } {
+  const tint = ev.tone === 'bad' ? K.rose : ev.tone === 'warn' ? K.amber : undefined
+  if (ev.kind === 'commit') return ev.tags.some(x => /^tag /.test(x)) ? { kind: 'commit-tag', alt: 'A commit with a release tag', tint } : { kind: 'commit', alt: 'A commit', tint }
+  if (ev.kind === 'merge') return { kind: 'merge', alt: 'Two branches merging', tint }
+  if (ev.kind === 'handoff') return { kind: 'handoff', alt: 'A note passing from one chat to another' }
+  if (ev.kind === 'dream') return ev.tone === 'bad' ? { kind: 'dream-bad', alt: 'A Dream that failed' } : ev.tone === 'ok' ? { kind: 'dream-ok', alt: 'A Dream that found nothing wrong' } : { kind: 'dream', alt: 'A Dream checking notes' }
+  const c = res?.color ?? TONE[ev.tone] ?? K.silver
+  if (c === K.rose) return { kind: 'reply-bad', alt: 'A reply whose checks failed' }
+  if (c === K.amber) return { kind: 'reply-warn', alt: res?.text === 'Interrupted' ? 'A reply that was interrupted' : 'A reply with tool errors' }
+  if (c === K.emerald) return { kind: 'reply-ok', alt: 'A reply whose checks passed' }
+  return { kind: 'reply-none', alt: 'A reply with no checks run' }
+}
+const time = (iso: string) => (Number.isFinite(Date.parse(iso)) ? new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '')
 const base = (f: string) => f.split(/[\\/]/).slice(-2).join('/')
 
-/** Lines a tile's text takes, so its connector is as tall as the tile and no taller (measured in the real app: a tile
- * with a one-line preview is about 116 px; the base 74 + 22 per line). The preview is cut to 140 characters. */
+/** Lines a tile's text takes: the connector's estimate of each tile's height (the rail's halves reach about 0.8 of
+ * the distance between two tiles' middles, so the estimate only has to be roughly right). The preview is cut to 140 characters. */
 const previewLines = (detail: string | undefined, px: number, open = false) => (detail ? 1 + Math.max(1, Math.ceil(((open ? detail.length : Math.min(140, detail.length)) * 6.4) / Math.max(200, px - 140))) : 1)
-/** An open turn's extra lines: its four metric cells (two rows when narrow), the files line and the next step. */
-const bodyLines = (px: number, files: boolean, next: boolean) => (px < 640 ? 7 : 4) + (files ? 2 : 0) + (next ? 2 : 0)
+/** An open turn's extra lines: its row of figures (two rows when narrow), the files line and the next step. */
+const bodyLines = (px: number, files: boolean, next: boolean) => (px < 640 ? 4 : 2) + (files ? 1 : 0) + (next ? 1 : 0)
+/** A turn with nothing to open (no files, checks, commits or written text, like a background task's notice). */
+const busy = (ep: { files: string[]; tests: { ran: number }; commits: number; outTokens: number; next?: string }) => !!(ep.files.length || ep.tests.ran || ep.commits || ep.outTokens || ep.next)
 
 /** The Activity drawing, reused while nothing it shows has changed: its right edge moves in 10-minute steps, never
- * with every redraw, so the chart's frame isn't reloaded (and doesn't blink) when you open a tile or scroll. */
+ * with every redraw. Drawn as a plain image, not an interactive frame: a frame inside the scrolling pane takes the
+ * mouse wheel while the pointer is over it, and scrolling sticks there. Each dot's details are in the list below. */
 let chartMemo = { key: '', svg: '' }
 function chartOnce(key: string, make: () => string): string {
   if (chartMemo.key !== key) chartMemo = { key, svg: make() }
@@ -47,20 +70,24 @@ function chartOnce(key: string, make: () => string): string {
 
 export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView, vw: ViewState, px: number): JSX.Element {
   const { Box, Text, Button } = els
-  const t = tiles($, els, u, vw.expanded)
+  const t = tiles($, els, u, vw.expanded, px)
   const all = s.timeline ?? []
-  const limit = 24 + (vw.more.timeline ?? 0)
+  const extra = Math.max(0, vw.more.timeline ?? 0)
+  const limit = PAGE + extra
   const events = all.slice(0, limit)
+  const hidden = Math.max(0, all.length - limit)
   const eps = new Map((s.episodes ?? []).map(e => [`turn-${e.id}`, e]))
   const days: [string, TimelineEventView[]][] = []
-  for (const ev of events) { const d = dayOf(ev.ts); const last = days[days.length - 1]; if (last && last[0] === d) last[1].push(ev); else days.push([d, [ev]]) }
+  // one group per day even if events arrive out of order (each day's key is unique, so the list never has twins)
+  const byDay = new Map<string, TimelineEventView[]>()
+  for (const ev of events) { const d = dayOf(ev.ts); const g = byDay.get(d); if (g) g.push(ev); else { const n: TimelineEventView[] = [ev]; byDay.set(d, n); days.push([d, n]) } }
   // the chart covers the events shown, at most the last 7 days, up to the next 10-minute mark
   const now = Math.ceil(Date.now() / 600_000) * 600_000
   const shown = all.filter(e => now - Date.parse(e.ts) <= 7 * 86_400_000)
   const from = shown.length ? Math.min(...shown.map(e => Date.parse(e.ts))) - 600_000 : now - 3_600_000
-  const width = Math.max(260, Math.min(900, px - 60))
+  const width = Math.max(260, Math.min(1400, px - 52)) // the chart spans its card
   const chart = chartOnce(`${now}|${width}|${shown.map(e => `${e.id}:${e.tone}`).join(',')}`, () => lanes({
-    lanes: LANES.map(([label, color], i) => ({ label, color, dots: shown.filter(e => (KIND[e.kind] ?? KIND.turn!).lane === i).map(e => ({ t: Date.parse(e.ts), title: `${time(e.ts)} · ${e.title}`, color: e.tone === 'bad' ? K.rose : e.tone === 'warn' ? K.amber : undefined })) })),
+    lanes: LANES.map(([label, color], i) => ({ label, color, dots: shown.filter(e => (KIND[e.kind] ?? KIND.turn!).lane === i).map(e => ({ t: Date.parse(e.ts), title: `${time(e.ts)} · ${e.title}`, color: e.tone === 'bad' ? K.rose : undefined })) })),
     from, to: now, width,
   }))
 
@@ -68,19 +95,21 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
     const kind = KIND[ev.kind] ?? KIND.turn!
     const ep = eps.get(ev.id)
     const res = ep ? outcome(ep) : null
+    // what people typed is tidied for the closed tile (no prompt marks, one sentence); the open tile shows it all
+    const open = vw.expanded.includes(ev.id), typed = ev.kind === 'turn' || ev.kind === 'handoff'
     return t.tile({
-      id: ev.id, icon: kind.icon, color: TONE[ev.tone] ?? K.silver, title: ev.title, time: time(ev.ts),
+      id: ev.id, icon: kind.icon, color: TONE[ev.tone] ?? K.silver, lead: leadOf(ev, res), title: typed ? tidy(ev.title, 90, open) || ev.title : ev.title, time: time(ev.ts),
       // the outcome badge already says how the checks went: don't repeat it as a tag
       badges: [[kind.label, TONE[ev.tone] ?? K.label], res ? [res.text, res.color, res.icon] : null, ...ev.tags.filter(x => !(res && /^tests /.test(x))).slice(0, ep ? 2 : 4).map(x => [x] as [string])],
-      preview: ev.detail,
-      body: ep ? [
-        <Box key={`tm-${ev.id}`} flexDirection="row" gap={1} flexWrap="wrap">
-          {t.metric(`tmf-${ev.id}`, 'file', K.silver, String(ep.files.length), 'files changed', '40%')}
-          {t.metric(`tmt-${ev.id}`, 'test', ep.tests.failed && !ep.tests.lastOk ? K.rose : ep.tests.ran ? K.emerald : K.silver, ep.tests.ran ? `${ep.tests.ran - ep.tests.failed}/${ep.tests.ran}` : '–', 'check runs passed', '40%')}
-          {t.metric(`tmc-${ev.id}`, 'commit', K.silver, String(ep.commits), 'commits', '40%')}
-          {t.metric(`tmo-${ev.id}`, 'spark', K.silver, k(ep.outTokens), 'tokens Claude wrote', '40%')}
-        </Box>,
-        ep.files.length ? <Text key={`tfl-${ev.id}`} size="caption" color={K.muted}>{`Files: ${ep.files.slice(0, 8).map(base).join(', ')}${ep.files.length > 8 ? ` and ${ep.files.length - 8} more` : ''}`}</Text> : null,
+      preview: ev.detail && typed ? tidy(ev.detail, 140, open) : ev.detail,
+      body: ep && busy(ep) ? [
+        t.stats(`tm-${ev.id}`, [
+          { icon: 'file', value: String(ep.files.length), label: ep.files.length === 1 ? 'file changed' : 'files changed' },
+          ep.tests.ran ? { icon: 'test', value: `${ep.tests.ran - ep.tests.failed} of ${ep.tests.ran}`, label: 'checks passed', color: ep.tests.failed && !ep.tests.lastOk ? K.rose : K.emerald } : { icon: 'test', value: 'none', label: 'checks run' },
+          { icon: 'commit', value: String(ep.commits), label: ep.commits === 1 ? 'commit' : 'commits' },
+          { icon: 'spark', value: k(ep.outTokens), label: 'tokens Claude wrote' },
+        ]),
+        ep.files.length ? u.tag(`tfl-${ev.id}`, 'file', K.silver, `${ep.files.slice(0, 8).map(base).join('  ·  ')}${ep.files.length > 8 ? `  ·  ${ep.files.length - 8} more` : ''}`, K.muted) : null,
         ep.next ? u.tag(`tnx-${ev.id}`, 'pending', K.amber, `Next: ${ep.next}`, K.label) : null,
       ] : ev.tags.length > 4 ? [<Text key={`ttg-${ev.id}`} size="caption" color={K.muted}>{ev.tags.join(' · ')}</Text>] : [],
     })
@@ -88,21 +117,29 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
 
   return (
     <Box flexDirection="column" gap={1}>
-      {u.intro('tl-in', sceneSvg('timeline', 120), 'Cortex at the timeline', 'What happened, newest first', 'Turns, commits, handoffs and Dreams in one place.')}
+      {u.intro('tl-in', sceneSvg('timeline', 100), 'Cortex at the timeline', 'What happened, newest first', 'Every reply, commit, handoff and memory check in this project.', companion('idle', px))}
       {u.card('tl-act', '100%', [
-        u.head('tl-act-h', 'Activity', `${shown.length} events · ${now - from > 36 * 3_600_000 ? 'last 7 days' : 'today'}`),
-        shown.length ? u.graphic('g-lanes', chart, `${shown.length} events: ${LANES.map(([l], i) => `${shown.filter(e => (KIND[e.kind] ?? KIND.turn!).lane === i).length} ${l.toLowerCase()}`).join(', ')}`, true) : u.tag('tl-none', 'turn', K.silver, 'No events yet. Each reply, commit, compaction and handoff shows up here.'),
+        u.head('tl-act-h', now - from > 36 * 3_600_000 ? 'The last 7 days' : 'Today', `${shown.length} event${shown.length === 1 ? '' : 's'}`),
+        shown.length ? u.graphic('g-lanes', chart, `${shown.length} events: ${LANES.map(([l], i) => `${shown.filter(e => (KIND[e.kind] ?? KIND.turn!).lane === i).length} ${l.toLowerCase()}`).join(', ')}`) : u.tag('tl-none', 'turn', K.silver, 'Nothing yet. Each reply, commit, handoff and Dream shows up here.'),
       ])}
       {days.map(([day, list]) => (
         <Box key={`day-${day}`} flexDirection="column" gap={1}>
-          {t.groupHead(`dh-${day}`, 'pending', K.emerald, day, `${list.length}`)}
+          {t.groupHead(`dh-${day}`, 'pending', K.emerald, day, `${list.length} event${list.length === 1 ? '' : 's'}`)}
           {t.railed(`dl-${day}`, list.map(ev => {
             const open = vw.expanded.includes(ev.id), ep = open ? eps.get(ev.id) : undefined
-            return { tile: tileOf(ev), lines: previewLines(ev.detail, px, open) + (ep ? bodyLines(px, !!ep.files.length, !!ep.next) : open && ev.tags.length > 4 ? 1 : 0) }
-          }))}
+            return { tile: tileOf(ev), lines: previewLines(ev.detail, px, open) + (ep && busy(ep) ? bodyLines(px, !!ep.files.length, !!ep.next) : open && ev.tags.length > 4 ? 1 : 0) }
+          }), day === 'Today' ? K.emerald : K.ink)}
         </Box>
       ))}
-      {all.length > limit ? <Button key="tl-more" onPress={() => { void showMore($, 'timeline', 24) }}>{`Show ${Math.min(24, all.length - limit)} older events`}</Button> : null}
+      {/* paging: the button says exactly what a press adds, the count beside it how many older events are still
+          hidden (it updates with every press), and once you've paged back, one press returns to the newest */}
+      {all.length && (all.length > limit || extra > 0) ? (
+        <Box key="tl-page" flexDirection="row" justifyContent="center" alignItems="center" columnGap={2} rowGap={1} flexWrap="wrap">
+          {hidden > 0 ? <Button key="tl-more" onPress={() => { void showMore($, 'timeline', PAGE) }}>{hidden > PAGE ? `Show ${PAGE} older` : `Show the last ${hidden} older`}</Button> : null}
+          <Text key="tl-left" size="caption" tabular color={K.muted}>{hidden > 0 ? `${hidden} older event${hidden === 1 ? '' : 's'} not shown` : `All ${all.length} events shown`}</Text>
+          {extra > 0 ? <Button key="tl-less" plain onPress={() => { void showMore($, 'timeline', -extra) }}><Text size="caption" color={K.label}>Back to newest</Text></Button> : null}
+        </Box>
+      ) : null}
     </Box>
   )
 }

@@ -49,16 +49,46 @@ export function nextFromReply(reply: string): string {
   return m ? oneLine(m[1]!.replace(/\*\*/g, ""), 300) : "";
 }
 
+/** Sentences that carry on with the work rather than state it ("Continue", "The 5-hour limit has reset", "Read
+ * .vault/STATE.md first", "we are continuing from yesterday"). */
+export const CONTINUES = /^(?:(?:hey|hi|ok(?:ay)?|yes|so|now|alright)\b[\s,.!:-]*)*(?:please\s+)?(?:continue|resume|proceed|carry on|go on|keep going|pick (?:it )?up|let'?s continue|we(?:'re| are) continuing|(?:the )?(?:5|five)[- ]hour limit (?:has |is )?reset|(?:the |my |our )?(?:usage |rate )?limits? (?:has |have |is |are )?(?:been )?reset|(?:first,?\s*)?read [`"]?\.vault\/STATE\.md|\/cortex-resume|resume from the kapex cortex handoff)\b/i;
+/** What may follow a lead-in for its sentence to be only a continuation: punctuation, a bracket, the end, or filler
+ * ("Continue: …", "continue (we are back…", "we are continuing from…", "Read .vault/STATE.md first…"). Anything else
+ * ("Continue building the export", "Resume work on the webhook") is the task itself and is kept whole. */
+const FILLER = /^\s*[`"']?\s*(?:[.!?;:,(\-–—]|$|(?:from|where|after|again|first|now|and|so|please|then)\b)/i;
+/** A message without its lead-in continuation sentences: "Continue: the limit reset. Now add CSV export" → "Now add
+ * CSV export"; "Read STATE.md first, then fix the login test" → "fix the login test"; only a continuation → "". */
+export function withoutLeadIn(text: string): string {
+  let t = text.trim();
+  for (let i = 0; i < 6; i++) {
+    const m = CONTINUES.exec(t);
+    if (!m) break;
+    const rest = t.slice(m[0].length);
+    if (!FILLER.test(rest)) break;
+    const end = /[.!?;:](?=\s|$)|\n/.exec(rest);
+    const sentence = end ? rest.slice(0, end.index) : rest;
+    // "…first, then fix the login test" / "…and now add the heatmap": what follows then/now in it is the task
+    const turn = /(?:^|[\s,;(])(?:and\s+)?(?:then|now)\s+(?!(?:continue|carry on|go on|proceed|resume)\b)/i.exec(sentence);
+    if (turn) { t = (sentence.slice(turn.index + turn[0].length) + (end ? rest.slice(end.index) : "")).trim(); continue; }
+    t = end ? rest.slice(end.index + 1).trim() : "";
+  }
+  return t;
+}
+
 export function buildBrief(p: RepoPaths, a: { session: string; lastAssistant?: string; handoff: HandoffNote | null; heading: string; now: Date; carry?: Carry | null }): Brief {
-  const asks = readTurns(p, a.session).map((t) => ({ ts: t.ts, text: askOf(t) })).filter((t) => t.text.length >= 15);
+  const all = readTurns(p, a.session).map((t) => ({ ts: t.ts, text: askOf(t) })).filter((t) => t.text.length >= 15);
+  // a continuation keeps the goal it continues: what a message says after its lead-in ("Continue: the limit reset.")
+  // is what can become the goal, and a message that is only a continuation never does
+  const asks = all.map((t) => ({ ts: t.ts, text: withoutLeadIn(t.text.replace(/^\(pasted\)\s*/, "")) })).filter((t) => t.text.length >= 15);
   const first = asks[0];
-  const latest = asks.at(-1);
+  const latest = all.at(-1);
   // the current goal is the most recent real task statement ("Yes, do it" replies don't count), else the first ask
   // …unless you named it: an explicit "Goal: …" wins over the longest recent message
   const named = [...asks].reverse().find((t) => /^(?:the )?goal\s*[:：-]/i.test(t.text));
   const task = named ?? [...asks].reverse().find((t) => t.text.length >= 60) ?? first;
   const h = a.handoff;
-  const thisSession = !!h && (h.session === a.session || (!!first && h.ts >= first.ts));
+  // no turns recorded yet (kc handoff run on its own): the handoff you just wrote is this session's goal and next step
+  const thisSession = !!h && (h.session === a.session || !all[0] || h.ts >= all[0].ts);
   const handoffAge = h ? age(a.now.getTime() - Date.parse(h.ts)) : "";
 
   let goal: string;
@@ -73,7 +103,7 @@ export function buildBrief(p: RepoPaths, a: { session: string; lastAssistant?: s
   let next: string;
   if (thisSession && h?.next && (!latest || h.ts >= latest.ts)) next = h.next;
   else if (fromReply) next = fromReply;
-  else if (latest && latest !== task) next = `Continue: ${oneLine(latest.text, 300)}`;
+  else if (latest && latest.ts !== task?.ts) next = `Continue: ${oneLine(latest.text, 300)}`; // by time: asks are copies of all
   else next = "Continue from the last assistant message below; confirm with the user if it is unclear.";
 
   return { goal, next };

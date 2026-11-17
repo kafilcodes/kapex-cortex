@@ -16,7 +16,16 @@ export const opencodeHome = () => process.env.CORTEX_OPENCODE_HOME ?? join(homed
 export const projectSlug = (dir: string) => resolve(dir).replace(/[^A-Za-z0-9]/g, "-");
 
 /** The repository a folder belongs to (worktrees share their main repository's folder), else the folder itself. */
+const roots = new Map<string, string>();
 export function repoRoot(dir: string): string {
+  // one git call per folder per process: a status run asked it four times (~7 ms each)
+  const hit = roots.get(dir);
+  if (hit !== undefined) return hit;
+  const root = findRoot(dir);
+  if (roots.size < 64) roots.set(dir, root);
+  return root;
+}
+function findRoot(dir: string): string {
   const r = spawnSync("git", ["-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", timeout: 1_500 });
   const common = r.status === 0 ? r.stdout.trim() : "";
   return common && /[\\/]\.git$/.test(common) ? dirname(common) : resolve(dir);

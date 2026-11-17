@@ -9,3 +9,4 @@ bench/results/*.jsonl.tmp
 dist/
 docs/preview/
 .vault/dreams/
+cook/

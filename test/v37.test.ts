@@ -28,8 +28,8 @@ test("v3.7 safety audit: flags readable secrets and a Stop hook that can't send 
   const v = auditSafety(p);
   const by = (id: string) => v.findings.find(f => f.id === id)!;
   assert.equal(by("secrets").level, "warn");
-  assert.match(by("secrets").title, /\.env can be read/);
-  assert.equal(by("sandbox").title, "Sandbox off");
+  assert.match(by("secrets").title, /Claude can read \.env/);
+  assert.equal(by("sandbox").title, "Commands run without a sandbox");
   assert.equal(by("gate").level, "warn");
   assert.match(by("gate").detail, /exits 1/);
   assert.equal(checkCommand(p), "npm test");

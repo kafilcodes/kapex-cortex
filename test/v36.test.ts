@@ -46,10 +46,11 @@ test("v3.6 the panel's 'Cortex adds to each message' is measured from the skill 
   const dir = mkdtempSync(join(tmpdir(), "cortex-skills-"));
   const user = mkdtempSync(join(tmpdir(), "cortex-user-skills-"));
   for (const n of ["cortex-handoff", "cortex-init", "cortex-resume"]) put(dir, n, `---\nname: ${n}\ndescription: ${"x".repeat(210)}\n---\nbody\n`);
+  put(dir, "kc", "---\nname: kc\ndescription: Open the Kapex Cortex panel beside the chat.\n---\nbody\n"); // v4: /kc is a skill too
   const one = cortexFootprint(dir, user);
-  assert.equal(one.skills, 3);
+  assert.equal(one.skills, 4);
   assert.equal(one.duplicates, 0);
-  assert.ok(one.tokens > 200 && one.tokens < 320, `about 250 tokens, like claude plugin details (got ${one.tokens})`);
+  assert.ok(one.tokens > 220 && one.tokens < 340, `about 280 tokens, like claude plugin details (got ${one.tokens})`);
   put(user, "cortex-resume", `---\nname: cortex-resume\ndescription: ${"x".repeat(210)}\n---\n`);
   const two = cortexFootprint(dir, user);
   assert.equal(two.duplicates, 1);

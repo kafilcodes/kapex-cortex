@@ -3,10 +3,16 @@ import type { Hook } from 'claude-code'
 
 import type { CacheView, LiveView, OffView, StatusView, Tab, ViewState } from '../types'
 import { unusedTools } from './tips'
+import { armAnimation } from './anim'
+import { loadout } from './loadout'
+import { dreamFinished, notify } from './notify'
+import { freshLimits, isStatus, usable } from './shape'
+export { freshLimits }
+export { animateFor } from './anim'
 
 // Kapex Cortex panel state and refresh. Data: Claude Code's own numbers ($.session.usage/model/turns, turn.complete usage)
 // plus `kc status --json`. No timer: refreshes on turn end, button press or panel open, writes state only
-// on change, animates only on change. Layout follows the pane's width: stacked cards → 2 → 3 columns.
+// on change, animates only after the panel opens or Refresh is pressed (anim.ts). Layout follows the pane's width: stacked cards → 2 → 3 columns.
 export const PANE = 'kapex-cortex'
 export const status = atom({ plugin: 'kapex-cortex', key: 'status' } as const, null as StatusView | null, { shape: 'status-4' })
 export const live = atom({ plugin: 'kapex-cortex', key: 'live' } as const, null as LiveView | null, { shape: 'live-1' })
@@ -33,9 +39,7 @@ let lastTry = 0
 let sessionCwd = ''
 /** The chat's folder (from session.start): a saved status is only reused for the same project. */
 export function noteCwd(cwd: string): void { sessionCwd = cwd }
-const seen: Record<string, string> = {}
 const lastJson = { s: '', l: '' }
-export const animateFor = (key: string, sig: string) => { const changed = seen[key] !== sig; seen[key] = sig; return changed }
 
 // The CLI ships inside the plugin (cortex/src/cli.ts) and runs with Node directly: no shell, so it works
 // the same on macOS, Linux and Windows. GUI apps don't always get the shell's PATH, so a few usual places
@@ -84,8 +88,23 @@ let seenStamp = ''
 /** The stamp the last full refresh started from ('' before the first). */
 export const lastStamp = () => seenStamp
 
-export async function refresh($: Dollar): Promise<void> {
-  const root = (await read($, status))?.root
+/** One refresh at a time (two racing `kc status` runs could write an older status last); a caller during a run shares it, and one more run follows. */
+let inflight: Promise<void> | null = null, again = false
+export function refresh($: Dollar): Promise<void> {
+  if (inflight) { again = true; return inflight }
+  inflight = (async () => {
+    try { do { again = false; await guarded($) } while (again) } finally { inflight = null }
+  })()
+  return inflight
+}
+/** One run: at most 45 s (a call that never returns must not hold every later refresh), and it never throws. */
+async function guarded($: Dollar): Promise<void> {
+  let timer: { cancel(): void } | undefined
+  const late = new Promise<void>(res => { try { timer = $.clock.after(45_000, res) } catch { /* no clock: no timeout */ } })
+  try { await Promise.race([refreshOnce($), late]) } catch { /* the next run tries again; the fail atom says why */ } finally { timer?.cancel() }
+}
+async function refreshOnce($: Dollar): Promise<void> {
+  const prev = await read($, status), root = prev?.root
   if (root) seenStamp = await vaultStamp($, root).catch(() => '')
   let r = await kc($, ['status', '--json'])
   let s: StatusView | null = null
@@ -97,11 +116,12 @@ export async function refresh($: Dollar): Promise<void> {
     if (o && o.nearby.length === 1 && !(await read($, project))) { await update($, project, () => `${o.cwd}/${o.nearby[0]}`); r = await kc($, ['status', '--json']) }
   }
   let failed = ''
-  if (r.ok) { try { s = JSON.parse(r.out) as StatusView } catch { failed = 'Cortex sent an unreadable status' } }
+  if (r.ok) { try { const j: unknown = JSON.parse(r.out); if (isStatus(j)) s = usable(j); else failed = 'Cortex sent an unreadable status' } catch { failed = 'Cortex sent an unreadable status' } }
   else if (!(await read($, off))) failed = (r.out.split('\n')[0] ?? '').slice(0, 140) || 'Cortex did not answer'
   // a failed refresh never blanks a good status: keep the last one (and say it's stale) until one succeeds
-  if (!s && failed) s = (await read($, status)) ?? ((await $.store.get(STORE_STATUS)) as StatusView | undefined) ?? null
-  if ((await read($, fail)) !== failed) await update($, fail, () => failed)
+  if (!s && failed) { const kept = (await read($, status)) ?? (await $.store.get(STORE_STATUS)); s = isStatus(kept) ? usable(kept) : null }
+  const was = await read($, fail)
+  if (was !== failed) { await update($, fail, () => failed); if (failed && !was) void notify($, 'alert', 'Cortex couldn\'t refresh', s) } // once, when it starts failing
   if (r.ok && s) void $.store.set(STORE_STATUS, s).catch(() => undefined) // instant strip after a restart or app update
   if (!root && s?.root) seenStamp = await vaultStamp($, s.root).catch(() => '')
   const l = await liveNow($)
@@ -115,6 +135,7 @@ export async function refresh($: Dollar): Promise<void> {
   }
   const sj = JSON.stringify(s)
   if (sj !== lastJson.s) { lastJson.s = sj; await update($, status, () => s) }
+  if (prev?.dream.running && s && !s.dream.running) dreamFinished($, s) // a Dream that was running just ended
   await putLive($, l)
   if (s && l) void autoPark($, s, l)
 }
@@ -155,6 +176,7 @@ async function putLive($: Dollar, l: LiveView | null): Promise<void> {
 export async function refreshNow($: Dollar): Promise<void> {
   await refresh($)
   const d = new Date()
+  armAnimation('refresh') // the fresh data is in: the redraw this note causes animates what changed
   await update($, note, () => `Refreshed at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`)
 }
 
@@ -162,13 +184,15 @@ export async function act($: Dollar, label: string, args: string[]): Promise<voi
   await update($, note, () => `${label}…`)
   const r = await kc($, args)
   await refresh($)
-  await update($, note, () => (r.ok ? `${label}: done` : `${label}: ${(r.out.split('\n')[0] ?? '').slice(0, 120)}`))
+  if (label === 'Checked' && r.ok) { const s = await read($, status), n = toReview(s); void notify($, 'done', n ? `Quick check · ${n} to look at` : 'Quick check · all clear', s) }
+  // the header draws the note as a status chip: done → a tick and the action's own words ("Saved"), else what went wrong
+  await update($, note, () => (r.ok ? label : `${label}: ${(r.out.split('\n')[0] ?? '').slice(0, 120)}`))
 }
 
 export const ago = (m: number | null) => (m === null ? 'never' : m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`)
-export const minsSince = (iso?: string | null) => (iso ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000)) : null)
+export const minsSince = (iso?: string | null) => (iso && Number.isFinite(Date.parse(iso)) ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000)) : null) // unreadable: "never", not NaN
 // transparent: Claude Code's own light or dark canvas shows through, so the panel looks native in both modes
-export function openPane($: Dollar) { return $.ui.open({ id: PANE, title: 'Kapex Cortex', backgroundColor: 'transparent' }) }
+export function openPane($: Dollar) { armAnimation('open'); return $.ui.open({ id: PANE, title: 'Kapex Cortex', backgroundColor: 'transparent' }) }
 
 // Every state read and write goes through these (the validator wants atoms used in the file that declares them).
 export async function snapshot($: Dollar) {
@@ -183,24 +207,6 @@ export async function stampCache($: Dollar, u?: { input_tokens: number; cache_re
   await update($, cache, c => ({ ...c, lastAt: Date.now(), ...(u ? { read: u.cache_read_input_tokens, write: u.cache_creation_input_tokens, input: u.input_tokens } : {}) }))
 }
 
-type Breakdown = { mcpTools?: readonly { name: string; serverName?: string; tokens: number; isLoaded: boolean }[]; skills?: { skillFrontmatter?: readonly { name: string; pluginName?: string; tokens: number }[] } }
-/** What each MCP server and each plugin's skills cost here. Server keys match tool names (mcp__<server>__tool), as usage.ts counts them. */
-function loadout(b: Breakdown | undefined): LiveView['loadout'] {
-  if (!b) return undefined
-  const m = new Map<string, { kind: 'mcp' | 'skills'; name: string; tokens: number; loaded: number; items: number; names?: string[]; server?: string }>()
-  const add = (kind: 'mcp' | 'skills', name: string, tokens: number, loaded: boolean, item?: string, server?: string) => {
-    const k = `${kind}:${name}`
-    const x = m.get(k) ?? { kind, name, tokens: 0, loaded: 0, items: 0, ...(server ? { server } : {}) }
-    x.tokens += tokens; x.items += 1; if (loaded) x.loaded += tokens
-    if (item) x.names = [...(x.names ?? []), item.split(':').pop()!]
-    m.set(k, x)
-  }
-  // serverName is the name /mcp shows: the one Claude Code's own disabledMcpServers list takes
-  for (const t of b.mcpTools ?? []) add('mcp', t.name.split('__')[1] ?? t.name, t.tokens, t.isLoaded, undefined, t.serverName)
-  for (const sk of b.skills?.skillFrontmatter ?? []) add('skills', sk.pluginName ?? (sk.name.includes(':') ? sk.name.split(':')[0]! : 'your own'), sk.tokens, true, sk.name)
-  return [...m.values()].sort((a, b2) => b2.loaded - a.loaded)
-}
-
 /** Changes the newest Dream proposes and you haven't looked at yet (it must still be "proposed"). */
 export const toReview = (s: StatusView | null | undefined) => { const d = s?.dream?.recent?.[0]; return d && d.status === 'proposed' ? d.findings.filter(f => !f.skip && !f.done).length : 0 }
 
@@ -209,20 +215,13 @@ export async function toggleGroup($: Dollar, g: string): Promise<void> {
   await update($, view, v => ({ ...v, collapsed: v.collapsed.includes(g) ? v.collapsed.filter(x => x !== g) : [...v.collapsed, g] }))
 }
 export async function showMore($: Dollar, g: string, step = 10): Promise<void> {
-  await update($, view, v => ({ ...v, more: { ...v.more, [g]: (v.more[g] ?? 0) + step } }))
+  await update($, view, v => ({ ...v, more: { ...v.more, [g]: Math.max(0, (v.more[g] ?? 0) + step) } })) // never below zero: two quick presses of Back to newest
 }
 export async function setEditing($: Dollar, id: string): Promise<void> { await update($, view, v => ({ ...v, editing: id })) }
 
 /** Plan numbers last seen (any chat), for the cards and strip before this chat's first reply. */
 export async function lastLimits($: Dollar): Promise<{ at: number; limits: LiveView['limits'] } | null> {
   try { return ((await $.store.get(STORE_LIMITS)) as { at: number; limits: LiveView['limits'] } | undefined) ?? null } catch { return null }
-}
-/**
- * The plan numbers to draw. Claude Code reports plan use only with a reply, so in a quiet chat (or from another chat's
- * saved copy) the numbers can be from before the window reset: a window whose reset time has passed starts again at 0%.
- */
-export function freshLimits(limits: LiveView['limits'], now = Date.now()): LiveView['limits'] {
-  return limits.map(x => (x.resetsAt && Date.parse(x.resetsAt) <= now ? { ...x, percentUsed: 0, rolled: true } : x))
 }
 /** This chat's plan numbers, else the last ones seen in any chat; either way aged past their reset time. */
 export async function planLimits($: Dollar, l: LiveView | null): Promise<{ limits: LiveView['limits']; at: number | null }> {
@@ -235,7 +234,7 @@ export async function statusOrSaved($: Dollar): Promise<StatusView | null> {
   const s = await read($, status)
   if (s) return s
   try {
-    const saved = ((await $.store.get(STORE_STATUS)) as StatusView | undefined) ?? null
+    const got: unknown = await $.store.get(STORE_STATUS), saved = isStatus(got) ? usable(got) : null // an older version's shape is no status
     const dir = (await read($, project)) || sessionCwd
     return saved && (!dir || dir === saved.root || dir.startsWith(`${saved.root}/`) || saved.root.startsWith(`${dir}/`)) ? saved : null
   } catch { return null }
@@ -252,13 +251,14 @@ export async function toggleExpanded($: Dollar, id: string): Promise<void> {
   await update($, view, v => ({ ...v, expanded: v.expanded.includes(id) ? [] : [id] }))
 }
 export async function setSub($: Dollar, sub: string): Promise<void> { await update($, view, v => ({ ...v, sub })) }
+export async function setCostsSub($: Dollar, csub: string): Promise<void> { await update($, view, v => ({ ...v, csub })) }
 /** First-run intro: the step to show, or -1 once finished or skipped. */
 export async function setIntro($: Dollar, step: number): Promise<void> { await update($, view, v => ({ ...v, intro: step })) }
 
 /** The handoff flow's step (Overview banner) and "Later". */
 export async function setFlow($: Dollar, flow: '' | 'confirm' | 'copied'): Promise<void> { await update($, view, v => ({ ...v, flow })) }
 export async function snoozeSwitch($: Dollar, pct: number): Promise<void> {
-  await update($, view, v => ({ ...v, flow: '', snooze: { until: Date.now() + 30 * 60_000, pct } }))
+  await update($, view, (v): ViewState => ({ ...v, flow: '', snooze: { until: Date.now() + 30 * 60_000, pct } }))
 }
 /** What you paste in the new chat: typed by you, so a slash command is fine (the panel itself can't send one). */
 export const RESUME_COMMAND = '/cortex-resume'
@@ -269,7 +269,8 @@ export async function handOff($: Dollar): Promise<void> {
   let copied = false
   try { copied = !!(await $.ui.copy({ text: RESUME_COMMAND })).isCopied } catch { /* no clipboard on this surface */ }
   await refresh($)
-  await update($, view, v => ({ ...v, flow: 'copied' }))
+  await update($, view, (v): ViewState => ({ ...v, flow: r.ok ? 'copied' : '' }))
+  void notify($, r.ok ? 'done' : 'alert', r.ok ? (copied ? 'Handoff saved · resume copied' : 'Handoff saved') : 'Handoff failed · see Handoff', await read($, status))
   await update($, note, () => (r.ok ? (copied ? 'Handoff saved · /cortex-resume copied' : 'Handoff saved') : `Handoff: ${(r.out.split('\n')[0] ?? '').slice(0, 120)}`))
 }
 export async function copyResume($: Dollar): Promise<void> {
@@ -289,6 +290,7 @@ async function autoPark($: Dollar, s: StatusView, l: LiveView): Promise<void> {
   for (const x of pick) tried.add(x.server!)
   const r = await kc($, ['park', 'add', ...pick.map(x => x.server!), '--auto', ...pick.flatMap(x => ['--tokens', `${x.server}=${x.loaded}`])])
   await update($, note, () => (r.ok ? `Turned off unused: ${pick.map(x => x.name).join(', ')} (new chats). Undo in Costs` : 'Couldn\'t turn off unused servers'))
+  if (r.ok) void notify($, 'done', `Turned off ${pick.length} unused tool${pick.length === 1 ? '' : 's'}`, s)
   await refresh($)
 }
 export async function setParked($: Dollar, servers: string[], on: boolean): Promise<void> { await act($, on ? 'Turned off for new chats' : 'Turned on for new chats', ['park', on ? 'add' : 'remove', ...servers]) }

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { atomicWriteIfChanged } from "../util/atomic.ts";
+import { claudeHome } from "./home.ts";
 import type { RepoPaths } from "./paths.ts";
 
 /**
@@ -12,9 +12,16 @@ import type { RepoPaths } from "./paths.ts";
  * cleanupPeriodDays, 30 by default). Cached per file by size and time: only a chat that grew is read again.
  */
 export interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number; replies: number }
-export interface Spend { today: Tokens; week: Tokens; all: Tokens; since: string | null; chats: number; resumed: number; resumedContext: number; sessions: Record<string, number> }
+export interface Spend {
+  today: Tokens; week: Tokens; all: Tokens; since: string | null; chats: number; resumed: number; resumedContext: number; sessions: Record<string, number>
+  /** every token a day's replies processed (input, output, cache reads and writes), by local day: kept for good in
+   * spend-days.json, so the activity grid still shows a day after Claude Code deletes that day's transcripts */
+  days: Record<string, number>
+  /** replies by weekday (0 = Monday) and hour, from the transcripts on disk: when you work with Claude */
+  hours: number[][]
+}
 type Day = Record<string, Tokens>;
-interface FileSum { days: Day; first: string; resumed: boolean; firstContext: number; lastContext: number }
+interface FileSum { days: Day; first: string; resumed: boolean; firstContext: number; lastContext: number; /** "d-h" → replies */ hours?: Record<string, number> }
 
 const zero = (): Tokens => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, replies: 0 });
 const add = (a: Tokens, b: Tokens) => { a.input += b.input; a.output += b.output; a.cacheRead += b.cacheRead; a.cacheWrite += b.cacheWrite; a.replies += b.replies; };
@@ -23,7 +30,7 @@ const localDay = (iso: string) => { const d = new Date(iso); return `${d.getFull
 const RESUME = /cortex-resume|Resume from the Kapex Cortex handoff/;
 
 function sumFile(path: string): FileSum {
-  const out: FileSum = { days: {}, first: "", resumed: false, firstContext: 0, lastContext: 0 };
+  const out: FileSum = { days: {}, first: "", resumed: false, firstContext: 0, lastContext: 0, hours: {} };
   const seen = new Set<string>();
   let firstUser = true;
   for (const line of readFileSync(path, "utf8").split("\n")) {
@@ -35,12 +42,14 @@ function sumFile(path: string): FileSum {
     let e: { type?: string; timestamp?: string; message?: { id?: string; usage?: Record<string, number> } };
     try { e = JSON.parse(line); } catch { continue; }
     const u = e.message?.usage;
-    if (e.type !== "assistant" || !u || !e.timestamp) continue;
+    if (e.type !== "assistant" || !u || !e.timestamp || Number.isNaN(Date.parse(e.timestamp))) continue; // an unreadable time can't be placed on a day
     const id = e.message?.id ?? "";
     if (id && seen.has(id)) continue;
     seen.add(id);
     const t: Tokens = { input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0, replies: 1 };
     add((out.days[localDay(e.timestamp)] ??= zero()), t);
+    const at = new Date(e.timestamp), dh = `${(at.getDay() + 6) % 7}-${at.getHours()}`;
+    out.hours![dh] = (out.hours![dh] ?? 0) + 1;
     const ctx = t.input + t.cacheRead + t.cacheWrite;
     if (!out.first) { out.first = e.timestamp; out.firstContext = ctx; }
     out.lastContext = ctx;
@@ -60,9 +69,9 @@ function files(dir: string): { f: string; key: string; sig: string; main: boolea
   return out;
 }
 
-export function projectSpend(p: RepoPaths, now = new Date(), home = process.env.CORTEX_CLAUDE_HOME ?? join(homedir(), ".claude")): Spend {
+export function projectSpend(p: RepoPaths, now = new Date(), home = claudeHome()): Spend { // honours CLAUDE_CONFIG_DIR
   const dir = join(home, "projects", p.root.replace(/[^A-Za-z0-9]/g, "-"));
-  const res: Spend = { today: zero(), week: zero(), all: zero(), since: null, chats: 0, resumed: 0, resumedContext: 0, sessions: {} };
+  const res: Spend = { today: zero(), week: zero(), all: zero(), since: null, chats: 0, resumed: 0, resumedContext: 0, sessions: {}, days: {}, hours: Array.from({ length: 7 }, () => new Array<number>(24).fill(0)) };
   if (!existsSync(dir)) return res;
   const cacheFile = join(p.priv, "spend-cache.json");
   let cache: Record<string, { sig: string; s: FileSum }> = {};
@@ -70,13 +79,25 @@ export function projectSpend(p: RepoPaths, now = new Date(), home = process.env.
   const next: typeof cache = {};
   const sums: { s: FileSum; main: boolean; key: string }[] = [];
   for (const x of files(dir)) {
-    const s = cache[x.key]?.sig === x.sig ? cache[x.key]!.s : sumFile(x.f);
+    const s = cache[x.key]?.sig === x.sig && cache[x.key]!.s.hours ? cache[x.key]!.s : sumFile(x.f);
     next[x.key] = { sig: x.sig, s };
     sums.push({ s, main: x.main, key: x.key });
   }
   atomicWriteIfChanged(cacheFile, JSON.stringify(next));
   const today = localDay(now.toISOString());
   const weekAgo = localDay(new Date(now.getTime() - 6 * 86_400_000).toISOString());
+  for (const { s } of sums) for (const [k, n] of Object.entries(s.hours ?? {})) { const [d, h] = k.split("-").map(Number); if (res.hours[d!]?.[h!] !== undefined) res.hours[d!]![h!]! += n; }
+  // per-day totals: today's transcripts, kept in spend-days.json so a day stays after Claude Code deletes its chats
+  // (a day only ever grows: the larger of what was kept and what is on disk now)
+  const daysFile = join(p.priv, "spend-days.json");
+  let kept: Record<string, number> = {};
+  try { kept = JSON.parse(readFileSync(daysFile, "utf8")); } catch { /* first run */ }
+  const now2: Record<string, number> = {};
+  for (const { s } of sums) for (const [day, t] of Object.entries(s.days)) now2[day] = (now2[day] ?? 0) + t.input + t.output + t.cacheRead + t.cacheWrite;
+  for (const [day, n] of Object.entries(now2)) if (/^\d{4}-\d{2}-\d{2}$/.test(day)) kept[day] = Math.max(kept[day] ?? 0, n);
+  for (const day of Object.keys(kept)) if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(kept[day])) delete kept[day];
+  res.days = kept;
+  atomicWriteIfChanged(daysFile, JSON.stringify(kept));
   for (const { s } of sums) for (const [day, t] of Object.entries(s.days)) {
     add(res.all, t);
     if (day >= weekAgo) add(res.week, t);

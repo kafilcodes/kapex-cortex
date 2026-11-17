@@ -6,10 +6,10 @@
 
 **See what every Claude Code message costs, switch chats without losing your place, and keep Claude's memory true.**
 
-![version](https://img.shields.io/badge/version-3.8.2-10B981)
+![version](https://img.shields.io/badge/version-4.0.0-10B981)
 ![license](https://img.shields.io/badge/license-MIT-10B981)
 ![deps](https://img.shields.io/badge/runtime%20deps-0-8b949e)
-![always-on context](https://img.shields.io/badge/always--on%20context-~250%20tokens-10B981)
+![always-on context](https://img.shields.io/badge/always--on%20context-~280%20tokens-10B981)
 ![Stop hook p95](https://img.shields.io/badge/Stop%20hook%20p95-~50%20ms-10B981)
 
 </div>
@@ -36,7 +36,7 @@ Kapex Cortex is an open-source **Claude Code plugin** (MIT, zero runtime depende
 | | What it adds | Why it matters |
 |---|---|---|
 | **Status strip** | One line above the prompt, live between replies (it notices the cache going cold or a plan window resetting without a new message): context ring, cache countdown, 5-hour plan, and a traffic-light tip: green "All good", amber "fine to continue" (cache cooling, filling up, a Dream due), red with the move and what it saves ("82% full · hand off, save ~800k"), one press to act | Claude Code shows no cache timer, and plan use is behind `/usage` |
-| **Costs panel** | What each MCP server and skill adds to *every* message, with one press to turn off the unused ones; tokens this project used today, this week, all time | Unused tools can cost thousands of tokens per message, unseen |
+| **Costs & usage** | What each MCP server and skill adds to *every* message, with one press to turn off the unused ones; your token burn day by day (a contribution grid kept from the project's first day), when you work (weekday × hour) and what Claude does here (its tools, as a radar) | Unused tools can cost thousands of tokens per message, unseen; Claude Code shows no history of your own use |
 | **Lossless handoff** | After every reply, `.vault/STATE.md`: the session's goal and your standing instructions, the trail of earlier turns, and the last exchanges word for word. `/cortex-resume` continues in a new chat (or in OpenCode after a usage limit) | A new chat starts from about 2k–7k tokens and keeps the plan, instead of a cold re-read or a lossy summary |
 | **Dream** | Checks `CLAUDE.md`, `.claude/rules/` and auto memory against what really happened (your chats, test runs, git), and proposes fixes you Apply and Undo | One wrong note ("`npm test` is broken") is trusted by every future chat |
 | **Safety for long runs** | Checks for readable secrets, the sandbox, and a test gate that sends Claude back when checks fail; one press to fix, one to undo | Deny rules hold before auto mode's own safety check, and a real gate stops Claude finishing on red tests |
@@ -47,7 +47,7 @@ Kapex Cortex is an open-source **Claude Code plugin** (MIT, zero runtime depende
 
 No. Cortex never rewrites, compresses or injects into your messages, so Claude Code's prompt cache and compaction work exactly as designed. Its hooks write files; its panel and strip draw beside the chat. What it adds to Claude's context:
 
-- **~250 tokens in every session**: the names and descriptions of its three skills (`claude plugin details kapex-cortex` reports this; the panel shows the live number).
+- **~280 tokens in every session**: the names and descriptions of its four skills (`claude plugin details kapex-cortex` reports this; the panel shows the live number).
 - **One short note** when a chat opens with a handoff waiting.
 - Whatever you choose to run: a skill (`/cortex-resume`), a fresh-eyes check, a Dream on your plan.
 
@@ -68,10 +68,14 @@ Nothing changes until you press Apply, and every Apply can be undone. Hooks alwa
 
 ## The panel
 
-**Overview:** the context gauge; plan, cache and handoff as four cells; the last turn; what a new chat would get; the memory Claude loads; savings; what every message carries.
-**Timeline:** turns, commits, handoffs and Dreams on a swimlane, then each as a tile that opens for details.
-**Dream & Memory:** Dream findings with their evidence and buttons; the memory files Claude loads and their cost; the handoff, with a **fresh-eyes check**; Costs.
-**Settings:** the Dream model and schedule, when to offer a fresh chat, handoff size, **Safety for long runs**, greeting.
+**Overview:** how full this chat is (a segmented gauge with the point where Claude compacts), the 5-hour plan, the week and the cache; the last turn; what a new chat would get; the memory Claude loads; what Cortex saved; what every message carries.
+**Timeline:** the last 7 days as swimlanes, then every reply, commit, handoff and Dream as a tile that opens for details, 24 at a time (the button says how many older ones are left).
+**Memory:** *Memory check* (Dreams and the free quick check, with Apply and Undo) and *Memory files* (what loads into every chat, and its cost).
+**Handoff:** what a new chat gets, one-press hand off, a **fresh-eyes check**, your code right now, earlier handoffs by chat name.
+**Costs & usage:** *Costs* (what every message carries, tools you never use, what Cortex saved, Cortex's own speed) and *Usage* (token burn per day, weekday × hour, tool mix, totals).
+**Settings:** the Dream model and schedule, when to offer a fresh chat, handoff size, **Safety for long runs**, sounds, greeting.
+
+When something finishes (a handoff saved, a Dream done, a quick check) the strip shows it for a few seconds with an icon, a toast says it in a few words, and Cortex plays its own short chime (synthesized for Cortex, nothing like the system sounds; Settings → Sounds turns it off). Two mascots keep you company: an emerald robot and Blocky, its pixel sidekick.
 
 It follows Claude Code's light or dark mode and fits a half-width pane.
 
@@ -116,7 +120,7 @@ A **Quick check** runs the program-only checks in the background when files chan
 
 On a real repo (this one, a 12 MB transcript) the Stop hook measures p50 52 ms, p95 67 ms. Inside Claude Desktop the hook's own log shows slower outliers (up to ~150 ms) when the machine is busy as a reply ends; the Costs page shows yours.
 
-Three independent AI design reviewers (Opus, Sonnet and Fable, shown only screenshots) scored the panel about 5–6 out of 10 for ease and craft, and 4 for plain language, before this release's wording pass. That is the bar we're working on, not a claim of polish.
+Three independent AI design reviewers (Opus, Sonnet and Fable, shown only screenshots) scored the v3.8.2 panel about 5–6 out of 10 for ease and craft, and 4 for plain language. Versions 3.9 and 4.0 reworked the wording, layout and charts in response; they have not been re-judged yet, so take that as the last measured bar, not a claim of polish.
 
 ## Safety for long runs
 

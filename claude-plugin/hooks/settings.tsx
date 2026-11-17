@@ -1,22 +1,25 @@
 import type { ElementTable, InputProps, SelectProps } from 'claude-code'
-import { sceneSvg } from './mascot'
+import { miniSvg, sceneSvg, type Mini } from './mascot'
 
 import type { StatusView } from '../types'
 import { act, type Dollar } from './data'
 import { replayIntro } from './intro'
 import type { Kit } from './kit'
 import { K } from './theme'
+import { toolName } from './tips'
+import { companion } from './blocky'
 
-// Settings as three cards (Dream · Handoff · You), two columns when the pane is wide. Each setting shows a one-line
-// summary; the full explanation appears on hover (desktop) or below it (terminal). Saved with `kc prefs set …`.
-const MODES: [string, string][] = [['lean', 'Lean'], ['balanced', 'Balanced'], ['rich', 'Rich']]
+// Settings as four cards (Handoff · Dream · Safety · You; Safety first while it has something to fix), two columns
+// when the pane is wide. Each setting is a label, a one-line summary and its options side by side: one press, saved
+// with `kc prefs set …`. The full explanation appears on hover (desktop) or below it (terminal).
+const MODES: [string, string][] = [['lean', 'Less'], ['balanced', 'Balanced'], ['rich', 'More']]
 const ONOFF: [string, string][] = [['on', 'On'], ['off', 'Off']]
 const MODE_HELP: Record<string, string> = {
-  lean: 'Smallest: the last exchange only, about 2,000 tokens to start a new chat.',
-  balanced: 'The last three exchanges in full: about 2,000 to 7,500 tokens to start a new chat.',
-  rich: 'More room for long plans and replies: up to about 12,000 tokens to start a new chat.',
+  lean: 'Only the last exchange: a new chat starts at about 2,000 tokens.',
+  balanced: 'The last three exchanges in full: a new chat starts at 2,000 to 7,500 tokens.',
+  rich: 'Extra room for long plans and replies: a new chat starts at up to 12,000 tokens.',
 }
-const BACKENDS: [string, string][] = [['claude', 'Claude, on your plan (recommended)'], ['opencode', 'An OpenCode model (free models cost nothing)'], ['api', 'Your own API key'], ['off', 'No model: Cortex\'s own checks only']]
+const BACKENDS: [string, string][] = [['claude', 'Claude, on your plan (recommended)'], ['opencode', 'An OpenCode model (free models cost nothing)'], ['api', 'Your own API key'], ['off', 'No model: only what Cortex can prove']]
 const BACKEND_HELP: Record<string, [string, string]> = {
   claude: ['A Claude model judges what the checks can\'t: what is out of date, repeated, or only needed for some files.', 'Runs claude -p in the background with no tools, no plugins and no settings, on your Claude plan: about 10k to 25k tokens per Dream. It only reads your memory files and the evidence Cortex extracted (test runs, your words, commits), and every claim it makes must point at that evidence.'],
   opencode: ['A model from your OpenCode setup judges in the background.', 'OpenCode\'s free models cost nothing; your memory files and the extracted evidence go to that model\'s provider.'],
@@ -41,6 +44,8 @@ export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView
         : <Text size="caption" color={K.muted}>{full}</Text>) : null}
     </Box>
   )
+  // "Who checks" has four long options, so it stays a menu; every other choice is one press: its options sit side
+  // by side with the current one marked (the engine has no switch element, and a Button can't hold a drawing).
   const field = (key: string, label: string, options: [string, string][], value: string, short: string, full = '', warn = false) => (
     <Box key={`st-${key}`} flexDirection="column" gap={0} paddingY={1} hover={{ scope: `hs-${key}` }}>
       {Select
@@ -49,67 +54,96 @@ export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView
       {help(key, short, full, warn)}
     </Box>
   )
+  const pick = (key: string, label: string, options: [string, string][], value: string, short: string, full = '', warn = false) => (
+    <Box key={`st-${key}`} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2} rowGap={1} flexWrap="wrap" paddingY={1} hover={{ scope: `hs-${key}` }}>
+      <Box flexDirection="column" gap={0} width="50%" flexGrow={1} flexShrink={1} minWidth={22}>
+        <Text weight="medium" color={K.text}>{label}</Text>
+        {help(key, short, full, warn)}
+      </Box>
+      {/* one control, not loose buttons: a borderless track (a bordered Box gets a card's padding and doubles the
+          height), each option bare text in its own cell, the chosen cell filled emerald so it reads as the pill */}
+      <Box key={`trk-${key}`} flexDirection="row" flexShrink={0} alignItems="center" backgroundColor={K.pill}>
+        {options.map(([v, l]) => (
+          <Box key={`optb-${key}-${v}`} paddingX={1} alignItems="center" {...(v === value ? { backgroundColor: `${K.emerald}38` } : {})}>
+            <Button key={`opt-${key}-${v}`} plain onPress={() => { if (v !== value) save(key, v) }}>
+              <Text size="caption" weight={v === value ? 'semibold' : 'medium'} color={v === value ? K.emerald : K.label}>{l}</Text>
+            </Button>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  )
   const text = (key: string, label: string, value: string, placeholder: string) => Input
     ? <Input key={`in-${key}`} label={label} value={value} placeholder={placeholder} submitLabel="Save" onSubmit={v => save(key, v.trim())} />
     : <Text key={`in-${key}`} size="caption" color={K.label}>{`${label}: ${value || 'not set'} (set with: kc prefs set ${key} <value>)`}</Text>
-  const w = wide ? '45%' : '90%' // a row: '90%' is alone on its line, grown to fill it
-  const sec = (key: string, icon: string, title: string, sub: string, children: (JSX.Element | null)[]) => u.card(key, w, [
+  const w = '100%' // each card fills its column
+  // each card's header carries a small mascot doing that card's job (the icon disc where drawings can't show)
+  const sec = (key: string, icon: string, title: string, sub: string, children: (JSX.Element | null)[], accent?: string, mini?: Mini) => u.card(key, w, [
     <Box key={`${key}-h`} flexDirection="row" gap={1} alignItems="center">
-      {u.node(`${key}-n`, icon, K.emerald, 22)}
+      {mini && u.Svg ? <Box key={`${key}-m`} flexShrink={0}>{u.graphic(`${key}-n`, miniSvg(mini, 36), `Cortex ${({ handoff: 'holding a note', dream: 'asleep under the moon', safety: 'with a shield', you: 'waving hello' })[mini]}`)}</Box> : u.node(`${key}-n`, icon, accent ?? K.emerald, 22)}
       <Box flexDirection="column"><Text weight="semibold" color={K.text}>{title}</Text><Text size="caption" color={K.muted}>{sub}</Text></Box>
     </Box>,
     ...children,
   ])
   const be = pr.dreamBackend ?? 'claude'
   const [short, full] = BACKEND_HELP[be] ?? BACKEND_HELP.claude!
-  return (
-    <Box flexDirection="column" gap={1}>
-    {u.intro('st-in', sceneSvg('settings', 120), 'Cortex adjusting its preferences', 'Preferences', 'Every change saves at once.')}
-    <Box key="st" flexDirection="row" flexWrap="wrap" gap={1}>
-      {sec('sec-dream', 'dream', 'Dream', 'Checks your memory files against what really happened', [
-        field('dreamBackend', 'Who checks', BACKENDS, be, short, full),
-        be === 'claude' ? field('dreamModel', 'Model', [['sonnet', 'Sonnet (recommended)'], ['haiku', 'Haiku: faster, finds less'], ['opus', 'Opus: most careful, uses most']], pr.dreamModel || 'sonnet', 'Sonnet balances care and cost; the checks Cortex runs itself are the same with every model.') : null,
+  const at = pr.handoffAt ?? 80
+  const warns = s.safety?.findings.filter(x => x.level === 'warn').length ?? 0
+  const safety = s.safety ? sec('sec-safe', 'rule', 'Safety for long runs', warns ? `${warns} of these need${warns === 1 ? 's' : ''} a fix before you let Claude run on its own` : 'For auto mode and long background sessions', [
+    ...s.safety.findings.map(x => (
+      <Box key={`sf-${x.id}`} flexDirection="row" gap={1} alignItems="flex-start" paddingY={1}>
+        {u.node(`sf-${x.id}-n`, x.level === 'ok' ? 'check' : x.level === 'warn' ? 'alert' : 'pending', x.level === 'ok' ? K.emerald : x.level === 'warn' ? K.amber : K.silver, 20)}
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={16} gap={0}>
+          <Text weight="medium" color={K.text}>{x.title}</Text>
+          <Text size="caption" color={K.label}>{x.detail}</Text>
+        </Box>
+        {x.fix ? <Button key={`sf-fix-${x.id}`} variant={x.level === 'warn' ? 'primary' : 'secondary'} onPress={() => { void act($, x.fix === 'gate' ? 'Check added' : 'Secrets protected', ['safety', 'apply', x.fix!]) }}>{x.fix === 'gate' ? 'Add the check' : 'Protect them'}</Button> : null}
+      </Box>
+    )),
+    <Box key="sf-foot" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap">
+      <Text size="caption" color={K.muted}>Each fix is saved in this project's .claude/settings.json and applies to new chats.</Text>
+      {s.safety.undo ? <Button key="sf-undo" variant="secondary" onPress={() => { void act($, 'Undone', ['safety', 'undo']) }}>Undo</Button> : null}
+    </Box>,
+  ], warns ? K.amber : undefined, 'safety') : null
+  const hand = sec('sec-hand', 'link', 'Handoff', 'Your place, saved so a new chat can pick it up', [
+        pick('tokenMode', 'How much to carry over', MODES, pr.tokenMode, MODE_HELP[pr.tokenMode] ?? ''),
+        pick('handoffAt', 'Suggest a fresh chat at', [['70', '70% full'], ['80', '80% full'], ['90', '90% full']], String(at), `Cortex asks at ${at}% (or ${at - 10}% if the cache is cold). You always confirm.`, 'Yes saves the handoff and copies /cortex-resume for you to paste in a new chat. Later waits 30 minutes or 5 more points.'),
+        <Text key="st-cost" size="caption" color={K.muted}>{`The current handoff is about ${(pr.tokens?.handoff ?? 0).toLocaleString()} tokens, saved after every reply.`}</Text>,
+      ], undefined, 'handoff')
+  // tools (MCP servers) get their own small card: what turns them off, and what is off here
+  const tools = sec('sec-tools', 'link', 'Tools', 'MCP servers that load into every message', [
+        pick('autoPark', 'Turn off tools you never use', ONOFF, pr.autoPark === false ? 'off' : 'on', pr.autoPark === false ? 'Off: you turn them off yourself, on the Costs page.' : 'On: a tool unused in 10 chats stops loading in new ones.', 'Uses Claude Code\'s own per-project switch (the one /mcp writes), never the Claude app\'s own servers. One press brings a tool back. Each one off stops adding its tool names and instructions to every message.'),
+        ...((s.parked?.servers ?? []).length ? [<Box key="st-pk" flexDirection="row" justifyContent="space-between" columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
+          <Box flexShrink={1} minWidth={16}><Text size="caption" color={K.label}>{`Off here: ${s.parked!.servers.map(x => toolName(x).replace(/^a connector$/, 'a claude.ai account connector').replace(/_/g, ' ')).join(', ')}`}</Text></Box>
+          <Button key="st-unpark" variant="secondary" onPress={() => { void act($, 'Back on', ['park', 'remove', ...s.parked!.servers.map(x => x.name)]) }}>Turn back on</Button>
+        </Box>] : []),
+      ], undefined, 'handoff')
+  const dream = sec('sec-dream', 'dream', 'Dream', 'A deep check that Claude\'s notes still match what really happened', [
+        pick('quickCheck', 'Quick check after every turn', ONOFF, pr.quickCheck === false ? 'off' : 'on', pr.quickCheck === false ? 'Off: it runs only when you press Quick check.' : 'On: a free, instant check for broken links, missing files and repeats.', 'It runs in the background when your memory files change, then shows what it found on the Dream page with Apply and Keep buttons. Your turns stay as fast as before.'),
+        pick('autoDream', 'Run a full Dream by itself', ONOFF, pr.autoDream ? 'on' : 'off', pr.autoDream ? 'On: at most once a day, after 3 new chats.' : 'Off: a Dream runs only when you press Dream now.', 'It only suggests: nothing changes until you press Apply. An automatic Dream never changes a file. It saves what it found, and the strip shows how many notes wait for you.'),
+        field('dreamBackend', 'Who judges a Dream', BACKENDS, be, short, full),
+        be === 'claude' ? pick('dreamModel', 'Model', [['haiku', 'Haiku'], ['sonnet', 'Sonnet'], ['opus', 'Opus']], pr.dreamModel || 'sonnet', 'Sonnet is the best balance of care and cost.', 'Haiku is faster and finds less; Opus is the most careful and uses the most of your plan.') : null,
         be === 'opencode' ? text('dreamModel', 'OpenCode model (provider/model)', pr.dreamModel ?? '', 'opencode/deepseek-v4.1-flash-free') : null,
-        be === 'api' ? field('dreamApi', 'Provider', [['anthropic', 'Anthropic'], ['openai', 'OpenAI-compatible (OpenRouter, Groq, …)']], pr.dreamApi ?? 'anthropic', 'Where the key is from.') : null,
+        be === 'api' ? pick('dreamApi', 'Provider', [['anthropic', 'Anthropic'], ['openai', 'OpenAI-compatible']], pr.dreamApi ?? 'anthropic', 'Where your key is from. OpenAI-compatible covers OpenRouter, Groq and others.') : null,
         be === 'api' ? text('dreamModel', 'Model name', pr.dreamModel ?? '', 'e.g. claude-sonnet-5-5') : null,
         be === 'api' && pr.dreamApi === 'openai' ? text('dreamUrl', 'Endpoint', pr.dreamUrl ?? '', 'https://openrouter.ai/api/v1') : null,
-        field('dreamTranscripts', 'Chats to read', [['5', 'The last 5'], ['10', 'The last 10'], ['20', 'The last 20']], String(pr.dreamTranscripts ?? 10), 'More chats find more, and cost a little more with a model.'),
-        field('quickCheck', 'Quick check after every turn', ONOFF, pr.quickCheck === false ? 'off' : 'on', pr.quickCheck === false ? 'Off: Quick check runs only when you press it.' : 'On: checks your memory in the background when files change. Free.', 'It looks for lines over the limit, broken links, files and colours that are gone, and duplicates, then shows what it found here with Apply / Keep buttons. The Stop hook only compares file times, so turns stay fast.'),
-        field('autoDream', 'Run Dream automatically', ONOFF, pr.autoDream ? 'on' : 'off', pr.autoDream ? 'After a session ends, at most once a day, after 3 new chats. It only proposes: you still Apply.' : 'Off: Dreams run only when you press Dream now.', 'An automatic Dream never changes a file. It saves its findings, and the strip shows how many wait for you.'),
-      ])}
-      {sec('sec-hand', 'link', 'Handoff', 'What a new chat reads with /cortex-resume', [
-        field('tokenMode', 'Handoff size', MODES, pr.tokenMode, MODE_HELP[pr.tokenMode] ?? ''),
-        field('handoffAt', 'Offer a fresh chat at', [['70', '70% full'], ['80', '80% full (recommended)'], ['90', '90% full']], String(pr.handoffAt ?? 80), `Asks at ${pr.handoffAt ?? 80}% (${(pr.handoffAt ?? 80) - 10}% with a cold cache), or before Claude summarizes the chat, whichever is first. You confirm.`, 'Yes saves the handoff and copies /cortex-resume for you to paste in a new chat. Later waits 30 minutes or 5 more points.'),
-        field('autoPark', 'Turn off tools you don\'t use (MCP servers)', ONOFF, pr.autoPark === false ? 'off' : 'on', pr.autoPark === false ? 'Off: turn them off yourself in Costs.' : 'On: unused in your last 10+ chats here → off in new chats. Turn on again anytime.', 'Uses Claude Code\'s own per-project switch (the one /mcp writes). Never the Claude app\'s own servers. Each parked server stops loading its tool names and instructions into every message.'),
-        ...((s.parked?.servers ?? []).length ? [<Box key="st-pk" flexDirection="row" gap={1} flexWrap="wrap" alignItems="center">
-          <Text size="caption" color={K.label}>{`Off here: ${s.parked!.servers.map(x => x.name).join(', ')}`}</Text>
-          <Button key="st-unpark" variant="secondary" onPress={() => { void act($, 'Back on', ['park', 'remove', ...s.parked!.servers.map(x => x.name)]) }}>Turn all back on</Button>
-        </Box>] : []),
-        <Text key="st-cost" size="caption" color={K.label}>{`The current handoff is about ${(pr.tokens?.handoff ?? 0).toLocaleString()} tokens, saved after every reply.`}</Text>,
-      ])}
-      {s.safety ? sec('sec-safe', 'rule', 'Safety for long runs', 'Auto mode, background and long sessions', [
-        ...s.safety.findings.map(x => (
-          <Box key={`sf-${x.id}`} flexDirection="row" gap={1} alignItems="flex-start" paddingY={1}>
-            {u.node(`sf-${x.id}-n`, x.level === 'ok' ? 'check' : x.level === 'warn' ? 'alert' : 'pending', x.level === 'ok' ? K.emerald : x.level === 'warn' ? K.amber : K.silver, 20)}
-            <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={16} gap={0}>
-              <Text weight="medium" color={K.text}>{x.title}</Text>
-              <Text size="caption" color={K.label}>{x.detail}</Text>
-            </Box>
-            {x.fix ? <Button key={`sf-fix-${x.id}`} variant="secondary" onPress={() => { void act($, x.fix === 'gate' ? 'Gate added' : 'Deny rules added', ['safety', 'apply', x.fix!]) }}>{x.fix === 'gate' ? 'Add gate' : 'Block'}</Button> : null}
-          </Box>
-        )),
-        <Box key="sf-foot" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap">
-          <Text size="caption" color={K.muted}>Changes go in .claude/settings.json; new chats pick them up.</Text>
-          {s.safety.undo ? <Button key="sf-undo" variant="secondary" onPress={() => { void act($, 'Undone', ['safety', 'undo']) }}>Undo</Button> : null}
-        </Box>,
-      ]) : null}
-      {sec('sec-you', 'star', 'You', 'Greeting and name', [
-        field('greeting', 'Greeting', ONOFF, pr.greeting === false ? 'off' : 'on', pr.greeting === false ? 'Off: the panel shows the project name.' : `On: ${s.name ? `"${(h => (h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'))(new Date().getHours())}, ${s.name}"` : 'no name found yet; set one below'}.`, 'The name comes from your setting below, else your computer account\'s full name (first word). It stays on this computer, in ~/.cortex, never in your project.'),
+        pick('dreamTranscripts', 'Recent chats a Dream reads', [['5', '5'], ['10', '10'], ['20', '20']], String(pr.dreamTranscripts ?? 10), 'More chats find more, and use a little more of your plan.'),
+      ], undefined, 'dream')
+  const you = sec('sec-you', 'star', 'You', 'How Cortex greets you', [
+        pick('greeting', 'Greet me by name', ONOFF, pr.greeting === false ? 'off' : 'on', pr.greeting === false ? 'Off: the panel shows the project name instead.' : `On: ${s.name ? `"${(h => (h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'))(new Date().getHours())}, ${s.name}"` : 'no name found yet; set one below'}.`, 'The name comes from the box below, or else your computer account\'s first name. It stays on this computer and never goes into your project.'),
+        pick('sound', 'Sounds', ONOFF, pr.sound === false ? 'off' : 'on', pr.sound === false ? 'Off: notifications show without a sound.' : 'On: a soft chime when a handoff is saved or a Dream finishes.', 'Cortex\'s own two short sounds (a rising chime for done, two low notes when something needs you). Settings changes never chime.'),
         text('name', 'Your name (optional)', pr.name ?? '', s.name || 'e.g. Kafil'),
-        <Text key="st-scope" size="caption" color={K.muted}>{pr.overridden.length ? `Saved for you on this computer. This project overrides: ${pr.overridden.join(', ')}.` : 'Saved for you on this computer, used in every project.'}</Text>,
-        <Box key="st-intro" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap"><Text size="caption" color={K.label}>The three-step intro: what Cortex shows and does.</Text><Button key="st-intro-b" variant="secondary" onPress={() => { void replayIntro($) }}>Show the intro again</Button></Box>,
-      ])}
-    </Box>
+        <Text key="st-scope" size="caption" color={K.muted}>{pr.overridden.length ? `Settings are saved on this computer. This project has its own: ${pr.overridden.join(', ')}.` : 'Settings are saved on this computer and used in every project.'}</Text>,
+        <Box key="st-intro" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap"><Text size="caption" color={K.label}>New here? The three-step intro shows what Cortex does.</Text><Button key="st-intro-b" variant="secondary" onPress={() => { void replayIntro($) }}>Show the intro again</Button></Box>,
+      ], undefined, 'you')
+  // wide: two columns of cards, so a short card never stretches to its neighbour's height
+  const col = (key: string, kids: (JSX.Element | null)[]) => <Box key={key} width="45%" flexGrow={1} minWidth={24} flexDirection="column" gap={1}>{kids}</Box>
+  return (
+    <Box flexDirection="column" gap={1}>
+    {u.intro('st-in', sceneSvg('settings', 100), 'Cortex adjusting its preferences', 'Settings', 'Every change is saved the moment you press it.', companion('cool', 800))}
+    {wide
+      ? <Box key="st" flexDirection="row" gap={1} alignItems="flex-start">{col('st-a', [warns ? safety : hand, dream])}{col('st-b', [warns ? hand : safety, tools, you])}</Box>
+      : <Box key="st" flexDirection="column" gap={1}>{warns ? safety : null}{hand}{tools}{dream}{warns ? null : safety}{you}</Box>}
     </Box>
   )
 }

@@ -13,7 +13,9 @@ export interface TimelineEvent {
   kind: "turn" | "commit" | "merge" | "handoff" | "dream";
   title: string; detail?: string; tags: string[]; tone: "ok" | "warn" | "bad" | "info";
 }
-const MAX = 80;
+const MAX = 160; // the panel pages through them 24 at a time
+/** The tool a handoff came from, as people say it. */
+const TOOL: Record<string, string> = { "claude-code": "Claude Code", opencode: "OpenCode", hermes: "Hermes" };
 
 function git(root: string, args: string[]): string {
   const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8", timeout: 1_500 });
@@ -29,8 +31,8 @@ export function gitEvents(root: string, limit = 25): TimelineEvent[] {
   return out.trim().split("\n").filter(Boolean).map((line) => {
     const [sha = "", ts = "", parents = "", refs = "", subject = ""] = line.split("\t");
     const merge = parents.trim().split(" ").length > 1;
-    const tags = [sha, ...refs.split(",").map((r) => r.trim().replace(/^HEAD -> /, "").replace(/^tag: /, "tag ")).filter((r) => r && !r.startsWith("origin/") && r !== "HEAD")];
-    if (remote.size) tags.push([...remote].some((r) => r.startsWith(sha) || sha.startsWith(r)) ? "pushed" : "not pushed");
+    const tags = [sha, ...refs.split(",").map((r) => r.trim().replace(/^HEAD -> /, "").replace(/^tag: /, "tag ")).filter((r) => r.startsWith("tag "))]; // branch names say little here; the short id and any release tag do
+    if (remote.size) tags.push([...remote].some((r) => r.startsWith(sha) || sha.startsWith(r)) ? "pushed" : "not pushed yet");
     return { id: `git-${sha}`, ts: iso(ts), kind: merge ? "merge" : "commit", title: subject.slice(0, 140), tags, tone: "info" } as TimelineEvent;
   });
 }
@@ -41,12 +43,15 @@ export function chatLabel(t: string, n = 48): string {
   return one.length <= n ? one : `${one.slice(0, n).replace(/\s+\S*$/, "")}…`;
 }
 
+/** What you typed, without the attached files (@"path" and @path are file names, not what you asked). */
+const said = (ask: string) => ask.replace(/@"[^"]*"/g, " ").replace(/(^|\s)@[^\s]+/g, " ").replace(/\s+/g, " ").trim();
+
 /** Any date string as UTC ISO ("" when it isn't a date). */
 const iso = (ts: string) => { const t = Date.parse(ts); return Number.isNaN(t) ? "" : new Date(t).toISOString(); };
 
 export function buildTimeline(p: RepoPaths, history: History, dreams: DreamReport[]): TimelineEvent[] {
   const ev: TimelineEvent[] = [];
-  const eps = readEpisodes(p, 40);
+  const eps = readEpisodes(p, 100);
   // the first thing you typed in each chat (episodes are newest first, so the last one seen is the oldest)
   const firstAsk = new Map<string, string>();
   for (const e of eps) if (e.ask) firstAsk.set(e.session, e.ask);
@@ -59,17 +64,17 @@ export function buildTimeline(p: RepoPaths, history: History, dreams: DreamRepor
     if (e.errors) tags.push(`${e.errors} error${e.errors === 1 ? "" : "s"}`);
     if (e.interrupted) tags.push("interrupted");
     const tone = red ? "bad" : e.interrupted || e.errors > 2 ? "warn" : "ok";
-    ev.push({ id: `turn-${e.id}`, ts: e.end, kind: "turn", title: e.ask || "Follow-up turn (no new message from you)", detail: e.done || undefined, tags, tone });
+    ev.push({ id: `turn-${e.id}`, ts: e.end, kind: "turn", title: said(e.ask) || (e.ask ? "Attached files" : "Claude continued on its own"), detail: e.done || undefined, tags, tone });
   }
-  ev.push(...gitEvents(p.root));
+  ev.push(...gitEvents(p.root, 50));
   for (const h of history.states) {
     const chat = chatLabel(h.chat || firstAsk.get(h.session) || "");
-    ev.push({ id: `hand-${h.session}-${h.at}`, ts: h.at, kind: "handoff", title: chat ? `Handoff from “${chat}”` : "Handoff saved", detail: h.goal || undefined, tags: [h.from || "unknown tool", ...(h.copies ? [`×${h.copies} chats`] : h.session ? [`chat ${h.session.slice(0, 8)}`] : [])], tone: "info" });
+    ev.push({ id: `hand-${h.session}-${h.at}`, ts: h.at, kind: "handoff", title: chat ? `Handoff from “${chat}”` : "Handoff saved", detail: h.goal || undefined, tags: [`from ${TOOL[h.from] ?? (h.from || "another tool")}`, ...(h.copies ? [`same in ${h.copies} chats`] : [])], tone: "info" });
   }
   for (const d of dreams.filter((x) => x.status !== "replaced")) { // a replaced Dream is noise: the newer one says it all
     const n = d.findings.filter((f) => f.action.op !== "none").length;
     const title = d.status === "failed" ? "Dream failed" : d.status === "applied" ? `Dream applied: ${n} change${n === 1 ? "" : "s"}` : d.status === "undone" ? "Dream undone" : d.status === "discarded" ? "Dream discarded" : d.status === "replaced" ? "Dream (replaced by a newer one)" : n ? `Dream: ${n} change${n === 1 ? "" : "s"} to review` : d.findings.length ? `Dream: ${d.findings.length} note${d.findings.length === 1 ? "" : "s"} for you to check` : "Dream: memory matches what happened";
-    ev.push({ id: `dream-${d.id}`, ts: d.ts, kind: "dream", title, detail: d.error ?? d.modelError, tags: [d.model ?? "checks only", `${d.transcripts} chats read`], tone: d.status === "failed" ? "bad" : d.status === "proposed" && n ? "warn" : "ok" });
+    ev.push({ id: `dream-${d.id}`, ts: d.ts, kind: "dream", title, detail: d.error ?? d.modelError, tags: [d.model ? `judged by ${d.model.replace(/^claude · /, "")}` : "Quick check", `${d.transcripts} chat${d.transcripts === 1 ? "" : "s"} read`], tone: d.status === "failed" ? "bad" : d.status === "proposed" && n ? "warn" : "ok" });
   }
   // newest first by real time: every source is turned into UTC ISO first, so "+05:30" git dates sort right
   return ev.filter((e) => e.ts && !Number.isNaN(Date.parse(e.ts))).map((e) => ({ ...e, ts: iso(e.ts) })).sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)).slice(0, MAX);

@@ -57,21 +57,21 @@ export function auditSafety(p: RepoPaths): SafetyView {
   const env = deny.some((r) => ENV_RULE.test(r)), ssh = deny.some((r) => SSH_RULE.test(r));
   const here = secretsHere(p.root);
   findings.push(env && ssh
-    ? { id: "secrets", level: "ok", title: "Secrets are off limits", detail: "Deny rules keep Claude's file tools away from .env files and ~/.ssh. They're checked before auto mode decides anything." }
-    : { id: "secrets", level: here.length || !ssh ? "warn" : "info", title: here.length ? `${here.join(", ")} can be read` : "~/.ssh can be read", detail: `Add deny rules for ${[!env ? ".env files" : "", !ssh ? "~/.ssh" : ""].filter(Boolean).join(" and ")} (and ~/.aws/credentials). Deny rules are checked before auto mode's own safety check, so they hold even when it would allow the read.`, fix: "secrets" });
+    ? { id: "secrets", level: "ok", title: "Your secrets are protected", detail: "Claude can't open .env files or your SSH keys, even in auto mode." }
+    : { id: "secrets", level: here.length || !ssh ? "warn" : "info", title: here.length ? `Claude can read ${here.join(", ")}` : "Claude can read your SSH keys", detail: `One press stops Claude from opening ${[!env ? ".env files" : "", !ssh ? "your SSH keys (~/.ssh)" : ""].filter(Boolean).join(" and ")} and your AWS credentials. The block holds even in auto mode.`, fix: "secrets" });
 
   const sbSsh = (sandbox?.filesystem?.denyRead ?? []).some((x) => /\.ssh|^~\/?$/.test(x)) || (sandbox?.credentials?.files ?? []).some((x) => /\.ssh/.test(x.path) && x.mode !== "allow");
   findings.push(sandbox?.enabled
-    ? { id: "sandbox", level: sbSsh ? "ok" : "info", title: sbSsh ? "Sandbox on, ~/.ssh blocked" : "Sandbox on", detail: sbSsh ? "Shell commands and what they start (like npm test) can't read ~/.ssh." : "Shell commands still read most of your computer by default. Add ~/.ssh under sandbox.credentials to block it." }
-    : { id: "sandbox", level: "info", title: "Sandbox off", detail: "Deny rules cover Claude's file tools, not shell commands: a script npm test starts can still read .env or ~/.ssh. Type /sandbox to turn it on (it also limits network, so try it on one project first)." });
+    ? { id: "sandbox", level: sbSsh ? "ok" : "info", title: sbSsh ? "Commands are sandboxed, SSH keys blocked" : "Commands are sandboxed", detail: sbSsh ? "Shell commands, and what they start (like npm test), can't read your SSH keys." : "Shell commands can still read most of your computer. To block your SSH keys too, add ~/.ssh under sandbox.credentials in your settings." }
+    : { id: "sandbox", level: "info", title: "Commands run without a sandbox", detail: "The block on secrets covers Claude's own file tools, not the scripts it runs: one started by npm test could still read .env or your SSH keys. Type /sandbox to turn the sandbox on (it also limits network access, so try it on one project first)." });
 
   const gate = stopHooks.find((h) => cmd(h).includes("cortex-verify-gate"));
   const plain = stopHooks.find((h) => CHECKISH.test(cmd(h)));
   findings.push(gate
-    ? { id: "gate", level: "ok", title: "Checks run before Claude finishes", detail: `\`${(gate.args ?? []).slice(1).join(" ") || "your check"}\` runs when Claude stops after changing files; a failure sends Claude back to fix it (up to 3 times).` }
+    ? { id: "gate", level: "ok", title: "Your check runs before Claude finishes", detail: `\`${(gate.args ?? []).slice(1).join(" ") || "your check"}\` runs when Claude stops after changing files. If it fails, Claude goes back and fixes it (up to 3 times).` }
     : plain
-      ? { id: "gate", level: "warn", title: "A Stop hook runs checks but can't send Claude back", detail: `\`${cmd(plain).slice(0, 60)}\`: a failure exits 1, which Claude Code treats as done. Cortex's gate turns a failure into "keep working".`, ...(command ? { fix: "gate" as const } : {}) }
-      : { id: "gate", level: command ? "warn" : "info", title: "Nothing checks the work before Claude finishes", detail: command ? `Add a gate that runs \`${command}\` when Claude stops after changing files, and sends it back if it fails.` : "No check command found (a Verify line in the handoff, or a check or test script). Add one, then the gate can run it.", ...(command ? { fix: "gate" as const } : {}) });
+      ? { id: "gate", level: "warn", title: "A check runs, but it can't send Claude back", detail: `\`${cmd(plain).slice(0, 60)}\` runs when Claude stops, but a failure exits 1, which Claude Code treats as done. One press makes a failure mean "keep working".`, ...(command ? { fix: "gate" as const } : {}) }
+      : { id: "gate", level: command ? "warn" : "info", title: "Nothing checks the work before Claude finishes", detail: command ? `One press runs \`${command}\` whenever Claude stops after changing files, and sends it back to fix what fails.` : "Cortex found no check to run (a check or test script in package.json). Add one, and it can run before Claude finishes.", ...(command ? { fix: "gate" as const } : {}) });
 
   return { findings, command, undo: existsSync(undoDir(p)) && readdirSync(undoDir(p)).length > 0 };
 }

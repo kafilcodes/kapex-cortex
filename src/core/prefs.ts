@@ -16,6 +16,7 @@ import type { RepoPaths } from "./paths.ts";
  *   quickCheck       the free Quick check after every turn, in the background, only when a memory file or the code changed: on
  *   handoffAt        context % at which the panel offers a fresh chat from the handoff (lower with a cold cache): 80
  *   autoPark         park MCP servers and plugins unused in your recent chats here, from the next chat on: on
+ *   sound            a short chime when a handoff is saved or a Dream finishes (the panel's own sound): on
  */
 export const TOKEN_MODES = ["lean", "balanced", "rich"] as const;
 export const DREAM_BACKENDS = ["claude", "opencode", "api", "off"] as const;
@@ -26,12 +27,12 @@ export interface Prefs {
   greeting: boolean; name: string;
   dreamBackend: DreamBackend; dreamModel: string; dreamApi: "anthropic" | "openai"; dreamUrl: string;
   dreamTranscripts: number; autoDream: boolean;
-  quickCheck: boolean; handoffAt: number; autoPark: boolean;
+  quickCheck: boolean; handoffAt: number; autoPark: boolean; sound: boolean;
 }
 export const DEFAULT_PREFS: Prefs = {
   tokenMode: "balanced", greeting: true, name: "",
   dreamBackend: "claude", dreamModel: "sonnet", dreamApi: "anthropic", dreamUrl: "", dreamTranscripts: 10, autoDream: false,
-  quickCheck: true, handoffAt: 80, autoPark: true,
+  quickCheck: true, handoffAt: 80, autoPark: true, sound: true,
 };
 
 /** The handoff packet's size in characters (~4 per token), and whether it carries the assistant's last reply. */
@@ -41,7 +42,7 @@ export const MODES: Record<TokenMode, { state: number; lastReply: boolean }> = {
   rich: { state: 48_000, lastReply: true },
 };
 
-const MODEL = /^[\w.:/@+-]{0,120}$/;
+const MODEL = /^(?:[\w.:/@+][\w.:/@+-]{0,119})?$/; // never starts with "-": it is passed to a model command as an argument
 const userFile = () => join(cortexHome(), "config.json");
 const projectFile = (p: RepoPaths) => join(p.priv, "prefs.json");
 const readObj = (f: string): Record<string, unknown> => { try { return JSON.parse(readFileSync(f, "utf8")) as Record<string, unknown>; } catch { return {}; } };
@@ -59,6 +60,7 @@ function clean(raw: Record<string, unknown>): Partial<Prefs> {
   if (typeof raw.autoDream === "boolean") out.autoDream = raw.autoDream;
   if (typeof raw.quickCheck === "boolean") out.quickCheck = raw.quickCheck;
   if (typeof raw.autoPark === "boolean") out.autoPark = raw.autoPark;
+  if (typeof raw.sound === "boolean") out.sound = raw.sound;
   if (typeof raw.handoffAt === "number" && raw.handoffAt >= 50 && raw.handoffAt <= 95) out.handoffAt = Math.round(raw.handoffAt);
   return out;
 }
@@ -87,15 +89,16 @@ export function parsePref(key: string, value: string): { key: keyof Prefs; value
     case "greeting":
     case "quickCheck":
     case "autoPark":
+    case "sound":
     case "autoDream": { const b = bool(value); return b === null ? `${key} must be on or off` : { key, value: b }; }
-    case "name": return /^[\p{L}' -]{0,40}$/u.test(value) ? { key, value: value.trim() } : "a name is letters and spaces, up to 40";
+    case "name": return /^(?:\p{L}[\p{L}' -]{0,39})?$/u.test(value.trim()) ? { key, value: value.trim() } : "a name starts with a letter: letters and spaces, up to 40";
     case "dreamBackend": return DREAM_BACKENDS.includes(value as DreamBackend) ? { key, value: value as DreamBackend } : `dreamBackend must be one of ${DREAM_BACKENDS.join(", ")}`;
     case "dreamModel": return MODEL.test(value) ? { key, value } : "that isn't a model name";
     case "dreamApi": return value === "anthropic" || value === "openai" ? { key, value } : "dreamApi must be anthropic or openai";
     case "dreamUrl": return value === "" || /^https?:\/\//.test(value) ? { key, value } : "dreamUrl must be a web address";
     case "dreamTranscripts": { const n = Number(value); return Number.isInteger(n) && n >= 1 && n <= 50 ? { key, value: n } : "dreamTranscripts must be a whole number from 1 to 50"; }
     case "handoffAt": { const n = Number(value); return Number.isInteger(n) && n >= 50 && n <= 95 ? { key, value: n } : "handoffAt must be a whole number from 50 to 95"; }
-    default: return `unknown setting "${key}" (tokenMode, greeting, name, dreamBackend, dreamModel, dreamApi, dreamUrl, dreamTranscripts, autoDream, quickCheck, handoffAt, autoPark)`;
+    default: return `unknown setting "${key}" (tokenMode, greeting, name, dreamBackend, dreamModel, dreamApi, dreamUrl, dreamTranscripts, autoDream, quickCheck, handoffAt, autoPark, sound)`;
   }
 }
 

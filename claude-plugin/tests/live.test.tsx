@@ -58,13 +58,13 @@ test('timeline: one tile open at a time; the Activity chart is the same drawing 
   const before = await chart()
   expect(before).toMatch(/^<svg/)
   await ui.press({ key: 'tx-turn-E1' })
-  expect(await ui.find({ type: 'Text', text: 'Collapse' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Show less' })).toBeDefined()
   expect(await chart()).toBe(before) // no new frame: nothing blinks
   await ui.press({ key: 'tx-turn-E2' }) // opening another closes the first
-  expect(((await ui.findAll({ type: 'Text', text: 'Collapse' })) as any[]).length).toBe(1)
-  expect(await ui.find({ type: 'Text', text: /^Files: src\/a\.ts$/ })).toBeDefined()
+  expect(((await ui.findAll({ type: 'Text', text: 'Show less' })) as any[]).length).toBe(1)
+  expect(await ui.find({ type: 'Text', text: /^src\/a\.ts$/ })).toBeDefined() // the open tile's files line
   await ui.press({ key: 'tx-turn-E2' }) // and pressing the open one closes it
-  expect(await ui.find({ type: 'Text', text: 'Collapse' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'Show less' })).toBeUndefined()
   expect(await chart()).toBe(before)
   // the handoff tile names the chat it came from
   expect(await ui.find({ type: 'Text', text: 'Handoff from “Cortex resume design and UI refinements”' })).toBeDefined()
@@ -97,10 +97,32 @@ test('heartbeat: live numbers every 4 s while a turn runs (no Node); idle, a ful
   expect(node()).toBe(n1 + 1) // once, not on every beat
 })
 
-test('heartbeat signal changes only when the strip\'s answer would: warm → cooling → cold, a plan reset, a new day', () => {
+test('charts animate once, on opening: the next render, a heartbeat, a turn and a tab switch draw them still', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.now() })
+  engine(on)
+  await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
+  const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const moving = async () => ((await ui.findAll({ type: 'Svg' })) as any[]).some(x => /<animate/.test(String(x.props?.source)))
+  expect(await moving()).toBe(true) // just opened: the charts grow in
+  await clock.advance(1_600) // the one-shot redraw: the same charts, still
+  expect(await moving()).toBe(false)
+  await clock.advance(31_000) // heartbeats
+  expect(await moving()).toBe(false)
+  await $.turn.start({ turnId: 't1' } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1', usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 9_000, cache_creation_input_tokens: 100 } } as any)
+  await clock.advance(3_000)
+  expect(await moving()).toBe(false)
+  await ui.press({ key: 'tab-timeline' }); await ui.press({ key: 'tab-overview' })
+  expect(await moving()).toBe(false)
+  await ui.unmount()
+})
+
+test('heartbeat signal changes only when what is drawn would: the cache minutes in 5-minute steps, warm → cooling → cold, a plan reset, a new day', () => {
   const t0 = Date.parse('2026-11-13T10:00:00Z')
   const at = (min: number) => signal({ lastAt: t0, ttlMs: HOUR, resets: [new Date(t0 + 2 * HOUR).toISOString()] }, t0 + min * 60_000)
-  expect(at(1)).toBe(at(40)) // still warm: no redraw
+  expect(at(1)).toBe(at(4)) // within one 5-minute step: no redraw
+  expect(at(1)).not.toBe(at(40)) // "Cache 59 min" became "20 min": one redraw per step, never per beat
   expect(at(52)).not.toBe(at(40)) // cooling
   expect(at(61)).not.toBe(at(52)) // cold
   expect(at(61)).toBe(at(100))
@@ -131,4 +153,72 @@ test('after an app restart the chat\'s last reply time comes from the journal, s
   expect(String(main.props.alt)).toMatch(/cache cold/)
   expect(((await band.findAll({ type: 'Svg' })) as any[]).some(x => /^Cache cold · next reply re-reads 120k/.test(String(x.props?.alt)))).toBe(true)
   await band.unmount()
+})
+
+test('the header says how the last action went as a chip: a tick and its words after Refresh', async ($, on) => {
+  mock.clock(on, { now: Date.now() })
+  engine(on)
+  await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
+  const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'kc-refresh' })
+  expect(await ui.find({ type: 'Text', text: /^Refreshed \d/ })).toBeDefined()
+  expect(((await ui.findAll({ type: 'Svg' })) as any[]).some(x => x.props?.alt === 'Done')).toBe(true)
+  await ui.unmount()
+})
+
+test('timeline paging: the button says what a press adds, the count of hidden events updates, and Back to newest resets it', async ($, on) => {
+  mock.clock(on, { now: Date.now() })
+  const many = Array.from({ length: 60 }, (_, i) => ({ id: `c-${i}`, ts: iso((i + 1) * 3_600_000), kind: 'commit', title: `Commit number ${i}`, tags: [`abc${i}`], tone: 'info' }))
+  engine(on, { status: { ...STATUS, timeline: many } })
+  await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
+  const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'tab-timeline' })
+  const said = async (re: RegExp) => !!(await ui.find({ type: 'Text', text: re }))
+  const button = async () => String((await ui.find({ key: 'tl-more' }))?.text ?? '')
+  expect(await button()).toBe('Show 24 older')
+  expect(await said(/^36 older events not shown$/)).toBe(true)
+  expect(await ui.find({ key: 'tl-less' })).toBeUndefined()
+  await ui.press({ key: 'tl-more' })
+  expect(await button()).toBe('Show the last 12 older') // not "24" again: only 12 are left
+  expect(await said(/^12 older events not shown$/)).toBe(true)
+  await ui.press({ key: 'tl-more' })
+  expect(await ui.find({ key: 'tl-more' })).toBeUndefined()
+  expect(await said(/^All 60 events shown$/)).toBe(true)
+  await ui.press({ key: 'tl-less' })
+  expect(await said(/^36 older events not shown$/)).toBe(true)
+  await ui.unmount()
+})
+
+/** Hands off from the Handoff page with Sounds on or off; returns what the strip, the toasts and the speaker got. */
+async function handoffNotice($: any, on: any, sound: boolean) {
+  mock.clock(on, { now: Date.now() })
+  const played: string[] = [], toasts: string[] = []
+  engine(on, { status: { ...STATUS, prefs: { ...STATUS.prefs, sound } } })
+  on('audio.play', (_: unknown, e: any) => { played.push(JSON.stringify(e)); return { value: undefined } })
+  on('ui.toast', (_: unknown, e: any) => { toasts.push(JSON.stringify(e)); return { value: undefined } })
+  on('ui.copy', () => ({ value: { isCopied: true } }))
+  await $.session.start({ cwd: '/demo', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
+  const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'tab-handoff' })
+  await ui.press({ key: 'kc-hand3' })
+  const band: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: { bodyColumns: 100 } } as any)
+  const strip = JSON.stringify(await band.drawn())
+  await band.unmount(); await ui.unmount()
+  return { strip, played, toasts }
+}
+
+test('notifications: a saved handoff shows a strip chip with an icon, a short toast and Cortex\'s own chime', async ($, on) => {
+  const r = await handoffNotice($, on, true)
+  expect(r.strip).toContain('Handoff saved · resume copied')
+  expect(r.toasts.some(t => /Handoff saved/.test(t))).toBe(true)
+  expect(r.played.some(p => /sounds\/done\.wav/.test(p))).toBe(true)
+})
+
+test('notifications: with Sounds off the chip and toast still show, and nothing plays', async ($, on) => {
+  const r = await handoffNotice($, on, false)
+  expect(r.strip).toContain('Handoff saved')
+  expect(r.played).toEqual([])
 })

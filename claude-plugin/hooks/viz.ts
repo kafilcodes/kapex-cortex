@@ -50,7 +50,10 @@ export function capsules(o: { items: { label: string; value: number; color: stri
     const x = slot * i + slot / 2 - pw / 2
     const h = Math.max(pw, (it.value / max) * span)
     const y = bottom - h
-    const short = it.label.length > 9 ? `${it.label.slice(0, 8)}…` : it.label
+    // the whole label where the slot has room (measured), else cut with …
+    let short = it.label
+    while (short.length > 3 && textWidth(short, 10) > slot - 6) short = short.slice(0, -1)
+    if (short !== it.label) short = `${short.replace(/\s+$/, '')}…`
     return `<rect x="${x.toFixed(1)}" y="${top}" width="${pw.toFixed(1)}" height="${span}" rx="${(pw / 2).toFixed(1)}" fill="${K.pill}"/>`
       + `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${pw.toFixed(1)}" height="${h.toFixed(1)}" rx="${(pw / 2).toFixed(1)}" fill="${it.color}">${grow(o.animate, 'height', h.toFixed(1))}${o.animate ? `<animate attributeName="y" from="${bottom}" to="${y.toFixed(1)}" dur="0.7s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.2 0.8 0.2 1"/>` : ''}</rect>`
       + `<text x="${(x + pw / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" ${FONT} font-size="10.5" font-weight="600" fill="${K.ink}">${esc(it.note ?? String(it.value))}</text>`
@@ -131,7 +134,7 @@ export function lanes(o: { lanes: { label: string; color: string; dots: { t: num
   }
   const rows = o.lanes.map((l, i) => {
     const y = i * ROW + ROW / 2 + 1
-    const dots = l.dots.map(d => `<circle cx="${X(d.t).toFixed(1)}" cy="${y}" r="4.5" fill="${d.color ?? l.color}" fill-opacity="0.85" stroke="${d.color ?? l.color}"><title>${esc(d.title)}</title></circle>`).join('')
+    const dots = l.dots.map(d => `<circle cx="${X(d.t).toFixed(1)}" cy="${y}" r="3.2" fill="${d.color ?? l.color}" fill-opacity="0.9" stroke="none"><title>${esc(d.title.length > 60 ? `${d.title.slice(0, 59)}…` : d.title)}</title></circle>`).join('')
     return `<text x="0" y="${y + 4}" ${FONT} font-size="11" fill="${K.ink}">${esc(l.label)}</text><line x1="${LW}" y1="${y}" x2="${W - 8}" y2="${y}" stroke="${K.hairline}"/>${dots}`
   })
   return svg(W, H, ticks.join('') + rows.join(''))

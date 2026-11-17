@@ -436,14 +436,35 @@ function nextFromReply(reply) {
   const m = /^\s*(?:[-*]\s*)?(?:\*\*)?next(?: action| step)?(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(.+)$/im.exec(reply) ?? [...reply.matchAll(/[.!?)]\s+(?:\*\*)?Next(?: action| step)?(?:\*\*)?\s*[:：]\s*(.+)/g)].at(-1) ?? null;
   return m ? oneLine(m[1].replace(/\*\*/g, ""), 300) : "";
 }
+var CONTINUES = /^(?:(?:hey|hi|ok(?:ay)?|yes|so|now|alright)\b[\s,.!:-]*)*(?:please\s+)?(?:continue|resume|proceed|carry on|go on|keep going|pick (?:it )?up|let'?s continue|we(?:'re| are) continuing|(?:the )?(?:5|five)[- ]hour limit (?:has |is )?reset|(?:the |my |our )?(?:usage |rate )?limits? (?:has |have |is |are )?(?:been )?reset|(?:first,?\s*)?read [`"]?\.vault\/STATE\.md|\/cortex-resume|resume from the kapex cortex handoff)\b/i;
+var FILLER = /^\s*[`"']?\s*(?:[.!?;:,(\-–—]|$|(?:from|where|after|again|first|now|and|so|please|then)\b)/i;
+function withoutLeadIn(text) {
+  let t = text.trim();
+  for (let i = 0; i < 6; i++) {
+    const m = CONTINUES.exec(t);
+    if (!m) break;
+    const rest = t.slice(m[0].length);
+    if (!FILLER.test(rest)) break;
+    const end = /[.!?;:](?=\s|$)|\n/.exec(rest);
+    const sentence = end ? rest.slice(0, end.index) : rest;
+    const turn = /(?:^|[\s,;(])(?:and\s+)?(?:then|now)\s+(?!(?:continue|carry on|go on|proceed|resume)\b)/i.exec(sentence);
+    if (turn) {
+      t = (sentence.slice(turn.index + turn[0].length) + (end ? rest.slice(end.index) : "")).trim();
+      continue;
+    }
+    t = end ? rest.slice(end.index + 1).trim() : "";
+  }
+  return t;
+}
 function buildBrief(p, a) {
-  const asks = readTurns(p, a.session).map((t) => ({ ts: t.ts, text: askOf(t) })).filter((t) => t.text.length >= 15);
+  const all = readTurns(p, a.session).map((t) => ({ ts: t.ts, text: askOf(t) })).filter((t) => t.text.length >= 15);
+  const asks = all.map((t) => ({ ts: t.ts, text: withoutLeadIn(t.text.replace(/^\(pasted\)\s*/, "")) })).filter((t) => t.text.length >= 15);
   const first = asks[0];
-  const latest = asks.at(-1);
+  const latest = all.at(-1);
   const named = [...asks].reverse().find((t) => /^(?:the )?goal\s*[:：-]/i.test(t.text));
   const task = named ?? [...asks].reverse().find((t) => t.text.length >= 60) ?? first;
   const h = a.handoff;
-  const thisSession = !!h && (h.session === a.session || !!first && h.ts >= first.ts);
+  const thisSession = !!h && (h.session === a.session || !all[0] || h.ts >= all[0].ts);
   const handoffAge = h ? age(a.now.getTime() - Date.parse(h.ts)) : "";
   let goal;
   const stated = asks.some((t) => t.text.length >= 60);
@@ -462,7 +483,7 @@ _From an earlier session (${handoffAge} ago). It may be done: check the working 
   let next;
   if (thisSession && h?.next && (!latest || h.ts >= latest.ts)) next = h.next;
   else if (fromReply) next = fromReply;
-  else if (latest && latest !== task) next = `Continue: ${oneLine(latest.text, 300)}`;
+  else if (latest && latest.ts !== task?.ts) next = `Continue: ${oneLine(latest.text, 300)}`;
   else next = "Continue from the last assistant message below; confirm with the user if it is unclear.";
   return { goal, next };
 }
@@ -630,8 +651,9 @@ function observe(ep, entry) {
   const user = claudeUserText(entry);
   if (user) {
     if (/\[Request interrupted/.test(user)) ep.interrupted = true;
-    const mine = segments(user).filter((s) => s.source === "you").map((s) => s.text.trim()).join(" ").replace(/\s+/g, " ");
-    if (mine && !/^\//.test(mine)) ep.ask = (ep.ask ? `${ep.ask} \xB7 ` : "") + mine.slice(0, 400 - ep.ask.length);
+    const mine = segments(user).filter((s) => s.source === "you").map((s) => s.text.trim()).join(" ").replace(/@"[^"]*"/g, " ").replace(/(^|\s)@[^\s]+/g, " ").replace(/\s+/g, " ").trim();
+    const words = mine.replace(/^\/[\w:-]+(?:\s+|$)/, ""), command = words !== mine;
+    if (words && (!command || words.length >= 15)) ep.ask = (ep.ask ? `${ep.ask} \xB7 ` : "") + words.slice(0, Math.max(0, 400 - ep.ask.length));
     else if (!ep.ask) ep.ask = background(user);
   }
   const msg = entry.message;
@@ -710,8 +732,12 @@ function finalize(p, session, lastAssistant = "") {
   appendFileSync(file(p), JSON.stringify(done) + "\n");
   return done;
 }
+var isEpisode = (e) => {
+  const x = e;
+  return !!x && typeof x === "object" && typeof x.id === "string" && typeof x.end === "string" && typeof x.ask === "string" && Array.isArray(x.files) && Array.isArray(x.commands) && !!x.tests && typeof x.tests === "object" && typeof x.tools === "object";
+};
 function readEpisodes(p, limit = 30) {
-  const eps = readJsonl(file(p)).items.slice(-limit).reverse();
+  const eps = readJsonl(file(p)).items.filter(isEpisode).slice(-limit).reverse();
   const ratings = readJsonl(ratingsFile(p)).items;
   return eps.map((e) => ({ ...e, rating: ratings.filter((r) => r.episode === e.id && r.by === "you").at(-1), feedback: ratings.filter((r) => r.episode === e.id && r.by === "model").at(-1) }));
 }
@@ -733,14 +759,15 @@ var DEFAULT_PREFS = {
   autoDream: false,
   quickCheck: true,
   handoffAt: 80,
-  autoPark: true
+  autoPark: true,
+  sound: true
 };
 var MODES = {
   lean: { state: 8e3, lastReply: false },
   balanced: { state: 3e4, lastReply: true },
   rich: { state: 48e3, lastReply: true }
 };
-var MODEL = /^[\w.:/@+-]{0,120}$/;
+var MODEL = /^(?:[\w.:/@+][\w.:/@+-]{0,119})?$/;
 var userFile = () => join7(cortexHome(), "config.json");
 var projectFile = (p) => join7(p.priv, "prefs.json");
 var readObj = (f) => {
@@ -763,6 +790,7 @@ function clean(raw) {
   if (typeof raw.autoDream === "boolean") out.autoDream = raw.autoDream;
   if (typeof raw.quickCheck === "boolean") out.quickCheck = raw.quickCheck;
   if (typeof raw.autoPark === "boolean") out.autoPark = raw.autoPark;
+  if (typeof raw.sound === "boolean") out.sound = raw.sound;
   if (typeof raw.handoffAt === "number" && raw.handoffAt >= 50 && raw.handoffAt <= 95) out.handoffAt = Math.round(raw.handoffAt);
   return out;
 }
@@ -1719,20 +1747,26 @@ function runHook(name, fromPlugin = false) {
   const raw = readStdin();
   let input = {};
   try {
-    input = raw.trim() ? JSON.parse(raw) : {};
+    const j = raw.trim() ? JSON.parse(raw) : {};
+    input = j && typeof j === "object" && !Array.isArray(j) ? j : {};
   } catch {
   }
   const start = String(input.cwd ?? input.directory ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd());
-  const root = resolveProject(start);
-  if (!root) return;
-  const p = repoPaths(root);
+  let p;
   const [harness, event] = name.toLowerCase().split(".");
-  if (harness === "claude" && !pluginHooksTurn(p, fromPlugin)) return;
+  try {
+    const root = resolveProject(start);
+    if (!root) return;
+    p = repoPaths(root);
+    if (harness === "claude" && !pluginHooksTurn(p, fromPlugin)) return;
+  } catch {
+    return;
+  }
   try {
     mkdirSync5(p.priv, { recursive: true });
     const out = harness === "claude" ? handleClaude(event ?? "", p, input) : harness === "opencode" ? handleOpencode(event ?? "", p, input) : "";
     if (out) process.stdout.write(out);
-    recordHookTime(p.priv, Math.round(process.uptime() * 1e3));
+    if (event === "stop" || event === "idle" || event === "session.idle") recordHookTime(p.priv, Math.round(process.uptime() * 1e3));
   } catch (err) {
     try {
       appendFileSync3(p.errors, `${(/* @__PURE__ */ new Date()).toISOString()} ${name} ${err.stack ?? err}
@@ -1742,6 +1776,7 @@ function runHook(name, fromPlugin = false) {
   }
 }
 if (!IS_BINARY && process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  process.on("uncaughtException", () => process.exit(0));
   const args = process.argv.slice(2);
   runHook(args[0] ?? "", args.includes("--plugin"));
 }

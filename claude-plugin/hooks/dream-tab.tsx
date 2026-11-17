@@ -7,6 +7,8 @@ import type { Kit } from './kit'
 import { illoDreamClean, illoDreamStart } from './illos'
 import { K } from './theme'
 import { tiles } from './tiles'
+import type { Lead } from './leads'
+import { companion } from './blocky'
 
 // The Dream page: run one, see what it found with the evidence for each finding, then Apply (all or what you
 // kept), Discard, or Undo an applied one. Nothing changes until you press Apply; every Apply can be undone.
@@ -23,18 +25,28 @@ export const KIND: Record<string, { label: string; icon: string; color: string }
   orphan: { label: 'Not in the index', icon: 'link', color: K.amber },
   lesson: { label: 'Verified lesson', icon: 'lesson', color: K.emerald },
 }
+/** each finding's leading drawing, in words */
+const LEAD_ALT: Record<string, string> = {
+  'f-false': 'A note crossed out: not true', 'f-stale': 'A note with a clock: out of date', 'f-contradiction': 'Two notes that disagree',
+  'f-duplicate': 'Two copies of the same note', 'f-visible': 'A note already in the project files', 'f-scope': 'A note moving to a folder',
+  'f-replace': 'A long note made shorter', 'f-over-cap': 'A note running past its line limit', 'f-broken-link': 'A broken link',
+  'f-orphan': 'A note missing from the index', 'f-lesson': 'A note with a tick: a verified lesson',
+}
 const ORDER = { high: 0, medium: 1, low: 2 }
+const STATUS: Record<string, string> = { applied: 'Applied', proposed: 'Waiting for you', discarded: 'Discarded', undone: 'Undone', failed: 'Failed', replaced: 'Replaced' }
 const doing = (f: FindingView) => f.action.op === 'delete' ? 'Remove it' : f.action.op === 'replace' ? `Rewrite as: "${f.action.text}"` : f.action.op === 'move' ? `Move to ${f.action.to} (loads only for ${(f.action.paths ?? []).join(', ')})` : f.action.op === 'add-index' ? `Add to MEMORY.md: ${f.action.text}` : f.action.op === 'add-lesson' ? `Add to auto memory: "${f.action.text}"` : 'Yours to decide: remove the line, keep it, or ask Claude to rewrite it'
 /** What "Ask Claude" sends: you press it, so it's your prompt; Claude edits the note with its own tools, as you'd ask. */
 const askFix = (f: FindingView) => !f.entry ? `Kapex Cortex flagged ${f.label}: ${f.why} Shorten it without losing any rule that still applies (move details that only matter for some folders into .claude/rules/ files with paths: frontmatter), and tell me what you changed.` : `Kapex Cortex flagged a memory note as out of date. In ${f.label}${f.line ? ` line ${f.line}` : ''}: "${f.entry.replace(/\s+/g, ' ').slice(0, 300)}". Why: ${f.why} Update that note so it matches the project as it is now (or remove it if it no longer applies), and tell me what you changed.`
 
-export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, vw: ViewState): JSX.Element {
+export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, vw: ViewState, px = 800): JSX.Element {
   const { Box, Text, Button } = els
-  const t = tiles($, els, u, vw.expanded)
+  const t = tiles($, els, u, vw.expanded, px)
   const recent = s.dream?.recent ?? []
   const last = recent[0]
   const running = s.dream?.running
-  const model = s.prefs?.dreamBackend === 'off' ? 'checks only (no model)' : `${s.prefs?.dreamBackend ?? 'claude'} · ${s.prefs?.dreamModel || 'sonnet'}`
+  const be = s.prefs?.dreamBackend ?? 'claude'
+  const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1)
+  const model = be === 'off' ? '' : be === 'claude' ? cap(s.prefs?.dreamModel || 'sonnet') : s.prefs?.dreamModel || (be === 'opencode' ? 'an OpenCode model' : 'your model')
   const n = s.prefs?.dreamTranscripts ?? 10
 
   const dec = (d: DreamView, f: FindingView | 'all', what: string, label: string) => { void act($, label, ['dream', 'decide', d.id, f === 'all' ? 'all' : f.id, what]) }
@@ -55,11 +67,13 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
   const findingTile = (d: DreamView, f: FindingView) => {
     const k = KIND[f.kind] ?? { label: f.kind, icon: 'spark', color: K.silver }
     const ev = new Map(d.evidence.map(e => [e.id, e]))
+    const lk = (`f-${f.kind}` in LEAD_ALT ? `f-${f.kind}` : 'f-stale') as Lead
     return t.tile({
-      id: `${d.id}-${f.id}`, icon: k.icon, color: f.done === 'kept' || f.skip ? K.muted : f.done === 'applied' ? K.emerald : k.color, accent: f.severity === 'high' && !f.skip && !f.done ? `${k.color}66` : undefined,
+      id: `${d.id}-${f.id}`, icon: k.icon, color: f.done === 'kept' || f.skip ? K.muted : f.done === 'applied' ? K.emerald : k.color,
+      lead: { kind: f.done === 'applied' ? 'f-lesson' : lk, alt: f.done === 'applied' ? 'A note that was fixed' : LEAD_ALT[lk]!, muted: f.done === 'kept' || f.skip }, accent: f.severity === 'high' && !f.skip && !f.done ? `${k.color}66` : undefined,
       title: f.entry ? f.entry.replace(/^\s*[-*+]\s+/, '').replace(/\s*\n\s*/g, ' ') : f.why, wrap: true, preview: f.entry ? `Why: ${f.why}` : undefined,
       time: f.line ? `line ${f.line}` : undefined,
-      badges: [[k.label, k.color, k.icon], [f.label, K.label, 'file'], [f.by === 'check' ? 'checked by Cortex' : 'judged by the model'], f.skip && !f.done ? ['left out', K.muted] : null],
+      badges: [[k.label, k.color, k.icon], [f.label, K.label, 'file'], [f.by === 'check' ? 'Proven by a check' : 'The model\'s judgement'], f.skip && !f.done ? ['Left out', K.muted] : null],
       body: [
         ...f.evidence.map(id => { const e = ev.get(id); return e ? u.tag(`fe-${f.id}-${id}`, e.kind === 'run' ? (e.ok ? 'check' : 'cross') : e.kind === 'commit' ? 'commit' : e.kind === 'note' ? 'save' : 'turn', e.kind === 'run' ? (e.ok ? K.emerald : K.rose) : K.silver, `${e.ts.slice(5, 16).replace('T', ' ')} · ${e.text}`, K.label) : null }),
         u.tag(`fa-${f.id}`, f.action.op === 'none' ? 'pending' : 'spark', f.action.op === 'none' ? K.silver : K.emerald, doing(f), K.text),
@@ -77,23 +91,21 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
       <Box flexDirection="row" gap={1} alignItems="center">
         {u.node('dr-n', 'dream', K.emerald, 26)}
         <Box flexDirection="column">
-          <Text weight="semibold" color={K.text}>Dream</Text>
-          <Text size="caption" color={K.muted}>{running ? `Dreaming… started ${ago(minsSince(running.since))}` : last ? `Last one ${ago(minsSince(last.ts))} · ${last.status === 'proposed' && !last.findings.length ? 'clean' : last.status === 'proposed' ? 'waiting for you' : last.status}` : 'Not run yet'}</Text>
+          <Text weight="semibold" color={K.text}>Check Claude's memory</Text>
+          <Text size="caption" color={K.muted}>{running ? `Dreaming… started ${ago(minsSince(running.since))}` : last ? `Last checked ${ago(minsSince(last.ts))}${last.status === 'proposed' && !last.findings.length ? '' : ` · ${last.status === 'proposed' ? 'waiting for you' : STATUS[last.status] ?? last.status}`}` : 'Not run yet'}</Text>
         </Box>
       </Box>
       <Box flexDirection="row" gap={1} alignItems="center">
-        <Button key="kc-dream-checks" onPress={() => { void act($, 'Checked', ['dream', 'run', '--no-model']) }}>Quick check · free</Button>
-        <Button key="kc-dream" variant="primary" onPress={() => { void act($, 'Dream started', ['dream']) }}>{running ? 'Dreaming…' : 'Dream now · 1–2 min'}</Button>
+        <Button key="kc-dream-checks" onPress={() => { void act($, 'Checked', ['dream', 'run', '--no-model']) }}>Quick check (free)</Button>
+        <Button key="kc-dream" variant="primary" onPress={() => { void act($, 'Dream started', ['dream']) }}>{running ? 'Dreaming…' : 'Dream now (1–2 min)'}</Button>
       </Box>
     </Box>,
     <Box key="dr-m" flexDirection="row" gap={1} flexWrap="wrap">
-      {t.metric('dm-c', 'turn', K.silver, last ? String(last.transcripts) : '–', 'chats read', '40%')}
-      {t.metric('dm-e', 'test', K.silver, last ? String(last.evidenceCount) : '–', 'facts checked', '40%')}
-      {t.metric('dm-n', 'rule', K.silver, last ? String(last.entryCount) : '–', 'notes checked', '40%')}
-      {t.metric('dm-f', 'alert', last?.findings.length ? K.amber : K.emerald, last ? String(last.findings.length) : '–', 'findings', '40%')}
+      {t.metric('dm-n', 'rule', K.silver, last ? String(last.entryCount) : '–', 'memory notes checked', '40%')}
+      {t.metric('dm-f', 'alert', last?.findings.length ? K.amber : K.emerald, last ? String(last.findings.length) : '–', last?.findings.length === 1 ? 'problem found' : 'problems found', '40%')}
     </Box>,
     // what each button costs is on the button; this line only says who does the work
-    u.tag('dr-cost', 'spark', K.silver, `Quick check: Cortex's own checks, no model. Dream: also asks ${model} (about 10–25k tokens of your plan).`, K.muted),
+    u.tag('dr-cost', 'spark', K.silver, model ? `A Dream reads your last ${n} chats, test runs and commits, and asks ${model} to judge: about 10–25k tokens of your plan. Nothing changes until you press Apply.` : 'Both are free: with no model chosen in Settings, a Dream only flags what Cortex can prove.', K.muted),
   ], K.emerald)
 
   // earlier Dreams worth a tile: the applied ones (Undo works); the rest is one line
@@ -110,26 +122,27 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
 
   return (
     <Box flexDirection="column" gap={1}>
-      {u.intro('dr-in', sceneSvg('dream', 120), 'Cortex dreaming over notes', 'Dream: an audit of your memory', `Checks your notes against your last ${n} chats, tests and git. Nothing changes until you Apply.`)}
+      {u.intro('dr-in', sceneSvg('dream', 100), 'Cortex dreaming over notes', 'Memory check: is what Claude remembers still true?', `A Dream is a deep check that Claude's notes still match what really happened. A quick check is a free, instant check for broken links, missing files and repeats.`, companion('sleepy', px))}
       {head}
       {last?.error ? u.card('dr-err', '100%', [u.tag('dr-err-t', 'cross', K.rose, `The last Dream failed: ${last.error}`, K.text)], K.rose) : null}
       {last?.modelError ? u.tag('dr-merr', 'alert', K.amber, `The model step failed, so only Cortex's own checks ran: ${last.modelError}`, K.label) : null}
       {last?.rejected?.length ? t.tile({
-        id: `rj-${last.id}`, icon: 'cross', color: K.silver, title: `${last.rejected.length} suggestion${last.rejected.length === 1 ? '' : 's'} from the model refused`, preview: 'Not sure enough, no evidence behind it, or about your own files outside this project.',
-        badges: [['checked by Cortex']],
+        id: `rj-${last.id}`, icon: 'cross', color: K.silver, lead: { kind: 'f-rejected', alt: 'Suggestions Cortex turned down' }, title: `Cortex turned down ${last.rejected.length} suggestion${last.rejected.length === 1 ? '' : 's'} from the model`, preview: 'The model wasn\'t sure enough, had no evidence, or it was about your own files outside this project.',
+        badges: [['Proven by a check']],
         body: last.rejected.map((r, i) => <Text key={`rjt-${i}`} size="caption" color={K.muted}>{r}</Text>),
       }) : null}
-      {last && !last.error && !last.findings.length ? u.illo('dr-ok-i', illoDreamClean(120), 'All clear', [<Text key="dr-ok-t" weight="semibold" color={K.text}>Nothing to fix</Text>, u.muted('dr-ok-d', 'Your memory matches what happened.')], true) : null}
+      {last && !last.error && !last.findings.length ? u.illo('dr-ok-i', illoDreamClean(120), 'All clear', [<Text key="dr-ok-t" weight="semibold" color={K.text}>Nothing to fix</Text>, u.muted('dr-ok-d', 'Claude\'s memory matches what really happened.')], true) : null}
       {last && open === 0 && appliedN && live ? u.illo('dr-done-i', illoDreamClean(110), 'All decided', [<Text key="dr-done-t" weight="semibold" color={K.text}>All decided</Text>, u.muted('dr-done-d', `${appliedN} applied. Undo stays available below.`)], true) : null}
       {!last && !running ? u.illo('dr-none-i', illoDreamStart(120), 'No Dream yet', [<Text key="dr-none-t" weight="semibold" color={K.text}>No Dream yet</Text>, u.muted('dr-none-d', 'Press Quick check (free) or Dream now above.')], true) : null}
       {list.length ? t.groupHead('dr-fh', 'dream', K.emerald, 'What it found', String(list.length)) : null}
       {list.length ? actions : null}
       {list.length ? t.stack('dr-fl', list.map(f => findingTile(last!, f))) : null}
       {last?.kept ? u.muted('dr-kept', `${last.kept} note${last.kept === 1 ? '' : 's'} you kept before ${last.kept === 1 ? 'was' : 'were'} not flagged again.`) : null}
-      {earlier.length ? t.groupHead('dr-hh', 'pending', K.silver, 'Earlier Dreams you can undo', String(earlier.length)) : null}
+      {earlier.length ? t.groupHead('dr-hh', 'pending', K.silver, 'Earlier fixes you can undo', String(earlier.length)) : null}
       {earlier.map(d => t.tile({
-        id: `dh-${d.id}`, icon: 'dream', color: d.status === 'failed' ? K.rose : d.status === 'applied' ? K.emerald : K.silver, title: `${d.findings.length} finding${d.findings.length === 1 ? '' : 's'}`, time: ago(minsSince(d.ts)),
-        badges: [[d.status, d.status === 'applied' ? K.emerald : d.status === 'failed' ? K.rose : K.label], [d.model ?? 'checks only']],
+        id: `dh-${d.id}`, icon: 'dream', color: d.status === 'failed' ? K.rose : d.status === 'applied' ? K.emerald : K.silver,
+        lead: d.status === 'failed' ? { kind: 'dream-bad', alt: 'A Dream that failed' } : d.status === 'applied' ? { kind: 'dream-ok', alt: 'A Dream whose fixes were applied' } : { kind: 'dream', alt: 'An earlier Dream', muted: true }, title: `${d.findings.length} fix${d.findings.length === 1 ? '' : 'es'} applied`, time: ago(minsSince(d.ts)),
+        badges: [[STATUS[d.status] ?? d.status, d.status === 'applied' ? K.emerald : d.status === 'failed' ? K.rose : K.label], [d.model ? `Judged by ${d.model.replace(/^claude · /, '')}` : 'Quick check']],
         body: d.findings.slice(0, 6).map(f => u.tag(`dhf-${d.id}-${f.id}`, (KIND[f.kind] ?? KIND.stale!).icon, (KIND[f.kind] ?? KIND.stale!).color, `${(KIND[f.kind] ?? { label: f.kind }).label} · ${f.label}${f.line ? `:${f.line}` : ''}`, K.label)),
         quick: d.status === 'applied' ? [btn(`kc-undo-${d.id}`, 'Undo', () => { void act($, 'Undone', ['dream', 'undo', d.id]) })] : [],
       }))}

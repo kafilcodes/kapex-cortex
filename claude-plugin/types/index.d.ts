@@ -34,7 +34,7 @@ export type StatusView = {
   history?: HistoryView
   prefs?: PrefsView
   usage?: { chats: number; skills: Record<string, number>; mcp: Record<string, number>; tools: Record<string, number> }
-  spend?: { today: TokensView; week: TokensView; all: TokensView; since: string | null; chats: number; resumed: number; resumedContext: number; sessions?: Record<string, number> }
+  spend?: { today: TokensView; week: TokensView; all: TokensView; since: string | null; chats: number; resumed: number; resumedContext: number; sessions?: Record<string, number>; /** tokens by local day, kept for good */ days?: Record<string, number>; /** replies by weekday (0 = Monday) × hour */ hours?: number[][] }
   parked?: { servers: { name: string; at: string; auto: boolean; tokens: number }[]; keepOn: string[]; disabled: string[] }
   memHealth?: { files: { label: string; lines: number; limit: number }[]; scopedTokens: number; alwaysTokens: number; open: number; checks: number; clean: number }
   migrated?: string
@@ -43,12 +43,12 @@ export type StatusView = {
 }
 /** Handoff snapshots: one STATE per session, and git WIP refs. */
 export type HistoryView = {
-  states: { session: string; at: string; from: string; goal: string }[]
+  states: { session: string; at: string; from: string; goal: string; /** the chat it came from: its title, else the first words typed in it */ chat?: string; copies?: number }[]
   wips: { session: string; sha: string; at: string }[]
 }
 /** Settings in force here, and what the handoff costs. */
 export type TokensView = { input: number; output: number; cacheRead: number; cacheWrite: number; replies: number }
-export type PrefsView = { tokenMode: string; greeting?: boolean; name?: string; dreamBackend: string; dreamModel: string; dreamApi: string; dreamUrl: string; dreamTranscripts: number; autoDream: boolean; quickCheck?: boolean; handoffAt?: number; autoPark?: boolean; overridden: string[]; tokens: { handoff: number } }
+export type PrefsView = { tokenMode: string; greeting?: boolean; name?: string; dreamBackend: string; dreamModel: string; dreamApi: string; dreamUrl: string; dreamTranscripts: number; autoDream: boolean; quickCheck?: boolean; handoffAt?: number; sound?: boolean; autoPark?: boolean; overridden: string[]; tokens: { handoff: number } }
 /** `kc status --json` in a folder without Cortex: which child folders have it. */
 export type OffView = { cwd: string; nearby: string[]; error?: string }
 /** What Claude Code itself reports (no estimates). */
@@ -67,7 +67,7 @@ export type LiveView = {
 export type Tab = 'overview' | 'timeline' | 'data' | 'settings' | 'waiting' | 'rules' | 'failed' | 'handoff' | 'compactions' | 'details'
 export type TimelineEventView = { id: string; ts: string; kind: string; title: string; detail?: string; tags: string[]; tone: 'ok' | 'warn' | 'bad' | 'info' }
 /** The Memory and Timeline tabs' list state. */
-export type ViewState = { collapsed: string[]; more: Record<string, number>; editing: string; expanded: string[]; sub: string; flow?: '' | 'confirm' | 'copied'; snooze?: { until: number; pct: number }; /** first-run intro: the step shown, -1 once finished or skipped */ intro?: number }
+export type ViewState = { collapsed: string[]; more: Record<string, number>; editing: string; expanded: string[]; sub: string; /** the Costs page's view: 'costs' (each message now) or 'usage' (over time) */ csub?: string; flow?: '' | 'confirm' | 'copied'; snooze?: { until: number; pct: number }; /** first-run intro: the step shown, -1 once finished or skipped */ intro?: number }
 /** One turn of the session journal. */
 export type EpisodeView = {
   id: string; session: string; start: string; end: string; ask: string
@@ -96,6 +96,10 @@ declare module 'claude-code' {
       view: Shaped<ViewState>
       fail: Shaped<string>
       pulse: Shaped<string>
+      /** bumped once after an animated drawing, so the charts mount again still (anim.ts) */
+      settle: Shaped<number>
+      /** the strip's notification chip: what just happened, in a few words (notify.ts) */
+      flash: Shaped<{ kind: 'done' | 'dream' | 'alert'; text: string; at: number } | null>
     }
   }
 }
