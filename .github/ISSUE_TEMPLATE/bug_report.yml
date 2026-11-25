@@ -14,7 +14,7 @@ body:
     attributes:
       label: Versions
       description: Kapex Cortex, Claude Code (CLI or Desktop), Node.js and your OS
-      placeholder: "Cortex 4.5.1 · Claude Code Desktop 2.1 · Node 26 · macOS 26"
+      placeholder: "Cortex 4.5.2 · Claude Code Desktop 2.1 · Node 26 · macOS 26"
     validations:
       required: true
   - type: textarea

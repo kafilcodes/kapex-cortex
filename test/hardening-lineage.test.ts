@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { readMissionRecord, type MissionRecord } from "../src/core/mission.ts";
 import { renderMission } from "../src/core/mission-view.ts";
 import { repoPaths } from "../src/core/paths.ts";
-import { statePath } from "../src/core/state.ts";
+import { readHandoff, statePath } from "../src/core/state.ts";
 import { readTurns } from "../src/core/turns.ts";
 import { telephoneRepo } from "../scripts/telephone.ts";
 import { isRule, parseJudgment } from "../src/core/dream-model.ts";
@@ -53,6 +53,43 @@ test("/cortex-handoff decisions bind the chat they were saved for, never every c
   hook("claude.stop", { session_id: "x", transcript_path: t("x"), cwd: p.root, last_assistant_message: "Docs polished." });
   assert.ok(readMissionRecord(p, "y")!.mission.pins.some((x) => x.kind === "decision" && /cache TTL/.test(x.text)));
   assert.ok(!readMissionRecord(p, "x")!.mission.pins.some((x) => /cache TTL/.test(x.text)), "chat x never adopted chat y's decision");
+});
+
+test("kc handoff never cuts silently: a goal past the north star's limit, a long decision and too many decisions each say so on stderr", () => {
+  const p = tmpRepo();
+  user(join(p.root, "t.jsonl"), "u1", 0, "Ship the export page.");
+  hook("claude.stop", { session_id: "s", transcript_path: join(p.root, "t.jsonl"), cwd: p.root, last_assistant_message: "Shipped." });
+  const long = "Redesign the panel. " + "Keep it calm and roomy. ".repeat(30) + "Work only in the v46 worktree.";
+  const decisions = Array.from({ length: 9 }, (_, i) => ["--decision", i === 0 ? "x".repeat(320) : `Decision number ${i}`]).flat();
+  const r = spawnSync(process.execPath, [CLI, "handoff", "--goal", long, ...decisions], { cwd: p.root, encoding: "utf8" });
+  assert.equal(r.status, 0, "still saved");
+  assert.match(r.stderr, new RegExp(`the goal is ${long.length} characters; the north star keeps the first 600`));
+  assert.match(r.stderr, /decision 1 is 320 characters; it keeps the first 300/);
+  assert.match(r.stderr, /9 decisions given; a handoff keeps the newest 8/);
+  const ok = spawnSync(process.execPath, [CLI, "handoff", "--goal", "Ship the export page with a CSV option."], { cwd: p.root, encoding: "utf8" });
+  assert.equal(ok.stderr, "", "a goal that fits says nothing");
+});
+
+test("kc handoff --next alone keeps the note's goal and decisions; a new decision is added; another chat's note starts fresh", () => {
+  const p = tmpRepo();
+  const t = (s: string) => join(p.root, `${s}.jsonl`);
+  user(t("s"), "u1", 0, "Ship the export page.");
+  hook("claude.stop", { session_id: "s", transcript_path: t("s"), cwd: p.root, last_assistant_message: "Shipped." });
+  const kc = (...a: string[]) => spawnSync(process.execPath, [CLI, "handoff", ...a], { cwd: p.root, encoding: "utf8" });
+  assert.equal(kc("--goal", "Ship the export page with CSV.", "--decision", "Keep the CSV header row.").status, 0);
+  assert.equal(kc("--next", "Write the CSV tests.").status, 0);
+  assert.equal(kc("--decision", "Quote every field.").status, 0);
+  const note = readHandoff(p)!;
+  assert.equal(note.goal, "Ship the export page with CSV.", "--next alone kept the goal");
+  assert.equal(note.next, "Write the CSV tests.");
+  assert.deepEqual(note.decisions, ["Keep the CSV header row.", "Quote every field."], "decisions add up, none lost");
+  user(t("o"), "o1", 5, "Refactor the cache layer.");
+  hook("claude.stop", { session_id: "o", transcript_path: t("o"), cwd: p.root, last_assistant_message: "Refactored." });
+  assert.equal(kc("--next", "Profile the cache.").status, 0);
+  const other = readHandoff(p)!;
+  assert.equal(other.session, "o");
+  assert.equal(other.goal, undefined, "chat s's goal never leaks into chat o's note");
+  assert.equal(other.decisions, undefined);
 });
 
 test("two worktrees on two tasks: each worktree's STATE.md is its own chat's; the main checkout shows the newest", () => {

@@ -11,7 +11,8 @@ import { MODES, parsePref, readPrefs, setPref } from "./core/prefs.ts";
 import { runHook } from "./hook.ts";
 import { cortexInit, nodeOnPath } from "./init.ts";
 import { installSkills } from "./skills.ts";
-import { newestSession, refreshState, rerenderNewest, statePath, writeHandoff } from "./core/state.ts";
+import { DECISION_CHARS, MAX_DECISIONS, newestSession, refreshState, rerenderNewest, statePath, writeHandoff } from "./core/state.ts";
+import { GOAL_CHARS } from "./core/mission.ts";
 import { setup } from "./setup.ts";
 import { expandAlias, KC_HELP } from "./kc.ts";
 import { computeStatus, statusMarkdown, statusText } from "./core/status.ts";
@@ -99,6 +100,8 @@ function main(argv: string[]): void {
       const arg = (flag: string) => { const i = rest.indexOf(flag); return i >= 0 ? rest[i + 1] : undefined; };
       const goal = arg("--goal"), next = arg("--next");
       const decisions = rest.flatMap((x, i) => (x === "--decision" && rest[i + 1] ? [rest[i + 1]!] : []));
+      // never cut silently: say what won't survive, so a long goal can be shortened or moved to --next / --decision
+      for (const w of handoffLimits(goal, decisions)) console.error(`Note: ${w}`);
       // the note belongs to the chat it is saved for (the newest real one here): its decisions bind that chat only
       if (goal || next || decisions.length) writeHandoff(p, { goal, next, decisions, session: newestSession(p, p.root)?.session });
       const ok = rerenderNewest(p) || (refreshState(p, { harness: "manual", session: "manual" }, { snapshot: true }), true);
@@ -171,3 +174,12 @@ function main(argv: string[]): void {
 }
 
 main(process.argv.slice(2));
+
+/** What `kc handoff` would cut: the north star past GOAL_CHARS, a decision past DECISION_CHARS, decisions past MAX_DECISIONS. */
+export function handoffLimits(goal: string | undefined, decisions: string[]): string[] {
+  const out: string[] = [];
+  if (goal && goal.length > GOAL_CHARS) out.push(`the goal is ${goal.length} characters; the north star keeps the first ${GOAL_CHARS}, so it ends at "…${goal.slice(GOAL_CHARS - 40, GOAL_CHARS)}". Shorten it, or move details to --next or --decision.`);
+  decisions.forEach((d, i) => { if (d.length > DECISION_CHARS) out.push(`decision ${i + 1} is ${d.length} characters; it keeps the first ${DECISION_CHARS}.`); });
+  if (decisions.length > MAX_DECISIONS) out.push(`${decisions.length} decisions given; a handoff keeps the newest ${MAX_DECISIONS}.`);
+  return out;
+}

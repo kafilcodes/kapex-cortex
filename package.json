@@ -1,6 +1,6 @@
 {
   "name": "kapex-cortex",
-  "version": "4.5.1",
+  "version": "4.5.2",
   "description": "Claude Code plugin: lossless handoffs between chats (a mission contract that survives /clear and new chats), a live status strip and cost/cache panel, and Dreams that check CLAUDE.md and memory against what really happened. Zero dependencies.",
   "license": "MIT",
   "author": {

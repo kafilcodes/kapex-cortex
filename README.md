@@ -6,11 +6,11 @@
 
 **Switch Claude Code chats without losing context, see what every message costs, and keep Claude's memory true.**
 
-[![version](https://img.shields.io/badge/version-4.5.1-10B981)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-4.5.2-10B981)](CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-10B981)](LICENSE)
 [![runtime deps](https://img.shields.io/badge/runtime%20deps-0-8b949e)](package.json)
 [![tokens added to your chats](https://img.shields.io/badge/tokens%20added%20to%20your%20chats-0-10B981)](docs/ARCHITECTURE.md#3-zero-passive-injection)
-[![Stop hook](https://img.shields.io/badge/Stop%20hook-39%20ms%20median-10B981)](#benchmarks)
+[![Stop hook](https://img.shields.io/badge/Stop%20hook-40%20ms%20median-10B981)](#benchmarks)
 [![CI](https://github.com/kafilcodes/kapex-cortex/actions/workflows/ci.yml/badge.svg)](https://github.com/kafilcodes/kapex-cortex/actions/workflows/ci.yml)
 
 </div>
@@ -62,7 +62,7 @@ Cortex is shell hooks that write files when a reply ends (no model, no tokens) p
 
 ```mermaid
 flowchart LR
-    C1["Chat 1<br/>task + your rules<br/>+ a rejected approach"] -->|Stop hook, ~39 ms, 0 tokens| K["Mission contract<br/>in .vault/STATE.md"]
+    C1["Chat 1<br/>task + your rules<br/>+ a rejected approach"] -->|Stop hook, ~40 ms, 0 tokens| K["Mission contract<br/>in .vault/STATE.md"]
     K -->|/cortex-resume| C2["Chat 2"]
     C2 -->|adds its own rules| K
     K -->|/clear, worktree, usage limit| C5["… chat 5 still holds<br/>chat 1's rules word for word"]
@@ -78,10 +78,10 @@ flowchart LR
 | Handoff after 25 turns: does `STATE.md` answer 10 fixed questions (goal, a turn-3 decision, a turn-14 bug and its file, the next step…)? | **10/10**, about 1.1k tokens |
 | Dream Quick check: 6 planted problems among 204 valid rules | **6/6 found, 0 false positives** |
 | Apply, then Undo | every memory file back **byte for byte** |
-| Stop hook, whole process | **p50 39 ms**, p95 56.7 ms (bar 60), 61 MB peak |
-| Panel refresh (status read) | **p50 64 ms** (was 133 ms in v4.0) |
+| Stop hook, whole process | **p50 40 ms**, p95 55.6 ms (bar 60), 61 MB peak |
+| Panel refresh (status read) | **p50 62 ms** (was 133 ms in v4.0) |
 | Tokens Cortex adds to a normal chat | **0** (measured with `/context`) |
-| Automated tests | **223** (84 core on macOS, Linux and Windows CI; 139 panel) |
+| Automated tests | **231** (92 core on macOS, Linux and Windows CI; 139 panel) |
 
 ## The panel
 
@@ -118,7 +118,7 @@ Open the panel (`/kc`) → **Costs & usage**. It lists what each MCP server and 
 
 ### Does Kapex Cortex inject prompts or slow down Claude Code?
 
-No. It adds **0 tokens** to normal chats: its skills run only when you type them, its one panel tool (`open_panel`) is a deferred tool that `/context` counts as 0, and the handoff reaches a chat only when you run `/cortex-resume`. It never rewrites or compresses prompts, so Claude Code's prompt cache works as designed. Its Stop hook takes about 39 ms (median) after a reply ends and always exits cleanly. One thing it does change on its own: **auto-park** (on by default) turns off MCP servers you haven't used in 10 chats here, through Claude Code's own per-project `disabledMcpServers` switch in `~/.claude.json`; one press brings a server back, and `kc prefs set autoPark off` stops it. See [SECURITY.md](SECURITY.md).
+No. It adds **0 tokens** to normal chats: its skills run only when you type them, its one panel tool (`open_panel`) is a deferred tool that `/context` counts as 0, and the handoff reaches a chat only when you run `/cortex-resume`. It never rewrites or compresses prompts, so Claude Code's prompt cache works as designed. Its Stop hook takes about 40 ms (median) after a reply ends and always exits cleanly. One thing it does change on its own: **auto-park** (on by default) turns off MCP servers you haven't used in 10 chats here, through Claude Code's own per-project `disabledMcpServers` switch in `~/.claude.json`; one press brings a server back, and `kc prefs set autoPark off` stops it. See [SECURITY.md](SECURITY.md).
 
 ### How does it handle git worktrees, `/clear` and several chats at once?
 

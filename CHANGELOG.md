@@ -2,6 +2,18 @@
 
 All notable changes to Kapex Cortex. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). Numbers are measured on an Apple M4 (macOS, Node 26) with `node scripts/benchmark.ts` unless marked otherwise.
 
+## [4.5.2] - 2026-11-25
+
+Handoff reliability: nothing in the contract or the handoff note is lost or contradicted without saying so.
+
+### Fixed
+- **`kc handoff` never cuts silently.** A goal past the north star's 600 characters, a decision past 300 and more than 8 decisions each print a note on stderr saying what is kept (the newest 8 decisions).
+- **`kc handoff --next` on its own keeps the note's goal and decisions.** Each field you leave out keeps what that chat's note already had, and new decisions are added to the old ones; a note saved for another chat still starts fresh.
+- **Superseded decisions are tracked, not carried forward.** A pin that confines work to one place ("work only … on main") gives way to a newer goal or decision naming a different branch or worktree, and an older decision gives way to a newer one that clearly updates it. Replaced decisions are listed in the packet under **Superseded** as no longer binding; the user's own rules are never dropped, only flagged with ⚠ for the chat to ask. "Newer" is judged by chat first, then time, so a rebuilt parent's timestamps can't protect a stale pin.
+- **Cross-OS test stability.** The handoff-history merge test gave its three snapshots distinct modification times: files written in the same instant could tie on Windows CI and sort apart, which failed it once.
+
+Measured: 92 core + 139 panel tests; Dream 6/6 with 0 false positives; handoff 10/10 (~1.1k tokens); 5-hop telephone 13/13; Stop hook p50 40 ms, p95 55.6 ms.
+
 ## [4.5.1] - 2026-11-25
 
 The first v4.5 release with binaries: the v4.5.0 tag's Windows CI run failed, so it has no release. Same features as 4.5.0, plus:

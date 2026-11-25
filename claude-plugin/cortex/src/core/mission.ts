@@ -7,6 +7,7 @@ import { segments } from "./judge.ts";
 import type { RepoPaths } from "./paths.ts";
 import { scrub } from "./scrub.ts";
 import type { Turn } from "./turns.ts";
+import { supersede, type Superseded } from "./supersede.ts";
 
 /**
  * The mission contract: what a chain of chats on one task must never lose, however many handoffs it goes through.
@@ -23,12 +24,16 @@ import type { Turn } from "./turns.ts";
  * pins stop applying, so old constraints never send a new task on a side quest.
  */
 export type PinKind = "skill" | "never" | "must" | "decision";
-export interface Pin { text: string; kind: PinKind; at: string; session: string; hop: number }
+export interface Pin { text: string; kind: PinKind; at: string; session: string; hop: number;
+  /** a newer goal or decision that contradicts this rule of the user's (supersede.ts): shown, for the chat to ask */
+  conflict?: string }
 export interface Rejected { what: string; why: string; at: string; session: string; hop: number }
 export interface Mission { id: string; goal: string; goalAt: string; goalHop: number; pins: Pin[]; rejected: Rejected[]; status: "active" | "done"; doneAt?: string;
   /** the goal came from a pre-v4.5 packet's rolling "## Goal" line (often a step long finished): the first real task
    * this chain states replaces it */
-  goalLegacy?: boolean }
+  goalLegacy?: boolean;
+  /** older decisions a newer goal or decision replaced (supersede.ts): shown as no longer binding */
+  superseded?: Superseded[] }
 export interface Lineage { handoffId: string; parentHandoffId: string | null; parentSession: string | null; hop: number; originSession: string; gitHead: string | null; branch?: string; worktree?: string }
 export interface MissionRecord { v: 1; session: string; at: string; inherited: Mission | null; mission: Mission; lineage: Lineage; /** missions this chat closed or replaced, already archived */ archivedIds?: string[];
   /** the last of this chat's messages read into `mission`, and how many there were up to it: the next turn reads only
@@ -40,6 +45,8 @@ export interface MissionRecord { v: 1; session: string; at: string; inherited: M
 export interface LegacyParent { session: string; goal: string; started: string; rules: string[]; decisions: string[] }
 
 /** Bumped when the reading rules change, so contracts built by the older rules are rebuilt once. */
+/** The north star keeps this many characters (kc handoff --goal warns past it). */
+export const GOAL_CHARS = 600;
 export const MISSION_REV = 5; // 5: a paste-only message's directives count (4 skipped them)
 export const MAX_PINS = 16, MAX_REJECTED = 10, PIN_CHARS = 420;
 const recordFile = (p: RepoPaths, s: string) => join(p.states, `${s.replace(/[^A-Za-z0-9_-]/g, "_")}.mission.json`);
@@ -163,7 +170,7 @@ function addRejected(m: Mission, r: Rejected): void {
 /** A parent from before v4.5, as a mission: its goal, its first message's rules, its standing instructions and decisions. */
 export function legacyMission(lp: LegacyParent, at: string): Mission {
   const m = fresh();
-  m.goal = oneLine(lp.goal || lp.started, 600); m.goalAt = at; m.goalHop = 1; m.goalLegacy = true;
+  m.goal = oneLine(lp.goal || lp.started, GOAL_CHARS); m.goalAt = at; m.goalHop = 1; m.goalLegacy = true;
   // an old packet's "standing instructions" came from a looser reader (pasted replies, cut sentences): only the ones
   // that read as directives today are kept, never a fallback "must"
   const rules = lp.rules.flatMap((r) => { const kind = pinKind(r); return kind ? [{ text: oneLine(r, PIN_CHARS), kind }] : []; });
@@ -227,8 +234,8 @@ export function computeMission(p: RepoPaths, a: MissionInput): MissionRecord {
     }
     if (said.length <= 120 && DONE.test(said)) { m.status = "done"; m.doneAt = ts; continue; }
     const named = GOAL.exec(words)?.[1];
-    if (named) { m.goal = oneLine(scrub(named).text, 600); m.goalAt = ts; m.goalHop = hop; }
-    else if ((!m.goal && lead.replace(NEW_TASK, "").trim().length >= 15) || (m.goalLegacy && lead.length >= 60 && !/^\/?cortex-resume\b/i.test(lead))) { m.goal = oneLine(scrub(lead.replace(NEW_TASK, "").trim()).text, 600); m.goalAt = ts; m.goalHop = hop; m.goalLegacy = undefined; }
+    if (named) { m.goal = oneLine(scrub(named).text, GOAL_CHARS); m.goalAt = ts; m.goalHop = hop; supersede(m, m.goal, ts, hop); }
+    else if ((!m.goal && lead.replace(NEW_TASK, "").trim().length >= 15) || (m.goalLegacy && lead.length >= 60 && !/^\/?cortex-resume\b/i.test(lead))) { m.goal = oneLine(scrub(lead.replace(NEW_TASK, "").trim()).text, GOAL_CHARS); m.goalAt = ts; m.goalHop = hop; m.goalLegacy = undefined; }
     for (const pin of [...pinsOf(words), ...pasted]) addPin(m, { ...pin, at: ts, session: a.session, hop });
     if (REJECT.test(said.slice(0, 400))) {
       const before = [...eps].reverse().find((e) => e.end <= ts);
@@ -236,8 +243,17 @@ export function computeMission(p: RepoPaths, a: MissionInput): MissionRecord {
       addRejected(m, { what: oneLine(scrub(what || "(the approach in the reply before)").text, 220), why: oneLine(scrub(words).text, 320), at: ts, session: a.session, hop });
     }
   }
-  if (a.goal && m.status === "active") { m.goal = oneLine(scrub(a.goal).text, 600); m.goalLegacy = undefined; m.goalHop = hop; m.goalAt = m.goalAt || nowIso; }
-  for (const d of a.decisions ?? []) addPin(m, { text: oneLine(d, PIN_CHARS), kind: "decision", at: nowIso, session: a.session, hop });
+  if (a.goal && m.status === "active") {
+    const g = oneLine(scrub(a.goal).text, GOAL_CHARS);
+    if (g !== m.goal) m.goalAt = nowIso; // a new north star is dated now, not by the goal it replaced
+    m.goal = g; m.goalLegacy = undefined; m.goalHop = hop; m.goalAt = m.goalAt || nowIso; supersede(m, m.goal, nowIso, hop);
+  }
+  else if (m.goal && m.goalAt && !m.goalLegacy && m.status === "active") supersede(m, m.goal, m.goalAt, m.goalHop || 1); // every rebuild: pins older than the north star
+  for (const d of a.decisions ?? []) {
+    addPin(m, { text: oneLine(d, PIN_CHARS), kind: "decision", at: nowIso, session: a.session, hop });
+    const own = m.pins.find((x) => pinKey(x.text) === pinKey(oneLine(d, PIN_CHARS)));
+    if (own) supersede(m, own.text, own.at, own.hop, own); // a newer decision replaces the older one it updates
+  }
   // a mission this chat closed or replaced is kept, once, for the record (never read back into a contract)
   const seen = new Set(stored?.archivedIds ?? []);
   const gone = archived.filter((x) => !seen.has(x.id));

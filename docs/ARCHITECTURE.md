@@ -12,7 +12,7 @@ flowchart LR
         U1["You: the task,<br/>'use the stageshow skill',<br/>'never merge before review'"]
         R1["You reject an approach"]
     end
-    subgraph V["Stop hook (≈39 ms, 0 tokens)"]
+    subgraph V["Stop hook (≈40 ms, 0 tokens)"]
         M["Mission contract<br/>north star · binding rules (verbatim)<br/>rejected approaches · lineage"]
         S["STATE.md<br/>contract + goal + next action + verify<br/>+ trail + last exchanges word for word"]
     end
@@ -86,7 +86,7 @@ sequenceDiagram
     Note over Claude: your prompt goes out unchanged:<br/>0 tokens added by Cortex
     Claude-->>You: reply
     Claude->>Hook: Stop (reply ended)
-    Hook->>Hook: journal, contract, STATE.md (≈39 ms median, no model)
+    Hook->>Hook: journal, contract, STATE.md (≈40 ms median, no model)
     Hook-->>Claude: exit 0 (always)
     Panel->>Panel: live numbers from Claude Code itself (in-process)
     You->>Claude: /cortex-resume (only when you ask)
@@ -95,8 +95,8 @@ sequenceDiagram
 
 - **0 tokens injected into normal chats** by default. The handoff is pull-only: it reaches a chat only when you run `/cortex-resume` or press Resume. The old one-line "a handoff exists" note is opt-in (`kc prefs set startNotice on`).
 - Cortex's skills (`/cortex-resume`, `/cortex-handoff`, `/cortex-init`, `/kc`) are things you start yourself, so they are marked `disable-model-invocation`: their descriptions stay out of Claude's context. Measured with `/context`: about 250 tokens per chat before v4.5, 0 after.
-- **Stop hook:** about 39 ms median, 56.7 ms at p95 (bar 60) (whole process, Apple M4). It always exits 0 and logs errors to `.vault/private/errors.log`.
-- **Panel refresh:** about 64 ms median (pre-built status file, git answers reused until git's own files change).
+- **Stop hook:** about 40 ms median, 55.6 ms at p95 (bar 60) (whole process, Apple M4). It always exits 0 and logs errors to `.vault/private/errors.log`.
+- **Panel refresh:** about 62 ms median (pre-built status file, git answers reused until git's own files change).
 
 ## Where things live
 

@@ -43,11 +43,18 @@ export function readHandoff(p: RepoPaths): HandoffNote | null {
   try { return JSON.parse(readFileSync(handoffPath(p), "utf8")) as HandoffNote; } catch { return null; }
 }
 
+/** What a handoff note keeps of each decision, and how many (kc handoff warns past either). */
+export const DECISION_CHARS = 300, MAX_DECISIONS = 8;
+
+/** Save the note for a chat. A field left out keeps what that chat's note already had (`--next` alone never wipes the
+ *  goal or decisions); new decisions are added to the old ones. A note saved for another chat starts fresh. */
 export function writeHandoff(p: RepoPaths, note: Omit<HandoffNote, "ts">, now = new Date()): HandoffNote {
+  const prev = readHandoff(p), was = prev && prev.session === note.session ? prev : null;
+  const decisions = [...new Set([...(was?.decisions ?? []), ...(note.decisions ?? []).map((d) => scrub(d).text.slice(0, DECISION_CHARS))])];
   const full: HandoffNote = {
-    goal: note.goal ? scrub(note.goal).text : undefined,
-    next: note.next ? scrub(note.next).text : undefined,
-    decisions: note.decisions?.length ? note.decisions.map((d) => scrub(d).text.slice(0, 300)).slice(0, 8) : undefined,
+    goal: note.goal ? scrub(note.goal).text : was?.goal,
+    next: note.next ? scrub(note.next).text : was?.next,
+    decisions: decisions.length ? decisions.slice(-MAX_DECISIONS) : undefined,
     session: note.session,
     ts: now.toISOString(),
   };

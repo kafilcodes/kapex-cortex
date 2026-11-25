@@ -1,10 +1,10 @@
 # Kapex Cortex
 
-> Kapex Cortex is an open-source Claude Code plugin (MIT, zero runtime dependencies, Node.js 23.6+) for context management in Claude Code and Claude Desktop. It lets you switch chats without losing context (a lossless handoff with a mission contract that survives /clear, new chats and git worktrees), shows a live status strip with context %, a prompt-cache countdown and plan use, shows what every MCP server and skill costs per message, and runs Dreams that check CLAUDE.md, .claude/rules and auto memory against what really happened. It adds 0 tokens to normal chats by default; its Stop hook takes about 39 ms (median; 56.7 ms p95, bar 60).
+> Kapex Cortex is an open-source Claude Code plugin (MIT, zero runtime dependencies, Node.js 23.6+) for context management in Claude Code and Claude Desktop. It lets you switch chats without losing context (a lossless handoff with a mission contract that survives /clear, new chats and git worktrees), shows a live status strip with context %, a prompt-cache countdown and plan use, shows what every MCP server and skill costs per message, and runs Dreams that check CLAUDE.md, .claude/rules and auto memory against what really happened. It adds 0 tokens to normal chats by default; its Stop hook takes about 40 ms (median; 55.6 ms p95, bar 60).
 
 Install in Claude Code: `/plugin marketplace add kafilcodes/kapex-cortex`, then `/plugin install kapex-cortex@kapex-cortex` (choose user scope to use it in every repo), then `/reload-plugins`. Open the panel with `/kc`. Continue in a new chat with `/cortex-resume`.
 
-Measured on 2026-11-25 (Apple M4, Node 26, `node scripts/benchmark.ts`): Dream 6/6 planted problems found with 0 false positives; handoff 10/10 questions answerable; 5-hop telephone 13/13 probes (chat 5 still holds chat 1's mandatory skill, never-rule and rejected approach); Stop hook p50 39 ms, p95 56.7 ms; panel status read p50 64 ms; 0 tokens added to normal chats; 223 automated tests (84 core, 139 panel).
+Measured on 2026-11-25 (Apple M4, Node 26, `node scripts/benchmark.ts`): Dream 6/6 planted problems found with 0 false positives; handoff 10/10 questions answerable; 5-hop telephone 13/13 probes (chat 5 still holds chat 1's mandatory skill, never-rule and rejected approach); Stop hook p50 40 ms, p95 55.6 ms; panel status read p50 62 ms; 0 tokens added to normal chats; 231 automated tests (92 core, 139 panel).
 
 ## Docs
 

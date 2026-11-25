@@ -1,15 +1,15 @@
-# STATE — invoices · main · updated 2026-11-25T15:23:12.069Z · from claude-code · session bench-chat-b
+# STATE — invoices · main · updated 2026-11-25T16:23:00.167Z · from claude-code · session bench-chat-b
 
 > Handoff packet written by Kapex Cortex at the end of every turn. The **Mission contract** carries over from chat to chat: its goal, the user's binding rules and rejected approaches hold until the user says the mission is done. Below it, the rolling part: this chat's goal and next step, the trail of earlier turns, and the last exchanges word for word. The project's rules load by themselves (CLAUDE.md, .claude/rules, auto memory): read this, then continue from **Next action**.
 
 ## Mission contract (binding across chats until the user says it is done or starts a new task)
-<!-- cortex-lineage: handoff=h_01M89MVF0PE4EW054A0CWDP3D3 parent=h_01M89MVDX36GGQKD5HNSF5TZ5X parent_session=bench-chat-a hop=2 origin=bench-chat-a head=7a88ddf618e5f5a0870131ef376e7f7d1ba8bc76 mission=m_01M89MVDX43ADMKDK8RMKRMBD1 status=active -->
-**North star:** build the invoice parser CLI with currency support. Read the repo first. _(set in chat 1, 2026-11-25 11:25)_
-**Chain:** chat 2 of this task (it began in “Invoice parser”; this chat continues “Invoice parser”). **Where:** branch `main` · head `7a88ddf618`.
+<!-- cortex-lineage: handoff=h_01M89R8YYPCRM1XKWK7J5P6KBE parent=h_01M89R8XYN0DQFYAYGKSPXRAQQ parent_session=bench-chat-a hop=2 origin=bench-chat-a head=02261f8967158dd5a9bd7b3aeeebd1c0515cfda4 mission=m_01M89R8XYPEWF2H3BE7THGNAQE status=active -->
+**North star:** build the invoice parser CLI with currency support. Read the repo first. _(set in chat 1, 2026-11-25 12:24)_
+**Chain:** chat 2 of this task (it began in “Invoice parser”; this chat continues “Invoice parser”). **Where:** branch `main` · head `02261f8967`.
 **Binding rules (the user's own words; follow them exactly):**
-- [never] “Decision: we store money as integer cents, never floats.” _(chat 1, 2026-11-25 11:32)_
-- [must] “Always run npm test before committing.” _(chat 1, 2026-11-25 11:32)_
-- [decision] “Keep zero runtime dependencies” _(chat 2, this one, 2026-11-25 15:23)_
+- [never] “Decision: we store money as integer cents, never floats.” _(chat 1, 2026-11-25 12:31)_
+- [must] “Always run npm test before committing.” _(chat 1, 2026-11-25 12:31)_
+- [decision] “Keep zero runtime dependencies” _(chat 2, this one, 2026-11-25 16:23)_
 
 ## Goal
 build the invoice parser CLI with currency support. Read the repo first.
@@ -23,7 +23,7 @@ add CSV export in src/export.ts with a test.
 - `npm run test`
 
 ## Pinned for this session (kept whatever the last turns were about)
-**Started with** (turn 1, 13:59): Docs pass 1: explain the totals in README.
+**Started with** (turn 1, 14:58): Docs pass 1: explain the totals in README.
 
 **Continued from “Invoice parser”** (session bench-ch); what it got done:
 - Totals are off by one cent on 3-line invoices. Fix it. → Fixed the rounding bug in totals: src/totals.ts summed floats; it now sums integer cents. _(files: src/totals.ts; a failing check fixed)_
@@ -41,20 +41,20 @@ README.md | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 ```
 
-WIP snapshot: `refs/cortex/wip/bench-chat-b (56c8c10ba2)` (restore with `git stash apply <sha>`).
+WIP snapshot: `refs/cortex/wip/bench-chat-b (73e4cf0954)` (restore with `git stash apply <sha>`).
 
 ## Last failure
 None recorded.
 
 ## Session trail (earlier turns, oldest first; the newest are below, word for word)
-- T1 13:59 · Docs pass 1: explain the totals in README.
-- T2 14:04 · Docs pass 2: explain the totals in README.
-- T3 14:09 · Docs pass 3: explain the totals in README.
-- T4 14:14 · Docs pass 4: explain the totals in README.
-- T5 14:19 · Docs pass 5: explain the totals in README.
-- T6 14:24 · Docs pass 6: explain the totals in README.
-- T7 14:29 · Docs pass 7: explain the totals in README.
-**Commits this session** (newest first): `7a88ddf docs: totals` · `0b28589 totals: fix the rounding bug (integer cents)` · `68517b2 parse: cleanups` · `e03f23a parse: currency codes` · `c0f656e scaffold the invoice CLI`
+- T1 14:58 · Docs pass 1: explain the totals in README.
+- T2 15:03 · Docs pass 2: explain the totals in README.
+- T3 15:08 · Docs pass 3: explain the totals in README.
+- T4 15:13 · Docs pass 4: explain the totals in README.
+- T5 15:18 · Docs pass 5: explain the totals in README.
+- T6 15:23 · Docs pass 6: explain the totals in README.
+- T7 15:28 · Docs pass 7: explain the totals in README.
+**Commits this session** (newest first): `02261f8 docs: totals` · `823eb4f totals: fix the rounding bug (integer cents)` · `96cefb9 parse: cleanups` · `34b8e3d parse: currency codes` · `e1296f8 scaffold the invoice CLI`
 
 ## Active files
 Edited in the last turns: `<project>/README.md`
@@ -71,19 +71,19 @@ README.md | 2 +-
 
 ## Where we left off (the last exchanges, oldest first; continue from the newest)
 
-### You (2026-11-25 14:34)
+### You (2026-11-25 15:33)
 Docs pass 8: explain the totals in README.
 
 ### Assistant
 Docs pass 8 done.
 
-### You (2026-11-25 14:39)
+### You (2026-11-25 15:38)
 Docs pass 9: explain the totals in README.
 
 ### Assistant
 Docs pass 9 done.
 
-### You (2026-11-25 14:44)
+### You (2026-11-25 15:43)
 Docs pass 10: explain the totals in README.
 
 ### Assistant

@@ -423,6 +423,11 @@ import { dirname as dirname6, join as join9 } from "node:path";
 
 // src/core/words.ts
 var STOP = new Set("a an the and or of to in on for with is are be this that it as at by from into not no do don't dont never always must use using only every each all any e.g. i.e. e.g i.e etc please don".split(" "));
+var SHORT = { env: "environment", envs: "environment", var: "variable", vars: "variable", repo: "repository", repos: "repository", config: "configuration", deps: "dependency", dep: "dependency", docs: "documentation", prefs: "preference", msg: "message", msgs: "message", dir: "directory", dirs: "directory" };
+var stem = (w) => w.length <= 4 ? w : w.replace(/ies$/, "y").replace(/(ing|ed|es|s)$/, "");
+function contentWords(s) {
+  return s.toLowerCase().replace(/[`*_"'()[\]{}<>]/g, " ").split(/[^a-z0-9./+-]+/).map((w) => w.replace(/[.,;:!?]+$/, "")).map((w) => SHORT[w] ?? w).filter((w) => w.length > 2 && !STOP.has(w)).map(stem);
+}
 
 // src/core/judge.ts
 var BRIEF = /^\s*Background \(from the session that started this one\)/;
@@ -441,6 +446,22 @@ function segments(text) {
   }
   if (last < clean2.length) out.push({ text: clean2.slice(last), source: "you" });
   return out.filter((s) => s.text.trim());
+}
+var NEG = /\b(never|don'?t|do not|not|no|avoid|stop|without|nahi|mat)\b/i;
+var REPLACE = /\b(instead of|no longer|not anymore|anymore|switch(?:ed)? to|replace[sd]?|raised to|lowered to|changed to|increased to|reduced to|previous(?:ly)?|superseded)\b/i;
+function findReplaced(s, active) {
+  const a = new Set(contentWords(s));
+  if (!a.size) return null;
+  let best = null;
+  for (const r of active) {
+    const b = new Set(contentWords(r.text));
+    if (!b.size) continue;
+    const shared = [...a].filter((w) => b.has(w)).length;
+    const overlap = shared / Math.min(a.size, b.size);
+    const flip = NEG.test(s) !== NEG.test(r.text) || REPLACE.test(s);
+    if (flip && overlap >= 0.35 && (!best || overlap > best.overlap)) best = { id: r.id, overlap, flip };
+  }
+  return best ? { id: best.id, sure: best.overlap >= 0.5 } : null;
 }
 
 // src/core/turns.ts
@@ -1556,6 +1577,46 @@ function verifyCommands(root, vaultRoot = root) {
 // src/core/mission.ts
 import { appendFileSync as appendFileSync2, readFileSync as readFileSync14 } from "node:fs";
 import { join as join16 } from "node:path";
+
+// src/core/supersede.ts
+var MAX_SUPERSEDED = 6;
+var PLACE_RULE = /\b(?:work|working|stay|commit|build)\s+only\s+(?:in|on|from)\b|\bonly\s+(?:work|commit|build)\s+(?:in|on|from)\b|\b(?:work|commit)\s+(?:in|on)\s+[^.;]{0,80}?\bonly\b/i;
+var BRANCHISH = /^(?:main|master|develop|trunk)$|[\d/-]/;
+function places(s) {
+  const out = /* @__PURE__ */ new Set();
+  for (const m of s.matchAll(/\b(?:on|branch)\s+(?:branch\s+)?`?([A-Za-z0-9][\w./-]*\w)`?/gi)) {
+    const x = m[1].toLowerCase();
+    if (BRANCHISH.test(x)) out.add(x);
+  }
+  for (const m of s.matchAll(/\bworktree\s+`?([.\w][\w./-]*\w)`?/gi)) out.add(m[1].toLowerCase());
+  return out;
+}
+var clip = (s) => {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > 200 ? `${t.slice(0, 199)}\u2026` : t;
+};
+function supersede(m, s, at, hop, own) {
+  const next = places(s);
+  for (const p of [...m.pins]) {
+    if (p === own || p.hop > hop || p.hop === hop && p.at > at) continue;
+    let replaced = false;
+    if (next.size && PLACE_RULE.test(p.text)) {
+      const old = places(p.text);
+      replaced = old.size > 0 && ![...next].some((x) => old.has(x));
+    }
+    if (!replaced && own?.kind === "decision" && p.kind === "decision") replaced = !!findReplaced(s, [{ id: "p", text: p.text }])?.sure;
+    if (!replaced) continue;
+    if (p.kind === "decision") {
+      m.pins.splice(m.pins.indexOf(p), 1);
+      const list = m.superseded ??= [];
+      if (!list.some((x) => x.text === p.text)) list.push({ text: p.text, kind: p.kind, by: clip(s), at });
+      list.splice(0, Math.max(0, list.length - MAX_SUPERSEDED));
+    } else p.conflict = clip(s);
+  }
+}
+
+// src/core/mission.ts
+var GOAL_CHARS = 600;
 var MISSION_REV = 5;
 var MAX_PINS = 16;
 var MAX_REJECTED = 10;
@@ -1651,7 +1712,7 @@ function addRejected(m, r) {
 }
 function legacyMission(lp, at) {
   const m = fresh();
-  m.goal = oneLine2(lp.goal || lp.started, 600);
+  m.goal = oneLine2(lp.goal || lp.started, GOAL_CHARS);
   m.goalAt = at;
   m.goalHop = 1;
   m.goalLegacy = true;
@@ -1714,11 +1775,12 @@ function computeMission(p, a) {
     }
     const named = GOAL.exec(words)?.[1];
     if (named) {
-      m.goal = oneLine2(scrub(named).text, 600);
+      m.goal = oneLine2(scrub(named).text, GOAL_CHARS);
       m.goalAt = ts;
       m.goalHop = hop;
+      supersede(m, m.goal, ts, hop);
     } else if (!m.goal && lead.replace(NEW_TASK, "").trim().length >= 15 || m.goalLegacy && lead.length >= 60 && !/^\/?cortex-resume\b/i.test(lead)) {
-      m.goal = oneLine2(scrub(lead.replace(NEW_TASK, "").trim()).text, 600);
+      m.goal = oneLine2(scrub(lead.replace(NEW_TASK, "").trim()).text, GOAL_CHARS);
       m.goalAt = ts;
       m.goalHop = hop;
       m.goalLegacy = void 0;
@@ -1731,12 +1793,19 @@ function computeMission(p, a) {
     }
   }
   if (a.goal && m.status === "active") {
-    m.goal = oneLine2(scrub(a.goal).text, 600);
+    const g = oneLine2(scrub(a.goal).text, GOAL_CHARS);
+    if (g !== m.goal) m.goalAt = nowIso;
+    m.goal = g;
     m.goalLegacy = void 0;
     m.goalHop = hop;
     m.goalAt = m.goalAt || nowIso;
+    supersede(m, m.goal, nowIso, hop);
+  } else if (m.goal && m.goalAt && !m.goalLegacy && m.status === "active") supersede(m, m.goal, m.goalAt, m.goalHop || 1);
+  for (const d of a.decisions ?? []) {
+    addPin(m, { text: oneLine2(d, PIN_CHARS), kind: "decision", at: nowIso, session: a.session, hop });
+    const own = m.pins.find((x) => pinKey(x.text) === pinKey(oneLine2(d, PIN_CHARS)));
+    if (own) supersede(m, own.text, own.at, own.hop, own);
   }
-  for (const d of a.decisions ?? []) addPin(m, { text: oneLine2(d, PIN_CHARS), kind: "decision", at: nowIso, session: a.session, hop });
   const seen = new Set(stored?.archivedIds ?? []);
   const gone = archived.filter((x) => !seen.has(x.id));
   if (gone.length) {
@@ -1783,7 +1852,9 @@ function renderMission(rec, o) {
     `**North star:** ${m.goal ? oneLine3(m.goal, goalMax) : "_not stated yet: ask the user_"} ${m.goalAt ? `_(set in chat ${m.goalHop || 1}, ${day(m.goalAt)})_` : ""}`.trim(),
     `**Chain:** ${origin}.${where ? ` **Where:** ${where}.` : ""}`,
     pins.length ? `**Binding rules (the user's own words; follow them exactly):**
-${pins.map((x) => `- [${LABEL[x.kind]}] \u201C${oneLine3(x.text, pinMax)}\u201D ${tag(x)}`).join("\n")}` : "",
+${pins.map((x) => `- [${LABEL[x.kind]}] \u201C${oneLine3(x.text, pinMax)}\u201D ${tag(x)}${x.conflict ? ` **\u26A0 A newer goal or decision contradicts this:** \u201C${oneLine3(x.conflict, 160)}\u201D. Ask the user which holds.` : ""}`).join("\n")}` : "",
+    m.superseded?.length ? `**Superseded (no longer binding; a newer goal or decision replaced them):**
+${m.superseded.slice(-3).map((x) => `- [${LABEL[x.kind]}] ~~\u201C${oneLine3(x.text, Math.min(pinMax, 160))}\u201D~~ \u2192 replaced by \u201C${oneLine3(x.by, 120)}\u201D _(${day(x.at)})_`).join("\n")}` : "",
     m.rejected.length ? `**Rejected (never propose or repeat these):**
 ${m.rejected.map((x) => `- ${oneLine3(x.what, rejMax)} \u2192 the user: \u201C${oneLine3(x.why, rejMax + 60)}\u201D ${tag(x)}`).join("\n")}` : "",
     ""
@@ -2046,7 +2117,7 @@ function firstHeading(root) {
   }
   return "";
 }
-var clip = (s, n) => s.length > n ? s.slice(0, n) + " [\u2026]" : s;
+var clip2 = (s, n) => s.length > n ? s.slice(0, n) + " [\u2026]" : s;
 var ago = (ms) => {
   const m = Math.max(0, Math.round(ms / 6e4));
   if (m < 60) return `${m} min`;
@@ -2103,13 +2174,13 @@ function renderStateFull(p, inp, gi) {
     "",
     tiers.pinned,
     "## Working tree",
-    gi ? gi.diffStat ? "```\n" + clip(gi.diffStat, 1500) + "\n```" : "Clean (no tracked changes)." : "Not a git repository.",
+    gi ? gi.diffStat ? "```\n" + clip2(gi.diffStat, 1500) + "\n```" : "Clean (no tracked changes)." : "Not a git repository.",
     gi?.op ? `**Careful:** ${gi.op} in \`${gi.worktree || "."}\`. Finish or abort it before other git work.` : "",
     gi && gi.untracked ? `${gi.untracked} untracked file(s) (not in the WIP snapshot).` : "",
     gi?.wipRef ? `WIP snapshot: \`${gi.wipRef}\` (restore with \`git stash apply <sha>\`).` : "",
     "",
     "## Last failure",
-    inp.lastFailure ? "```\n" + clip(scrub(inp.lastFailure).text, 1200) + "\n```" : "None recorded.",
+    inp.lastFailure ? "```\n" + clip2(scrub(inp.lastFailure).text, 1200) + "\n```" : "None recorded.",
     "",
     tiers.trail,
     ...workingContext(p, inp, gi)
@@ -2250,8 +2321,8 @@ function exchangesSection(p, inp, asst, user, room) {
   const otherRoom = ex.length > 1 ? Math.floor((room - head2.length - newestRoom) / (ex.length - 1)) : 0;
   return head2 + ex.map((x, i) => {
     const r = i === ex.length - 1 ? newestRoom : otherRoom;
-    const u = clip(x.user, Math.max(200, Math.floor(r * 0.25))) || "_(no message of its own: a command such as /cortex-resume)_";
-    const a = lean ? "" : clip(x.assistant, Math.max(300, r - u.length - 60));
+    const u = clip2(x.user, Math.max(200, Math.floor(r * 0.25))) || "_(no message of its own: a command such as /cortex-resume)_";
+    const a = lean ? "" : clip2(x.assistant, Math.max(300, r - u.length - 60));
     return `
 ### You (${x.ts.slice(0, 16).replace("T", " ")})
 ${u}

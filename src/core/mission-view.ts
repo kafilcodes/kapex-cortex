@@ -32,7 +32,8 @@ export function renderMission(rec: MissionRecord, o: { chat: (session: string) =
     m.status === "done" ? `_The user marked this mission done (${day(m.doneAt ?? "")}). Its rules no longer bind; ask what is next._` : "",
     `**North star:** ${m.goal ? oneLine(m.goal, goalMax) : "_not stated yet: ask the user_"} ${m.goalAt ? `_(set in chat ${m.goalHop || 1}, ${day(m.goalAt)})_` : ""}`.trim(),
     `**Chain:** ${origin}.${where ? ` **Where:** ${where}.` : ""}`,
-    pins.length ? `**Binding rules (the user's own words; follow them exactly):**\n${pins.map((x) => `- [${LABEL[x.kind]}] “${oneLine(x.text, pinMax)}” ${tag(x)}`).join("\n")}` : "",
+    pins.length ? `**Binding rules (the user's own words; follow them exactly):**\n${pins.map((x) => `- [${LABEL[x.kind]}] “${oneLine(x.text, pinMax)}” ${tag(x)}${x.conflict ? ` **⚠ A newer goal or decision contradicts this:** “${oneLine(x.conflict, 160)}”. Ask the user which holds.` : ""}`).join("\n")}` : "",
+    m.superseded?.length ? `**Superseded (no longer binding; a newer goal or decision replaced them):**\n${m.superseded.slice(-3).map((x) => `- [${LABEL[x.kind]}] ~~“${oneLine(x.text, Math.min(pinMax, 160))}”~~ → replaced by “${oneLine(x.by, 120)}” _(${day(x.at)})_`).join("\n")}` : "",
     m.rejected.length ? `**Rejected (never propose or repeat these):**\n${m.rejected.map((x) => `- ${oneLine(x.what, rejMax)} → the user: “${oneLine(x.why, rejMax + 60)}” ${tag(x)}`).join("\n")}` : "",
     "",
   ].filter((s, i, a) => s !== "" || i === a.length - 1).join("\n");

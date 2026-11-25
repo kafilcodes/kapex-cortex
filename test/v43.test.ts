@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { computeHistory } from "../src/core/history.ts";
@@ -68,6 +68,10 @@ test("v4.3 review fixes: no check run is not a check; quoted notes and the cut m
   writeFileSync(join(p.states, "x.md"), note("x").replace("`npm run check` passed, 2 min ago.", "_No test or check run in the last turns._").replace("- no new deps", "- no new deps\n- […]") + quoted);
   writeFileSync(join(p.states, "y.md"), note("y").replace("Ship the parser", "Other goal"));
   writeFileSync(join(p.states, "y2.md"), note("y2").replace("Ship the parser", "Other goal"));
+  // distinct, ordered modification times (x oldest): files written in the same instant tie on a coarse clock (Windows
+  // CI), and a tie can sort x between y and y2 so they are no longer neighbours to merge
+  const base = Date.now() - 600_000;
+  [["x.md", 0], ["y.md", 60_000], ["y2.md", 120_000]].forEach(([f, d]) => { const t = new Date(base + (d as number)); utimesSync(join(p.states, f as string), t, t); });
   writeFileSync(join(p.priv, "carry.json"), JSON.stringify({ y2: "x", z: "y" }));
   writeFileSync(join(p.priv, "episodes.jsonl"), [
     JSON.stringify({ id: "1", session: "x", end: "2026-11-17T10:05:00Z", ask: "a", tools: {}, files: ["/a", 5], commands: [], tests: {} }),
