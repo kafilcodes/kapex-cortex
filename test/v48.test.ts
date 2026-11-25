@@ -103,8 +103,9 @@ test("dream: in a git worktree inside the main checkout, the main copy of CLAUDE
   writeFileSync(join(wt, "CLAUDE.md"), md);
   assert.equal(mainCheckout(wt), main);
   assert.equal(mainCheckout(main), null, "a plain checkout has a .git folder");
-  const was = process.env.HOME;
+  const was = process.env.HOME, wasProfile = process.env.USERPROFILE;
   process.env.HOME = home;
+  process.env.USERPROFILE = home; // Windows: os.homedir() reads USERPROFILE, not HOME
   try {
     const files = nativeFiles(wt);
     const twin = files.find((f) => f.path === join(main, "CLAUDE.md"));
@@ -118,5 +119,9 @@ test("dream: in a git worktree inside the main checkout, the main copy of CLAUDE
     const ents = files.flatMap((f) => entries(f.path, f.label, readFileSync(f.path, "utf8")));
     const dupes = mechanicalChecks(wt, files, ents, []).filter((f) => f.kind === "duplicate");
     assert.deepEqual(dupes, [], "no line of the branch's CLAUDE.md is a 'repeat' of its own main copy");
-  } finally { process.env.HOME = was; }
+  } finally {
+    // an unset variable stays unset (assigning undefined would store the string "undefined")
+    if (was === undefined) delete process.env.HOME; else process.env.HOME = was;
+    if (wasProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = wasProfile;
+  }
 });

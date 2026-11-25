@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { autoMemory, claudeHome } from "./home.ts";
 
 /**
@@ -99,7 +99,9 @@ export function nativeFiles(root: string): NativeFile[] {
   // folders above the project, up to (and including) your home folder
   const home = resolve(homedir());
   const parents: string[] = [];
-  for (let d = dirname(resolve(root)); d !== dirname(d) && (d + "/").startsWith(home + "/"); d = dirname(d)) parents.unshift(d);
+  // "inside home" by path.relative, not a "/" prefix: Windows paths use "\\" (the prefix test never matched there)
+  const underHome = (d: string) => { const r = relative(home, d); return r === "" || (!r.startsWith("..") && !isAbsolute(r)); }; // home itself included
+  for (let d = dirname(resolve(root)); d !== dirname(d) && underHome(d); d = dirname(d)) parents.unshift(d);
   const main = mainCheckout(root);
   for (const d of parents) for (const n of ["CLAUDE.md", "CLAUDE.local.md"]) {
     const f = file(join(d, n), `${relative(home, d) || "~"}/${n}`.replace(/\\/g, "/"), "parent", false);

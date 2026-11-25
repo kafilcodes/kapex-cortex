@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { atomicWriteIfChanged } from "../util/atomic.ts";
 import type { RepoPaths } from "./paths.ts";
 import { gitDirOf, headCommit } from "./worktree.ts";
@@ -14,7 +14,7 @@ export function gitKey(root: string, extra: string[] = []): string {
   if (!gd) return "";
   const m = (f: string) => { try { return String(statSync(join(gd, f)).mtimeMs); } catch { return "-"; } };
   let common = gd;
-  try { const c = readFileSync(join(gd, "commondir"), "utf8").trim(); common = c.startsWith("/") ? c : join(gd, c); } catch { /* main checkout */ }
+  try { const c = readFileSync(join(gd, "commondir"), "utf8").trim(); common = isAbsolute(c) ? c : join(gd, c); } catch { /* main checkout */ } // isAbsolute: Windows "C:/…" too
   const cm = (f: string) => { try { return String(statSync(join(common, f)).mtimeMs); } catch { return "-"; } };
   // a push or fetch rewrites the remote branch's ref file in place (its folder's time doesn't change): that file's own
   let branch = "";

@@ -131,7 +131,7 @@ import { spawnSync as spawnSync5 } from "node:child_process";
 
 // src/core/gitcache.ts
 import { readFileSync as readFileSync3, statSync as statSync3 } from "node:fs";
-import { join as join4 } from "node:path";
+import { isAbsolute as isAbsolute2, join as join4 } from "node:path";
 
 // src/util/atomic.ts
 import { createHash, randomBytes } from "node:crypto";
@@ -225,7 +225,7 @@ function gitKey(root, extra = []) {
   let common = gd;
   try {
     const c = readFileSync3(join4(gd, "commondir"), "utf8").trim();
-    common = c.startsWith("/") ? c : join4(gd, c);
+    common = isAbsolute2(c) ? c : join4(gd, c);
   } catch {
   }
   const cm = (f) => {
@@ -299,7 +299,7 @@ import { basename as basename4, join as join13, resolve as resolve5 } from "node
 import { spawnSync } from "node:child_process";
 import { readFileSync as readFileSync5 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname as dirname4, isAbsolute as isAbsolute2, join as join6, resolve as resolve3 } from "node:path";
+import { dirname as dirname4, isAbsolute as isAbsolute3, join as join6, resolve as resolve3 } from "node:path";
 var cortexHome = () => process.env.CORTEX_HOME ?? join6(homedir(), ".cortex");
 var claudeHome = () => process.env.CORTEX_CLAUDE_HOME ?? process.env.CLAUDE_CONFIG_DIR ?? join6(homedir(), ".claude");
 var projectSlug = (dir2) => resolve3(dir2).replace(/[^A-Za-z0-9]/g, "-");
@@ -339,14 +339,14 @@ function claudeSettings(root) {
 function autoMemory(root) {
   const s = claudeSettings(root);
   const custom = s.autoMemoryDirectory;
-  return { dir: custom ? isAbsolute2(custom) ? custom : resolve3(root, custom) : join6(claudeProjectDir(root), "memory"), enabled: s.autoMemoryEnabled };
+  return { dir: custom ? isAbsolute3(custom) ? custom : resolve3(root, custom) : join6(claudeProjectDir(root), "memory"), enabled: s.autoMemoryEnabled };
 }
 
 // src/core/words.ts
 var STOP = new Set("a an the and or of to in on for with is are be this that it as at by from into not no do don't dont never always must use using only every each all any e.g. i.e. e.g i.e etc please don".split(" "));
 
 // src/core/state.ts
-import { basename as basename3, isAbsolute as isAbsolute3, join as join11, relative as relative2 } from "node:path";
+import { basename as basename3, isAbsolute as isAbsolute4, join as join11, relative as relative2 } from "node:path";
 
 // src/core/episodes.ts
 import { appendFileSync, existsSync as existsSync5, readFileSync as readFileSync6, rmSync, statSync as statSync5, writeFileSync } from "node:fs";
@@ -618,7 +618,7 @@ var TAIL = 8 * 1024 * 1024;
 // src/core/native.ts
 import { existsSync as existsSync7, readdirSync as readdirSync4, readFileSync as readFileSync10, realpathSync as realpathSync2, statSync as statSync7 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { dirname as dirname5, join as join12, relative as relative3, resolve as resolve4 } from "node:path";
+import { dirname as dirname5, isAbsolute as isAbsolute5, join as join12, relative as relative3, resolve as resolve4 } from "node:path";
 function mainCheckout2(root) {
   try {
     const m = /^gitdir:\s*(.+?)[\\/]\.git[\\/]worktrees[\\/][^\\/\r\n]+\s*$/m.exec(readFileSync10(join12(root, ".git"), "utf8"));
@@ -686,7 +686,11 @@ function nativeFiles(root) {
   for (const f of walkMd(join12(ch, "rules"))) out.push(file2(f, `~/.claude/rules/${relative3(join12(ch, "rules"), f).replace(/\\/g, "/")}`, "rules", false));
   const home = resolve4(homedir2());
   const parents = [];
-  for (let d = dirname5(resolve4(root)); d !== dirname5(d) && (d + "/").startsWith(home + "/"); d = dirname5(d)) parents.unshift(d);
+  const underHome = (d) => {
+    const r2 = relative3(home, d);
+    return r2 === "" || !r2.startsWith("..") && !isAbsolute5(r2);
+  };
+  for (let d = dirname5(resolve4(root)); d !== dirname5(d) && underHome(d); d = dirname5(d)) parents.unshift(d);
   const main = mainCheckout2(root);
   for (const d of parents) for (const n of ["CLAUDE.md", "CLAUDE.local.md"]) {
     const f = file2(join12(d, n), `${relative3(home, d) || "~"}/${n}`.replace(/\\/g, "/"), "parent", false);
