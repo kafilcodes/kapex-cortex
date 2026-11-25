@@ -1,6 +1,6 @@
 {
   "name": "kapex-cortex",
-  "version": "4.5.0",
+  "version": "4.5.1",
   "description": "Kapex Cortex for Claude Code: lossless handoffs between chats with a mission contract that survives /clear and new chats, a live status strip and cost/cache panel, Dreams that check Claude's own memory against what really happened, and a safety check for autonomous runs.",
   "license": "MIT",
   "types": "./types/index.d.ts",

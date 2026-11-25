@@ -6,7 +6,7 @@
 
 **Switch Claude Code chats without losing context, see what every message costs, and keep Claude's memory true.**
 
-[![version](https://img.shields.io/badge/version-4.5.0-10B981)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-4.5.1-10B981)](CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-10B981)](LICENSE)
 [![runtime deps](https://img.shields.io/badge/runtime%20deps-0-8b949e)](package.json)
 [![tokens added to your chats](https://img.shields.io/badge/tokens%20added%20to%20your%20chats-0-10B981)](docs/ARCHITECTURE.md#3-zero-passive-injection)

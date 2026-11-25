@@ -2,7 +2,16 @@
 
 All notable changes to Kapex Cortex. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). Numbers are measured on an Apple M4 (macOS, Node 26) with `node scripts/benchmark.ts` unless marked otherwise.
 
-## [4.5.0] - 2026-11-25
+## [4.5.1] - 2026-11-25
+
+The first v4.5 release with binaries: the v4.5.0 tag's Windows CI run failed, so it has no release. Same features as 4.5.0, plus:
+
+### Fixed
+- Windows: `CLAUDE.md` files in folders above the project were never found (the "inside your home folder" check assumed `/` in paths).
+- Windows: a worktree's main `CLAUDE.md` is recognised as the same file when Windows spells its folder two ways (a long name vs an 8.3 short name like `RUNNER~1`, or a different case), so a Dream never treats it as a duplicate.
+- Windows: an absolute git `commondir` (`C:/…`) is read as absolute.
+
+## [4.5.0] - 2026-11-25 (tag only, no release: Windows CI failed)
 
 The engine release: handoffs that survive any number of chats, a strip that is always about the chat you are in, and hooks hardened against what real machines do. Includes the unreleased 4.1.0–4.4.0 panel work.
 
@@ -27,7 +36,7 @@ The engine release: handoffs that survive any number of chats, a strip that is a
 - Rewinds (a branch to an earlier message, or a transcript that shrank) now drop the abandoned messages from the goal, rules and trail; a shrunk transcript is never counted twice.
 - A chat whose turn ended while another held the views lock lost its packet for that turn; a "hi" or a side question in a new tab could replace the real handoff.
 - Git edge cases: detached HEAD names its commit, a rebase or merge in progress is called out, repos with no commits and folders with no git hand off cleanly.
-- On Windows, an atomic write (and auto-park's write to `~/.claude.json`) retries briefly when another process has the target open; a failed write never leaves a temp file behind; a lock Windows keeps refusing can't spin past its deadline; 8.3 short paths (`C:\PROGRA~1`) resolve to one spelling, so a worktree's main `CLAUDE.md` is recognised as the same file there too; `CLAUDE.md` files in folders above the project are found on Windows (the home check assumed `/`), and an absolute git `commondir` (`C:/…`) is read as absolute.
+- On Windows, an atomic write (and auto-park's write to `~/.claude.json`) retries briefly when another process has the target open; a failed write never leaves a temp file behind; a lock Windows keeps refusing can't spin past its deadline; 8.3 short paths (`C:\PROGRA~1`) resolve to one spelling.
 - Secrets are scrubbed from the journal and saved inputs too, and an empty lock file (a hook killed mid-write) goes stale by age instead of freezing `STATE.md`.
 - A brief you paste on its own (no typed words around it) now pins its directives; a pasted assistant reply never does. Old packets are read strictly, so their stray lines don't become rules.
 - `SECURITY.md` now lists everything Cortex writes, including auto-park's edit to `~/.claude.json` and the opt-in verify gate (the one hook that can send Claude back to work).
