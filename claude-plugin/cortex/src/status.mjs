@@ -616,7 +616,7 @@ function shortCommand(cmd) {
 var TAIL = 8 * 1024 * 1024;
 
 // src/core/native.ts
-import { existsSync as existsSync7, readdirSync as readdirSync4, readFileSync as readFileSync10, statSync as statSync7 } from "node:fs";
+import { existsSync as existsSync7, readdirSync as readdirSync4, readFileSync as readFileSync10, realpathSync as realpathSync2, statSync as statSync7 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { dirname as dirname5, join as join12, relative as relative3, resolve as resolve4 } from "node:path";
 function mainCheckout2(root) {
@@ -626,6 +626,17 @@ function mainCheckout2(root) {
   } catch {
     return null;
   }
+}
+function samePath(a, b) {
+  const real = (x2) => {
+    try {
+      return realpathSync2.native(x2);
+    } catch {
+      return resolve4(x2);
+    }
+  };
+  const [x, y] = [real(a), real(b)];
+  return process.platform === "win32" ? x.toLowerCase() === y.toLowerCase() : x === y;
 }
 var MEMORY_LINES = 200;
 var MEMORY_BYTES = 25 * 1024;
@@ -679,7 +690,7 @@ function nativeFiles(root) {
   const main = mainCheckout2(root);
   for (const d of parents) for (const n of ["CLAUDE.md", "CLAUDE.local.md"]) {
     const f = file2(join12(d, n), `${relative3(home, d) || "~"}/${n}`.replace(/\\/g, "/"), "parent", false);
-    out.push(f && main && resolve4(d) === main ? { ...f, twin: true } : f);
+    out.push(f && main && samePath(d, main) ? { ...f, twin: true } : f);
   }
   out.push(file2(join12(root, "CLAUDE.md"), "CLAUDE.md", "project", true));
   out.push(file2(join12(root, ".claude", "CLAUDE.md"), ".claude/CLAUDE.md", "project", true));

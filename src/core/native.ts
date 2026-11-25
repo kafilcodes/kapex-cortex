@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { autoMemory, claudeHome } from "./home.ts";
@@ -37,6 +37,14 @@ export function mainCheckout(root: string): string | null {
     const m = /^gitdir:\s*(.+?)[\\/]\.git[\\/]worktrees[\\/][^\\/\r\n]+\s*$/m.exec(readFileSync(join(root, ".git"), "utf8"));
     return m ? resolve(root, m[1]!) : null;
   } catch { return null; } // .git is a folder (a plain checkout) or missing
+}
+
+/** One folder spelled two ways (Windows: git's long C:/Users/runneradmin vs an 8.3 C:\Users\RUNNER~1 temp path, any
+ *  case; macOS: /var vs /private/var) is still one folder. */
+export function samePath(a: string, b: string): boolean {
+  const real = (x: string) => { try { return realpathSync.native(x); } catch { return resolve(x); } };
+  const [x, y] = [real(a), real(b)];
+  return process.platform === "win32" ? x.toLowerCase() === y.toLowerCase() : x === y;
 }
 
 export const MEMORY_LINES = 200;
@@ -95,7 +103,7 @@ export function nativeFiles(root: string): NativeFile[] {
   const main = mainCheckout(root);
   for (const d of parents) for (const n of ["CLAUDE.md", "CLAUDE.local.md"]) {
     const f = file(join(d, n), `${relative(home, d) || "~"}/${n}`.replace(/\\/g, "/"), "parent", false);
-    out.push(f && main && resolve(d) === main ? { ...f, twin: true } : f);
+    out.push(f && main && samePath(d, main) ? { ...f, twin: true } : f);
   }
   out.push(file(join(root, "CLAUDE.md"), "CLAUDE.md", "project", true));
   out.push(file(join(root, ".claude", "CLAUDE.md"), ".claude/CLAUDE.md", "project", true));

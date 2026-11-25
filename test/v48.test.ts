@@ -109,6 +109,11 @@ test("dream: in a git worktree inside the main checkout, the main copy of CLAUDE
     const files = nativeFiles(wt);
     const twin = files.find((f) => f.path === join(main, "CLAUDE.md"));
     assert.ok(twin?.twin, "the main copy is still listed (Claude Code loads it, so it costs tokens) and marked as the twin");
+    // the same folder spelled another way (macOS /var vs /private/var; Windows RUNNER~1 vs runneradmin) is one folder
+    const { samePath } = await import("../src/core/native.ts");
+    assert.ok(samePath(main, join(main, ".", "x", "..")) && !samePath(main, wt));
+    if (process.platform === "darwin") assert.ok(samePath("/var", "/private/var"));
+    if (process.platform === "win32") assert.ok(samePath(main.toUpperCase(), main));
     const { readFileSync } = await import("node:fs");
     const ents = files.flatMap((f) => entries(f.path, f.label, readFileSync(f.path, "utf8")));
     const dupes = mechanicalChecks(wt, files, ents, []).filter((f) => f.kind === "duplicate");
