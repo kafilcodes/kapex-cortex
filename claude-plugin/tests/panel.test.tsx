@@ -91,8 +91,9 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
     expect(await ui.find({ type: 'Text', text: /warm until/ })).toBeDefined()
     await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-dream' })
     expect(await ui.find({ type: 'Text', text: /^Not true$/ })).toBeDefined()
-    expect(await ui.find({ key: 'kc-dream-apply' })).toBeDefined()
-    expect((await ui.find({ key: 'kc-dream-apply' }))?.text).toBe('Apply all 1')
+    expect(await ui.find({ key: 'kc-dream-apply' }), 'one fix to apply: its own Apply, no "Apply all 1"').toBeUndefined()
+    expect(await ui.find({ key: 'fa-C1' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Cortex suggests: / })).toBeDefined() // the pick shows before you choose
     expect(await ui.find({ key: 'fr-C2' })).toBeDefined() // yours to decide: Remove line, Ask Claude, Keep
     expect(await ui.find({ key: 'fc-C2' })).toBeDefined()
     expect(await ui.find({ key: 'fk-C2' })).toBeDefined()
@@ -101,8 +102,8 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
     expect(await ui.find({ type: 'Text', text: /^every session \(first 200 lines\)$/ })).toBeDefined()
     await ui.press({ key: 'tab-handoff' })
     expect(await ui.find({ type: 'Text', text: /^Saved .+ ago$/ })).toBeDefined() // a time you can read is the headline…
-    expect(await ui.find({ type: 'Text', text: /^snapshot of your changes · commit abc1234$/ })).toBeDefined() // …the commit id is the caption
-    expect(await ui.find({ type: 'Text', text: /^changed files in git$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^last snapshot · abc1234$/ })).toBeDefined() // …the commit id is the caption of the code row
+    expect(await ui.find({ type: 'Text', text: /^changed files?$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Ship the parser refactor/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^snapshot abc1234$/ })).toBeDefined()
     await ui.press({ key: 'tab-settings' })
@@ -140,7 +141,7 @@ test('a chat one folder up shows the only Cortex project inside it; the model ca
   const r: any = await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
   expect(String(r.result)).toMatch(/Opened the Kapex Cortex panel/)
   expect(cwds).toContain('/work/demo')
-  expect(argv0[0]).toBe('node cortex/src/cli.ts')
+  expect(argv0[0]).toBe('node cortex/src/status.mjs') // v4.5: the panel's status read runs pre-built
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await ui.find({ type: 'Text', text: /^chat in work$/ })).toBeDefined()
   await ui.unmount()
@@ -294,8 +295,6 @@ test('timeline tiles and the Dream page: leave a finding out, apply, undo, dream
   expect(calls).toContain(`dream decide ${DREAM.id} C2 keep`)
   await ui.press({ key: 'fr-C2' })
   expect(calls).toContain(`dream decide ${DREAM.id} C2 remove`)
-  await ui.press({ key: 'kc-dream-apply' })
-  expect(calls).toContain(`dream decide ${DREAM.id} all apply`)
   await ui.press({ key: `kc-undo-${applied.id}` })
   expect(calls).toContain(`dream undo ${applied.id}`)
   await ui.press({ key: 'kc-dream' })
@@ -309,7 +308,8 @@ test('tips: a cold cache on a big chat warns with the handoff; a cooling cache s
   const live = (tokens: number, percent: number) => ({ model: 'm', turns: 9, context: { tokens, window: 1_000_000, percent, rows: [{ name: 'Autocompact buffer', tokens: 30_000 }] }, limits: [] })
   const s = STATUS as any
   const cold = tipFor(s, live(758_000, 76) as any, { lastAt: Date.now() - 2 * 3_600_000, read: 0, write: 0, input: 0, ttl: '1h', ttlSource: 'x' }, [])
-  expect(cold?.text).toMatch(/^Cold cache · hand off, save ~75\dk$/)
+  expect(cold?.text).toMatch(/^Handoff suggested · saves ~75\dk tokens of re-reading$/)
+  expect(cold?.short).toMatch(/^Handoff suggested · ~75\dk$/)
   expect(cold?.level).toBe('act')
   expect(cold?.action).toBe('handoff')
   expect(cold?.detail).toMatch(/^The cache went cold\. A new chat saves about 7\d\dk tokens \(this one re-reads 758k at full price\)\.$/)
@@ -342,7 +342,7 @@ test('stress: every button on every page and sub-page presses without breaking t
     }
   }
   expect(pressed).toBeGreaterThan(20)
-  for (const c of ['status --json', 'dream', 'dream run --no-model', `dream decide ${DREAM.id} all apply`, `dream discard ${DREAM.id}`, 'dream undo 01JC0000000000000000000009', 'h']) expect(calls).toContain(c)
+  for (const c of ['status --json', 'dream', 'dream run --no-model', `dream discard ${DREAM.id}`, 'dream undo 01JC0000000000000000000009', 'h']) expect(calls).toContain(c)
   await ui.unmount()
 })
 
@@ -369,7 +369,7 @@ test('hand-off: at 82% the Overview asks; flagged memory is checked first; Yes s
   await ui.press({ key: 'sw-anyway' })
   expect(calls).toContain('handoff')
   expect(copied).toEqual(['/cortex-resume'])
-  expect(await ui.find({ type: 'Text', text: /^Handoff saved and \/cortex-resume copied\./ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^\/cortex-resume is on your clipboard\./ })).toBeDefined()
   await ui.press({ key: 'sw-done' })
   expect(await ui.find({ key: 'sw-yes' })).toBeUndefined() // "Done" waits 30 minutes or 5 more points
   await ui.unmount()
@@ -442,7 +442,11 @@ test('safety card: findings with Protect them / Add the check / Undo send kc saf
   for (const c of ['safety apply secrets', 'safety apply gate', 'safety undo']) expect(calls).toContain(c)
   await ui.press({ key: 'tab-handoff' })
   await ui.press({ key: 'kc-fish' })
+  expect(sent, 'the button only asks: nothing is sent yet').toEqual([])
+  expect(await ui.find({ key: 'ask-fish-send' })).toBeDefined()
+  await ui.press({ key: 'ask-fish-send' })
   expect(sent.some(t => /Fresh-eyes check/.test(t) && /not a fork/.test(t) && /\.vault\/STATE\.md/.test(t))).toBe(true)
+  expect(await ui.find({ key: 'ask-fish-send' }), 'the choice closes once made').toBeUndefined()
   await ui.unmount()
 })
 
@@ -459,8 +463,8 @@ test('strip tips are a traffic light: red says the move and what it saves, amber
   // red: at the hand-off threshold, the move and what it saves per message
   const full = tipFor(s, live(820_000, 82) as any, warm, [])
   expect([full?.level, full?.action]).toEqual(['act', 'handoff'])
-  expect(full?.text).toMatch(/^82% full · hand off, save ~8\d\dk$/)
-  expect(tipFor(s, live(200_000, 20) as any, warm, [{ kind: 'five_hour', percentUsed: 93 }] as any)?.text).toBe('5h plan 93% · hand off')
+  expect(full?.text).toMatch(/^Handoff suggested · saves ~8\d\dk a message$/)
+  expect(tipFor(s, live(200_000, 20) as any, warm, [{ kind: 'five_hour', percentUsed: 93 }] as any)?.text).toBe('5h plan 93% used · Handoff suggested')
   // green: only a brand-new chat, and only when the handoff came from another chat
   expect(tipFor(s, live(20_000, 2, 0, 'chat-b') as any, warm, [])?.action).toBe('resume')
   expect(tipFor(s, live(20_000, 2, 0, 'chat-a') as any, warm, [])).toBeNull()
@@ -481,7 +485,7 @@ test('strip: All good when nothing needs you; one press Hand off saves the hando
   await $.tool.call({ tool: 'mcp__kapex-cortex__open_panel' } as any)
   await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1', usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 9_700, cache_creation_input_tokens: 200 } } as any)
   const band: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: {} } as any)
-  expect(JSON.stringify(await band.drawn())).toContain('hand off, save')
+  expect(JSON.stringify(await band.drawn())).toContain('Handoff suggested')
   await band.press({ key: 'kc-do' })
   expect(calls).toContain('handoff')
   await band.unmount()

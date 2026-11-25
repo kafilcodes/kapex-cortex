@@ -1,7 +1,27 @@
 {
   "name": "kapex-cortex",
-  "owner": { "name": "Mohd. Kafil Khan", "url": "https://github.com/kafilcodes" },
+  "owner": {
+    "name": "Mohd. Kafil Khan",
+    "url": "https://github.com/kafilcodes"
+  },
   "plugins": [
-    { "name": "kapex-cortex", "source": "./claude-plugin", "description": "A status strip and cost panel for Claude Code, lossless handoffs between chats, and Dreams that check Claude's memory against what really happened. Zero dependencies." }
-  ]
+    {
+      "name": "kapex-cortex",
+      "source": "./claude-plugin",
+      "description": "Lossless handoffs between chats (a mission contract that survives /clear and new chats), a live status strip and cost/cache panel for Claude Code, and Dreams that check Claude's memory against what really happened. Zero dependencies.",
+      "version": "4.5.0",
+      "keywords": [
+        "context-management",
+        "session-handoff",
+        "memory",
+        "prompt-cache",
+        "token-cost"
+      ],
+      "category": "productivity"
+    }
+  ],
+  "metadata": {
+    "description": "Kapex Cortex: lossless handoffs, a status strip and cost panel, and memory Dreams for Claude Code.",
+    "version": "4.5.0"
+  }
 }

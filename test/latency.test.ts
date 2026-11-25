@@ -32,6 +32,8 @@ test("A8: hook latency on this machine (p95 of 50 runs, full process spawn)", ()
   };
   const stop: number[] = [];
   const start: number[] = [];
+  // warm-up: the first launches measure a cold file cache, not the hook
+  for (let i = 0; i < 5; i++) { time("claude.stop", { session_id: "s", transcript_path: transcript, cwd: root, last_assistant_message: "done" }); time("claude.sessionstart", { session_id: "s", transcript_path: transcript, cwd: root, source: "compact" }); }
   for (let i = 0; i < 50; i++) {
     stop.push(time("claude.stop", { session_id: "s", transcript_path: transcript, cwd: root, last_assistant_message: "done" }));
     start.push(time("claude.sessionstart", { session_id: "s", transcript_path: transcript, cwd: root, source: "compact" }));
@@ -42,7 +44,8 @@ test("A8: hook latency on this machine (p95 of 50 runs, full process spawn)", ()
   // The budgets are for a developer machine. Shared CI runners are 2-3x slower and noisy, so there the
   // test only catches big regressions (3x); on this Mac the real limits apply.
   if (process.env.CI) return; // shared CI runners are 3-5x slower and noisy: report there, enforce on a dev machine
-  assert.ok(s < 150, `Stop p95 ${s.toFixed(1)} ms ≥ 150`);
+  // v4.5: 60 ms (was 150): a turn that edited nothing reuses git's answer, and the journal is read once per hook
+  assert.ok(s < 60, `Stop p95 ${s.toFixed(1)} ms ≥ 60`);
   assert.ok(ss < 150, `SessionStart p95 ${ss.toFixed(1)} ms ≥ 150`);
 });
 

@@ -1,8 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { BAND, dream, engine, events, healthy, minimal, pane, problems, quiet, see, SVG_MAX, USAGE } from './qa-fixtures'
+import { BAND, dream, engine, events, healthy, huge, minimal, pane, problems, quiet, see, SVG_MAX, USAGE } from './qa-fixtures'
 
-// QA for what v4.0 added: Timeline paging (tl-more / tl-less and the "N older events not shown" count), the Costs
+// QA for what v4.0 added (the Timeline's paging became a list that loads as you go in v4.4: tl-more / tl-newer / tl-less), the Costs
 // tab's two views (sub-costs / sub-usage), and notifications (a strip chip, a toast, Cortex's own two sounds).
 
 const LONG_RUN = { timeoutMs: 120_000 }
@@ -16,95 +16,150 @@ const textOf = async (ui: any, key: string): Promise<string> => String((await ui
 const countOf = async (ui: any): Promise<string> => see(await ui.drawn()).texts.find(t => /older events? not shown$|^All \d+ events shown$/.test(t)) ?? ''
 const PAGE = 24
 
-// ── Timeline paging ──────────────────────────────────────────────────────────────────────────────────────────────
-for (const n of [0, 1, 24, 25, 48, 49, 160]) {
-  test(`paging: ${n} events: each press adds 24 (or the rest), the count says what is still hidden, the end has no button, Back to newest returns`, LONG_RUN, async ($, on) => {
+// ── Timeline: a list that loads as you go ────────────────────────────────────────────────────────────────────────
+// Show older adds 24 below (and scrolls to the first of them); at most 48 tiles are drawn at once, so the newest drop
+// off the top (Show newer brings them back) and the pane never grows past what the desktop app draws (v4.0 blanked it at
+// ~750 KB). Back to newest returns to the first 24. Past the status's 160, Show older asks the core for more.
+const WINDOW = 48
+const rangeOf = async (ui: any): Promise<string> => see(await ui.drawn()).texts.find(t => /^\d+–\d+ of \d+ · /.test(t)) ?? ''
+const expectAt = async (ui: any, list: any[], end: number, n: number, range?: string) => {
+  const begin = Math.max(0, end - WINDOW), tree = await ui.drawn()
+  expect(problems(tree)).toEqual([])
+  expect(tilesOf(tree), `tiles ${begin + 1}–${end}`).toEqual(list.slice(begin, end).map(e => `tile-${e.id}`))
+  expect(see(tree).chars, 'never past what the app draws').toBeLessThan(400_000)
+  expect(await has(ui, 'tl-newer'), 'Show newer once the newest dropped off the top').toBe(begin > 0)
+  expect(await has(ui, 'tl-less'), 'Back to newest past the first 24').toBe(end > PAGE)
+  if (n > PAGE) expect(await rangeOf(ui)).toBe(range ?? `${begin + 1}–${end} of ${n} · ${end < n ? `${n - end} older loaded` : 'the oldest'}`)
+}
+for (const n of [0, 1, 24, 25, 48, 49, 100]) {
+  test(`timeline: ${n} events: Show older grows the list 24 at a time, keeps at most 48 drawn, Show newer and Back to newest return`, LONG_RUN, async ($, on) => {
     mock.clock(on, { now: Date.now() }); mock.store(on)
-    engine(on, { status: () => ({ ...healthy(), timeline: events(n) }) })
+    const list = events(n)
+    engine(on, { status: () => ({ ...healthy(), timeline: list }) })
     await start($)
-    for (const surface of ['desktop', 'terminal'] as const) {
-      const ui: any = await $.ui.mount({ ...pane(120), surface } as any)
-      await ui.press({ key: 'tab-timeline' })
-      if (await has(ui, 'tl-less')) await ui.press({ key: 'tl-less' }) // the other surface paged back: start from the newest
-      let shown = Math.min(n, PAGE), presses = 0
-      for (;;) {
-        const tree = await ui.drawn()
-        expect(problems(tree), `${surface}, ${shown} of ${n} shown`).toEqual([])
-        const ids = tilesOf(tree)
-        expect(ids.length, `${surface}: tiles drawn after ${presses} presses`).toBe(shown)
-        expect(ids, 'newest first, none twice').toEqual(events(n).slice(0, shown).map(e => `tile-${e.id}`))
-        const hidden = n - shown
-        if (hidden > 0) {
-          expect(await textOf(ui, 'tl-more')).toBe(hidden > PAGE ? 'Show 24 older' : `Show the last ${hidden} older`)
-          expect(await countOf(ui)).toBe(`${hidden} older event${hidden === 1 ? '' : 's'} not shown`)
-        } else {
-          expect(await has(ui, 'tl-more'), 'no Show older at the end').toBe(false)
-          if (presses) expect(await countOf(ui)).toBe(`All ${n} events shown`)
-          else expect(await countOf(ui), 'nothing to page: no count either').toBe('')
-        }
-        expect(await has(ui, 'tl-less'), 'Back to newest only after paging').toBe(presses > 0)
-        if (hidden <= 0) break
-        await ui.press({ key: 'tl-more' }); presses++
-        shown = Math.min(n, shown + PAGE)
-      }
-      expect(presses).toBe(Math.max(0, Math.ceil((n - PAGE) / PAGE)))
-      // past the end: there is nothing to press
-      await expect(ui.press({ key: 'tl-more' })).rejects.toBeDefined()
-      if (presses) {
-        await ui.press({ key: 'tl-less' })
-        expect(tilesOf(await ui.drawn()).length).toBe(Math.min(n, PAGE))
-        expect(await has(ui, 'tl-less')).toBe(false)
-        expect(await has(ui, 'tl-more')).toBe(n > PAGE)
-      }
-      await ui.unmount()
-    }
+    const ui: any = await $.ui.mount({ ...pane(120), surface: 'desktop' } as any)
+    await ui.press({ key: 'tab-timeline' })
+    let end = Math.min(n, PAGE)
+    await expectAt(ui, list, end, n)
+    if (n <= PAGE) { expect(await has(ui, 'tl-more'), 'nothing older').toBe(false); expect(await rangeOf(ui)).toBe(''); await ui.unmount(); return }
+    while (await has(ui, 'tl-more')) { await ui.press({ key: 'tl-more' }); end = Math.min(n, end + PAGE); await expectAt(ui, list, end, n) }
+    expect(end, 'reached the oldest').toBe(n)
+    if (end - WINDOW > 0) { await ui.press({ key: 'tl-newer' }); end -= PAGE; await expectAt(ui, list, end, n) }
+    await ui.press({ key: 'tl-less' })
+    await expectAt(ui, list, PAGE, n)
+    await ui.unmount()
   })
 }
 
-test('paging: the list shrinks or grows while you are paged back (a refresh): the count stays true, nothing is negative', LONG_RUN, async ($, on) => {
+test('timeline: past the status\'s 160, Show older fetches the next ones from the core, with their details, until there are none', LONG_RUN, async ($, on) => {
   mock.clock(on, { now: Date.now() }); mock.store(on)
-  let n = 160
+  const list = events(160), older = events(208).slice(160), calls: string[] = []
+  let left = 2 // two fetches of 24, then the start of history
+  const status = { ...healthy(), timeline: list }
+  engine(on, { status: () => status, calls, run: (args: string) => {
+    if (!/^timeline --before/.test(args)) return { value: { exitCode: 0, stdout: JSON.stringify(status), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    const from = 24 * (2 - left); left--
+    const out = { events: older.slice(from, from + 24), episodes: [], more: left > 0 }
+    return { value: { exitCode: 0, stdout: JSON.stringify(out), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  } })
+  await start($)
+  const ui: any = await $.ui.mount({ ...pane(120), surface: 'desktop' } as any)
+  await ui.press({ key: 'tab-timeline' })
+  for (let i = 0; i < 6; i++) await ui.press({ key: 'tl-more' })
+  await expectAt(ui, list, 160, 160, '113–160 of 160 · more in history')
+  await ui.press({ key: 'tl-more' })
+  expect(calls.some(c => c.startsWith(`timeline --before ${list[159].ts}`)), 'asked for what is older than the oldest loaded').toBe(true)
+  await expectAt(ui, [...list, ...older.slice(0, 24)], 184, 184, '137–184 of 184 · more in history')
+  await ui.press({ key: 'tl-more' }) // the second fetch: the core says nothing older is left
+  await expectAt(ui, [...list, ...older], 208, 208, '161–208 of 208 · the oldest')
+  expect(await has(ui, 'tl-more')).toBe(false)
+  await ui.unmount()
+})
+
+test('timeline: a fetch that fails keeps Show older for another try and says so, never "the oldest"', LONG_RUN, async ($, on) => {
+  mock.clock(on, { now: Date.now() }); mock.store(on)
+  const toasts: string[] = []
+  const status = { ...healthy(), timeline: events(30), timelineMore: true }
+  let fail = true
+  engine(on, { status: () => status, toasts, run: (args: string) => {
+    if (!/^timeline --before/.test(args)) return { value: { exitCode: 0, stdout: JSON.stringify(status), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    return { value: fail ? { exitCode: 1, stdout: 'boom', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } : { exitCode: 0, stdout: JSON.stringify({ events: events(54).slice(30), episodes: [], more: false }), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  } })
+  await start($)
+  const ui: any = await $.ui.mount({ ...pane(120), surface: 'desktop' } as any)
+  await ui.press({ key: 'tab-timeline' })
+  await ui.press({ key: 'tl-more' }) // 30 shown
+  await ui.press({ key: 'tl-more' }) // the fetch fails
+  expect(toasts.some(t => /Couldn't load older events/.test(t))).toBe(true)
+  expect(await has(ui, 'tl-more'), 'still there to try again').toBe(true)
+  expect(see(await ui.drawn()).texts).toContain('1–30 of 30 · more in history')
+  fail = false
+  await ui.press({ key: 'tl-more' })
+  expect(see(await ui.drawn()).texts).toContain('7–54 of 54 · the oldest')
+  await ui.unmount()
+})
+
+test('timeline: the list shrinking while far down snaps back inside it; an empty list says nothing negative', LONG_RUN, async ($, on) => {
+  mock.clock(on, { now: Date.now() }); mock.store(on)
+  let n = 100
   engine(on, { status: () => ({ ...healthy(), timeline: events(n) }) })
   await start($)
   const ui: any = await $.ui.mount({ ...pane(120), surface: 'desktop' } as any)
   await ui.press({ key: 'tab-timeline' })
-  for (let i = 0; i < 6; i++) await ui.press({ key: 'tl-more' }) // 168 asked for, 160 there
-  expect(await countOf(ui)).toBe('All 160 events shown')
-  n = 30; await open($) // the journal was trimmed (or another project was chosen)
-  let tree = await ui.drawn()
-  expect(problems(tree)).toEqual([])
-  expect(tilesOf(tree).length).toBe(30)
-  expect(await countOf(ui)).toBe('All 30 events shown')
-  expect(await has(ui, 'tl-more')).toBe(false)
-  n = 400; await open($)
-  tree = await ui.drawn()
-  expect(tilesOf(tree).length).toBe(168)
-  expect(await countOf(ui)).toBe('232 older events not shown')
-  n = 0; await open($)
-  tree = await ui.drawn()
+  for (let i = 0; i < 4; i++) await ui.press({ key: 'tl-more' })
+  n = 30; await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't-shrink' } as any)
+  await expectAt(ui, events(30), 30, 30)
+  n = 0; await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't-empty' } as any)
+  const tree = await ui.drawn()
   expect(problems(tree)).toEqual([])
   expect(tilesOf(tree).length).toBe(0)
-  expect(see(tree).texts.filter(t => /-\d+ older|All 0 events shown/.test(t)), 'an empty list does not say "All 0 events shown"').toEqual([])
+  expect(see(tree).texts.filter(t => /-\d+|of 0 ·/.test(t) && /older|oldest/.test(t))).toEqual([])
   await ui.unmount()
 })
 
-test('paging: an open tile stays open across Show older, and the open tile on an older page is closed cleanly by Back to newest', LONG_RUN, async ($, on) => {
+test('timeline: opening the panel again starts at the newest, so a state far down can never come back blank', LONG_RUN, async ($, on) => {
   mock.clock(on, { now: Date.now() }); mock.store(on)
-  engine(on, { status: () => ({ ...healthy(), timeline: events(60).map((e, i) => ({ ...e, detail: `Detail ${i}. ${'more words '.repeat(30)}` })) }) })
+  engine(on, { status: () => ({ ...healthy(), timeline: events(160) }) })
+  await start($)
+  const ui: any = await $.ui.mount({ ...pane(120), surface: 'desktop' } as any)
+  await ui.press({ key: 'tab-timeline' })
+  for (let i = 0; i < 4; i++) await ui.press({ key: 'tl-more' })
+  await open($)
+  expect(tilesOf(await ui.drawn())).toEqual(events(160).slice(0, PAGE).map(e => `tile-${e.id}`))
+  expect(await has(ui, 'tl-less')).toBe(false)
+  await ui.unmount()
+})
+
+test('timeline: an open tile stays open while it is drawn, leaves with the newest that drop off, and is open again on return', LONG_RUN, async ($, on) => {
+  mock.clock(on, { now: Date.now() }); mock.store(on)
+  engine(on, { status: () => ({ ...healthy(), timeline: events(120).map((e, i) => ({ ...e, detail: `Detail ${i}. ${'more words '.repeat(30)}` })) }) })
   await start($)
   const ui: any = await $.ui.mount({ ...pane(120), surface: 'desktop' } as any)
   await ui.press({ key: 'tab-timeline' })
   const firstTx = ((await ui.findAll({ type: 'Button' })) as any[]).map(b => String(b.key)).find(k => /^tx-/.test(k))!
   await ui.press({ key: firstTx })
+  const open = async () => ((await ui.findAll({ type: 'Text', text: 'Show less' })) as any[]).length
   await ui.press({ key: 'tl-more' })
-  expect(((await ui.findAll({ type: 'Text', text: 'Show less' })) as any[]).length).toBe(1)
-  const lastTx = ((await ui.findAll({ type: 'Button' })) as any[]).map(b => String(b.key)).filter(k => /^tx-/.test(k)).pop()!
-  await ui.press({ key: lastTx }) // a tile only the second page shows
+  expect(await open(), 'still drawn: still open').toBe(1)
+  for (let i = 0; i < 2; i++) await ui.press({ key: 'tl-more' })
+  expect(await open(), 'dropped off the top').toBe(0)
   await ui.press({ key: 'tl-less' })
-  const tree = await ui.drawn()
-  expect(problems(tree)).toEqual([])
-  expect(tilesOf(tree).length).toBe(24)
-  expect(((await ui.findAll({ type: 'Text', text: 'Show less' })) as any[]).length).toBe(0)
+  expect(await open()).toBe(1)
+  await ui.unmount()
+})
+
+test('drawing budget: the Timeline of a huge project stays well under what the desktop app handles, however far down', LONG_RUN, async ($, on) => {
+  mock.clock(on, { now: Date.now() }); mock.store(on)
+  engine(on, { status: () => huge() })
+  await start($)
+  const ui: any = await $.ui.mount({ ...pane(200), surface: 'desktop' } as any)
+  await ui.press({ key: 'tab-timeline' })
+  for (let p = 0; p < 26 && (await has(ui, 'tl-more')); p++) {
+    const s = see(await ui.drawn())
+    expect(s.chars, `press ${p}`).toBeLessThan(400_000)
+    expect(s.svgs.length, `press ${p}`).toBeLessThanOrEqual(140)
+    await ui.press({ key: 'tl-more' })
+  }
   await ui.unmount()
 })
 

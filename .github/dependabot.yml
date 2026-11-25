@@ -1,0 +1,7 @@
+# Cortex has no runtime dependencies; this keeps the CI actions current.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

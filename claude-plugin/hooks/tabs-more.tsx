@@ -5,8 +5,9 @@ import { K } from './theme'
 import { parkButton, parkedList, savedCard, spendCard } from './spend'
 import { tiles } from './tiles'
 import { area, lollipop, micro, stacked } from './viz'
-import { sceneSvg } from './mascot'
+import { pageScene } from './mascot'
 import { burnCard, workCard } from './activity'
+import { planCard } from './plan-card'
 import { companion } from './blocky'
 
 /** Category colours for the composition bar: neutrals first, then the emerald family (never the warning colours). */
@@ -53,7 +54,7 @@ export function costsPage($: Dollar, o: Ctx): JSX.Element {
     return (
       <Box flexDirection="column" gap={1}>
         {nav}
-        {u.intro('us-in', sceneSvg('saved', 100), 'Cortex beside a stack of tokens', 'Usage: how you have used Claude in this project', 'Day by day, hour by hour and tool by tool, from Claude Code\'s own transcripts. Nothing here costs tokens.', companion('happy', o.px))}
+        {u.intro('us-in', pageScene('saved', 100), 'Cortex beside a stack of tokens', 'Usage: how you have used Claude in this project', 'Day by day, hour by hour and tool by tool, from Claude Code\'s own transcripts. Nothing here costs tokens.', companion('happy', o.px))}
         {cards.some(Boolean) ? cards : u.tag('us-none', 'pending', K.silver, 'Shows after your first replies in this project.')}
       </Box>
     )
@@ -61,13 +62,9 @@ export function costsPage($: Dollar, o: Ctx): JSX.Element {
   return (
     <Box flexDirection="column" gap={1}>
       {nav}
-      {u.intro('d-in', sceneSvg('costs', 100), 'Cortex counting tokens', 'Costs: what every message carries, and what this project used', 'From Claude Code\'s own numbers. Claude re-reads a chat at a tenth of the price while its cache is warm.', companion('idle', o.px))}
-      {u.card('d-now', '100%', [
-        u.head('d-now-h', 'Right now', l ? `${l.turns} turns in this chat${l.costUsd !== undefined ? ` · $${l.costUsd.toFixed(2)} at API prices` : ''}` : undefined),
-        line('d-plan-l', '5-hour plan used', five ? `${five.percentUsed}%${five.resetsAt ? ` · resets ${clock(Date.parse(five.resetsAt))}` : ''}` : 'shows after a reply'),
-        u.graphic('d-plan-g', micro({ share: (five?.percentUsed ?? 0) / 100, width: w, animate: animateFor('dplan', `${five?.percentUsed}`) }), `${five?.percentUsed ?? 0}% used`),
-        s.footprint?.duplicates ? u.muted('d-cx', `Cortex's skills are listed twice (old copies in ~/.claude/skills): ${s.footprint.duplicates} extra descriptions in every message.`) : null,
-      ])}
+      {u.intro('d-in', pageScene('costs', 100), 'Cortex counting tokens', 'Costs: what every message carries, and what this project used', 'From Claude Code\'s own numbers. Claude re-reads a chat at a tenth of the price while its cache is warm.', companion('idle', o.px))}
+      {planCard(o, t, w)}
+      {s.footprint?.duplicates ? u.muted('d-cx', `Cortex's skills are listed twice (old copies in ~/.claude/skills): ${s.footprint.duplicates} extra descriptions in every message.`) : null}
       {rows.length ? u.card('fixed', '100%', [
         u.head('fx-t', 'Loaded into every message', `${k(rows.reduce((a, r) => a + r.tokens, 0))} tokens of setup`),
         u.graphic('fx-g', stacked({ items: rows.slice(0, 7).map((r, i) => ({ value: r.tokens, color: CAT[i % CAT.length]!, label: `${plain(r.name)}: ${k(r.tokens)} tokens` })), width: w, animate: animateFor('fx', rows.map(r => r.tokens).join(',')) }), rows.map(r => `${plain(r.name)} ${k(r.tokens)}`).join(', ')),

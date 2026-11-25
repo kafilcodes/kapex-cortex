@@ -18,7 +18,10 @@ function isStale(lockPath: string, staleMs: number): boolean {
     const [pidStr, tsStr] = readFileSync(lockPath, "utf8").split(" ");
     const pid = Number(pidStr);
     const ts = Number(tsStr);
-    if (!Number.isFinite(pid) || !pidAlive(pid)) return true;
+    // an empty or garbled lock (a hook killed between creating and writing it): judged by the file's age, never by
+    // pid 0 (which would signal the whole process group and look alive forever)
+    if (!Number.isInteger(pid) || pid <= 0 || !Number.isFinite(ts)) return Date.now() - statSync(lockPath).mtimeMs > staleMs;
+    if (!pidAlive(pid)) return true;
     return Date.now() - ts > staleMs;
   } catch {
     // unreadable or vanished: treat as stale only if it is old
@@ -35,6 +38,7 @@ export function tryLock(lockPath: string, opts: LockOptions = {}): (() => void) 
   const token = `${process.pid} ${Date.now()} ${randomBytes(4).toString("hex")}`;
   mkdirSync(dirname(lockPath), { recursive: true });
   const deadline = Date.now() + waitMs;
+  let late = 0; // stale clean-ups allowed past the deadline: a lock Windows keeps refusing (EPERM) can't spin forever
   for (;;) {
     try {
       const fd = openSync(lockPath, "wx", 0o644);
@@ -52,7 +56,8 @@ export function tryLock(lockPath: string, opts: LockOptions = {}): (() => void) 
       if (code !== "EEXIST" && !(process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EBUSY"))) throw err;
       if (isStale(lockPath, staleMs)) {
         try { unlinkSync(lockPath); } catch { /* someone else removed it */ }
-        continue;
+        if (Date.now() < deadline || ++late <= 2) continue;
+        return null;
       }
       if (Date.now() >= deadline) return null;
       sleep(5);

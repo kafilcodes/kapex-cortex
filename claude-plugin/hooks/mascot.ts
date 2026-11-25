@@ -1,12 +1,14 @@
 // Cortex's mascot: a small emerald robot drawn here (no third-party art). Five moods for Overview, chosen from Cortex's
-// own status, and one scene per page. All static: no animation, no timers. Each drawing is built once per size and
+// own status, and one scene per page. Static, except once when the panel opens (or the mood changes): the robot
+// settles into place and blinks (`alive`, about a second, then still; no timers, nothing loops). Each drawing is built once per size and
 // kept in a small cache, so drawing the panel again costs a Map lookup. Neutral parts are grey at part opacity and
 // the face is a dark screen, so it reads on Claude Code's light and dark canvas alike.
+import { animateFor, openingPass } from './anim'
 import { K } from './theme'
 
 export type Mood = 'hi' | 'calm' | 'working' | 'stressed' | 'dream'
 export type Scene = 'timeline' | 'dream' | 'memory' | 'costs' | 'settings' | 'fresh' | 'saved' | 'handoff'
-export type Mini = 'handoff' | 'dream' | 'safety' | 'you'
+export type Mini = 'handoff' | 'dream' | 'safety' | 'you' | 'look' | 'tools'
 
 const E = K.emerald, S = K.sage, A = K.amber, R = K.rose
 const G = '#9CA3AF', SCREEN = '#1F2937', GLOW = '#34D399'
@@ -46,10 +48,10 @@ const arms = (kind: Arms) => ({
 })[kind]
 
 /** The robot: arms that sit behind the head are drawn first, then body, head and face. */
-function bot(o: { eyes: Eyes; mouth: Mouth; arms: Arms; antenna?: string }): string {
+function bot(o: { eyes: Eyes; mouth: Mouth; arms: Arms; antenna?: string; shadow?: false }): string {
   const behind = o.arms === 'rest' ? arms('rest') : ''
   const front = o.arms === 'rest' ? '' : arms(o.arms)
-  return `<ellipse cx="100" cy="131" rx="34" ry="4.5" fill="${G}" fill-opacity="0.22"/>${behind}`
+  return `${o.shadow === false ? '' : `<ellipse cx="100" cy="131" rx="34" ry="4.5" fill="${G}" fill-opacity="0.22"/>`}${behind}`
     + `<rect x="84" y="118" width="10" height="10" rx="4" fill="${E}" fill-opacity="0.55"/><rect x="106" y="118" width="10" height="10" rx="4" fill="${E}" fill-opacity="0.55"/>`
     + `<rect x="76" y="82" width="48" height="38" rx="13" fill="${E}" fill-opacity="0.16" stroke="${E}" stroke-width="2.5"/>`
     + `<circle cx="100" cy="99" r="4.5" fill="${o.antenna ?? E}" fill-opacity="0.9"/><path d="M90 109H110" stroke="${E}" stroke-opacity="0.5" stroke-width="2"/>`
@@ -104,8 +106,33 @@ const MINI: Record<Mini, () => string> = {
   dream: () => `${bot({ eyes: 'sleep', mouth: 'o', arms: 'down' })}${moon(146, 28)}`,
   safety: () => `${bot({ eyes: 'focus', mouth: 'flat', arms: 'down' })}<path d="M140 74l14 6v10c0 10-6 15-14 19-8-4-14-9-14-19V80z" fill="${E}" fill-opacity="0.9"/><path d="M134 91l4.5 4.5 8-9" stroke="#fff" stroke-width="2.8"/>`,
   you: () => `${bot({ eyes: 'open', mouth: 'grin', arms: 'wave' })}`,
+  // the Look card: three swatches of the Kapex palette fanned out beside the bot
+  look: () => `${bot({ eyes: 'happy', mouth: 'smile', arms: 'down' })}<circle cx="146" cy="32" r="12" fill="${E}"/><circle cx="157" cy="50" r="9" fill="#0D9488"/><circle cx="137" cy="52" r="7" fill="${S}"/>`,
+  // the Tools card: a switch turned off, what the card does for unused tools
+  tools: () => `${bot({ eyes: 'focus', mouth: 'smile', arms: 'down' })}<rect x="124" y="78" width="34" height="19" rx="9.5" fill="${G}" fill-opacity="0.4"/><circle cx="133.5" cy="87.5" r="6.5" fill="#fff" fill-opacity="0.95" stroke="${G}" stroke-opacity="0.55" stroke-width="1.2"/>`,
 }
+/** "Nothing to fix" (a Dream or check that found nothing, or every finding decided): the robot cheering, arms up, a
+ * big tick beside it and a few sparkles. No ground line or shadow under it, so it floats cleanly at any width. */
+export const clearSvg = (width = 120) => memo(`c-${Math.round(width)}`, () => wrap(width, `${bot({ eyes: 'happy', mouth: 'grin', arms: 'up', shadow: false })}`
+  + `<circle cx="170" cy="30" r="15" fill="${E}"/><path d="M162.5 30.5l5 5 9.5-10" stroke="#fff" stroke-width="3.2"/>${star(30, 36, 5)}${star(178, 76, 3.6, E)}${star(20, 92, 3)}`))
 /** A Settings card's header drawing at `size` px square. */
 export const miniSvg = (kind: Mini, size = 32) => memo(`n-${kind}-${Math.round(size)}`, () => `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(size)}" height="${Math.round(size)}" viewBox="50 6 116 116" fill="none" stroke-linecap="round" stroke-linejoin="round">${MINI[kind]()}</svg>`)
+// The one-time greeting: the drawing rises 4 px into place as it fades up from 40% (a soft landing, no bounce), then
+// each open eye blinks once. Starting at 40%, not 0, a surface that shows only the first frame still shows the robot.
+const LAND = 'calcMode="spline" keyTimes="0;1" keySplines="0.25 0.8 0.25 1"'
+const OPEN_EYE = new RegExp(`<circle cx="([\\d.]+)" cy="53" r="4.2" fill="${GLOW}"/>`, 'g')
+const lively = new Map<string, string>()
+export function alive(svg: string): string {
+  let v = lively.get(svg)
+  if (v) return v
+  const blink = (x: string) => `<ellipse cx="${x}" cy="53" rx="4.2" ry="4.2" fill="${GLOW}"><animate attributeName="ry" values="4.2;0.5;4.2" keyTimes="0;0.45;1" dur="0.24s" begin="0.75s" fill="freeze"/></ellipse>`
+  v = svg.replace(OPEN_EYE, (_m, x: string) => blink(x)).replace(/^(<svg[^>]*>)([\s\S]*)(<\/svg>)$/, (_m, a: string, body: string, z: string) =>
+    `${a}<g><animate attributeName="opacity" from="0.4" to="1" dur="0.45s" fill="freeze" ${LAND}/><animateTransform attributeName="transform" type="translate" from="0 4" to="0 0" dur="0.6s" fill="freeze" ${LAND}/>${body}</g>${z}`)
+  if (lively.size < 32) lively.set(svg, v)
+  return v
+}
+/** A page's header scene: alive in the render that follows opening the panel (never on a Refresh), still otherwise. */
+export const pageScene = (scene: Scene, width = 100) => { const s = sceneSvg(scene, width); return openingPass() && animateFor(`scene-${scene}`, '1') ? alive(s) : s }
+
 /** For tests: how many drawings are cached (bounded at 64). */
 export const cachedDrawings = () => cache.size

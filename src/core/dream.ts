@@ -74,7 +74,8 @@ export async function runDream(p: RepoPaths, o: { model?: boolean; now?: Date } 
   const r: DreamReport = { id: ulid(now.getTime()), ts: now.toISOString(), status: "proposed", ms: 0, model: null, transcripts: prefs.dreamTranscripts, evidenceCount: 0, entryCount: 0, findings: [], evidence: [], files: [] };
   try {
     const files = nativeFiles(p.root);
-    const ents: Entry[] = files.flatMap((f) => { const t = read(f.path); return t === null ? [] : entries(f.path, f.label, t); });
+    // the main checkout's copy of this project's files (a worktree inside it) is the same file: not judged twice
+    const ents: Entry[] = files.filter((f) => !f.twin).flatMap((f) => { const t = read(f.path); return t === null ? [] : entries(f.path, f.label, t); });
     const ev = gatherEvidence(p.root, { transcripts: prefs.dreamTranscripts, mentioned: [...new Set(ents.flatMap((e) => commandsIn(e.text)))] });
     const found = mechanicalChecks(p.root, files, ents, ev);
     const hints = scopeHints(p.root, files, ents);

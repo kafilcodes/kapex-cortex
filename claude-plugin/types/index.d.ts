@@ -21,6 +21,10 @@ export type StatusView = {
   name?: string
   episodes?: EpisodeView[]
   timeline?: TimelineEventView[]
+  /** older events exist than `timeline` carries: Show older fetches them (kc timeline --before) */
+  timelineMore?: boolean
+  /** the folder that holds .vault/ (the main checkout, for a linked worktree) and this checkout's git folder */
+  vaultRoot?: string; gitDir?: string
   handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; chat?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal?: string; next?: string; instructions?: number; decisions?: number; trail?: number; commits?: number; flagged?: number } }
   native: { files: NativeFileView[]; alwaysTokens: number; alwaysLines: number; autoMemory: { dir: string; enabled: boolean } }
   dream: { running: { since: string } | null; recent: DreamView[] }
@@ -34,6 +38,7 @@ export type StatusView = {
   history?: HistoryView
   prefs?: PrefsView
   usage?: { chats: number; skills: Record<string, number>; mcp: Record<string, number>; tools: Record<string, number> }
+  window?: UsageWindowView | null
   spend?: { today: TokensView; week: TokensView; all: TokensView; since: string | null; chats: number; resumed: number; resumedContext: number; sessions?: Record<string, number>; /** tokens by local day, kept for good */ days?: Record<string, number>; /** replies by weekday (0 = Monday) × hour */ hours?: number[][] }
   parked?: { servers: { name: string; at: string; auto: boolean; tokens: number }[]; keepOn: string[]; disabled: string[] }
   memHealth?: { files: { label: string; lines: number; limit: number }[]; scopedTokens: number; alwaysTokens: number; open: number; checks: number; clean: number }
@@ -43,10 +48,21 @@ export type StatusView = {
 }
 /** Handoff snapshots: one STATE per session, and git WIP refs. */
 export type HistoryView = {
-  states: { session: string; at: string; from: string; goal: string; /** the chat it came from: its title, else the first words typed in it */ chat?: string; copies?: number }[]
+  states: { session: string; at: string; from: string; goal: string; /** the chat it came from: its title, else the first words typed in it */ chat?: string; copies?: number
+    next?: string; lastCheck?: string; rules?: number; decisions?: number; files?: number
+    continues?: { session: string; chat: string }; pickedUp?: { session: string; chat: string }[]
+    work?: { turns: number; commits: number; files: number; ran: number; failed: number; out: number } }[]
   wips: { session: string; sha: string; at: string }[]
 }
 /** Settings in force here, and what the handoff costs. */
+/** Timeline events older than the status's 160, fetched by Show older (kc timeline --before); `from`: the newest event's id when fetched. */
+export type OlderView = { events: TimelineEventView[]; episodes: EpisodeView[]; more: boolean; loading: boolean; from: string }
+/** A panel button waiting for your choice before it sends a prompt (ask.tsx): which button, what it does, the prompt. */
+export type AskView = { id: string; what: string; text: string }
+/** The Kapex look for the desktop app (hooks/look.tsx): `chosen` once you pressed a Look setting. */
+export type LookView = { on: boolean; ground: 'obsidian' | 'amoled'; backdrop: 'prism' | 'facets' | 'contour' | 'mesh' | 'aurora' | 'none'; motion: 'off' | 'slow' | 'medium' | 'fast'; chosen: boolean }
+/** What used the 5-hour plan (src/core/window.ts): 10-minute slots by chat, model and main chat vs subagent. */
+export type UsageWindowView = { since: string; slotMs: number; rows: { slot: number; chat: string; model: string; sub: boolean; tokens: number; weight: number; replies: number }[]; tools: { slot: number; tool: string; n: number }[]; chats: { id: string; title: string; project: string; path?: string }[] }
 export type TokensView = { input: number; output: number; cacheRead: number; cacheWrite: number; replies: number }
 export type PrefsView = { tokenMode: string; greeting?: boolean; name?: string; dreamBackend: string; dreamModel: string; dreamApi: string; dreamUrl: string; dreamTranscripts: number; autoDream: boolean; quickCheck?: boolean; handoffAt?: number; sound?: boolean; autoPark?: boolean; overridden: string[]; tokens: { handoff: number } }
 /** `kc status --json` in a folder without Cortex: which child folders have it. */
@@ -95,11 +111,18 @@ declare module 'claude-code' {
       warned: Shaped<string[]>
       view: Shaped<ViewState>
       fail: Shaped<string>
+      /** the session id the per-chat values (live, cache, history, warned, note) belong to */
+      chat: Shaped<string>
       pulse: Shaped<string>
       /** bumped once after an animated drawing, so the charts mount again still (anim.ts) */
       settle: Shaped<number>
       /** the strip's notification chip: what just happened, in a few words (notify.ts) */
       flash: Shaped<{ kind: 'done' | 'dream' | 'alert'; text: string; at: number } | null>
+      /** the Kapex look: on or off, the dark ground, the backdrop, motion (look.tsx) */
+      look: Shaped<LookView>
+      /** a prompt a panel button would send, waiting for your choice (ask.tsx) */
+      asking: Shaped<AskView | null>
+      'tl-older': Shaped<OlderView>
     }
   }
 }

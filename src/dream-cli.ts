@@ -2,12 +2,15 @@ import { applyDream, discardDream, dreaming, listDreams, readDream, runDream, sk
 import { decide, type Decision } from "./core/dream-decide.ts";
 import { spawnDream } from "./core/dream-spawn.ts";
 import { quickCheck } from "./core/dream-quick.ts";
+import { askModel } from "./core/backends.ts";
 import type { RepoPaths } from "./core/paths.ts";
+import { readPrefs } from "./core/prefs.ts";
 
 /**
  *   kc dream                      start one in the background (returns at once; the panel shows it when done)
  *   kc dream run [--no-model]     run now and print what it found
  *   kc dream show [id] · list · apply <id> · discard <id> · undo <id> · skip <id> <finding> [off]
+ *   kc dream test                 one small round trip to the model a Dream would use: works, and how fast
  *   kc dream quick                the free check the Stop hook starts when a memory file or the code changed
  *   kc dream decide <id> <finding|all> apply|remove|keep|undo   one finding at a time (the panel's buttons)
  */
@@ -46,6 +49,20 @@ export async function dreamCommand(args: string[], p: RepoPaths, self: string, n
         return r.status === "failed" ? 1 : 0;
       } catch (err) { console.error(String((err as Error).message ?? err)); return 1; }
     }
+    case "test": {
+      // the same call a Dream makes (its prompt shape, JSON answer, timeout), on a tiny question: proves the key, the
+      // endpoint and the model before a real Dream spends a minute on them
+      const pr = readPrefs(p);
+      if (pr.dreamBackend === "off") { console.log("No model is set: a Dream only runs Cortex's own checks."); return 0; }
+      const who = `${pr.dreamBackend}${pr.dreamModel ? ` · ${pr.dreamModel}` : ""}`;
+      const t = Date.now();
+      try {
+        const raw = await askModel({ backend: pr.dreamBackend, model: pr.dreamModel, api: pr.dreamApi, url: pr.dreamUrl }, "Answer only with JSON.", 'Reply with exactly {"ok": true}.', { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] }, { timeoutMs: 60_000, effort: "low", maxTokens: 300 });
+        const ok = /"ok"\s*:\s*true/.test(raw);
+        console.log(ok ? `Works: ${who} answered in ${((Date.now() - t) / 1000).toFixed(1)} s.` : `${who} answered, but not in JSON (${raw.replace(/\s+/g, " ").slice(0, 80)}): Dreams with it may fail; try another model.`);
+        return ok ? 0 : 1;
+      } catch (err) { console.log(`Didn't work: ${who}: ${String((err as Error).message ?? err).slice(0, 300)}`); return 1; }
+    }
     case "quick":
       try { console.log(await quickCheck(p)); return 0; } catch (err) { console.error(String((err as Error).message ?? err)); return 1; }
     case "list":
@@ -71,7 +88,7 @@ export async function dreamCommand(args: string[], p: RepoPaths, self: string, n
       return ok ? 0 : 1;
     }
     default:
-      console.log("kc dream [run|list|show|apply|discard|undo|skip|decide]");
+      console.log("kc dream [run|test|list|show|apply|discard|undo|skip|decide]");
       return 2;
   }
 }

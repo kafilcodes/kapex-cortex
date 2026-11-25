@@ -11,10 +11,12 @@ import { MODES, parsePref, readPrefs, setPref } from "./core/prefs.ts";
 import { runHook } from "./hook.ts";
 import { cortexInit, nodeOnPath } from "./init.ts";
 import { installSkills } from "./skills.ts";
-import { refreshState, rerenderNewest, statePath, writeHandoff } from "./core/state.ts";
+import { newestSession, refreshState, rerenderNewest, statePath, writeHandoff } from "./core/state.ts";
 import { setup } from "./setup.ts";
 import { expandAlias, KC_HELP } from "./kc.ts";
 import { computeStatus, statusMarkdown, statusText } from "./core/status.ts";
+import { olderTimeline } from "./core/timeline.ts";
+import { buildNotifier, notifierReady, notifyMac } from "./core/notifier.ts";
 import { installShims, isSetUp, rememberInstall } from "./onboard.ts";
 import { dreamCommand } from "./dream-cli.ts";
 import { nativeSummary } from "./core/native.ts";
@@ -87,8 +89,8 @@ function main(argv: string[]): void {
       const tokens: Record<string, number> = {};
       const plain = names.filter((n, i) => !n.startsWith("--") && names[i - 1] !== "--tokens");
       names.forEach((n, i) => { if (names[i - 1] === "--tokens") { const m = /^(.+)=(\d+)$/.exec(n); if (m) tokens[m[1]!] = Number(m[2]); } });
-      if (sub === "add") console.log(park(p, plain, { auto: names.includes("--auto"), tokens }));
-      else if (sub === "remove") console.log(unpark(p, plain));
+      const said = sub === "add" ? park(p, plain, { auto: names.includes("--auto"), tokens }) : sub === "remove" ? unpark(p, plain) : "";
+      if (said) { console.log(said); if (/^Couldn't/.test(said)) process.exitCode = 1; return; } // the panel shows a failure as one
       else { const v = parkView(p); console.log(v.servers.length ? v.servers.map((s) => `${s.name}  ${s.auto ? "auto" : "you"}  ${s.at.slice(0, 16)}  ${v.disabled.includes(s.name) ? "off in Claude Code" : "back on (changed elsewhere)"}`).join("\n") : "Nothing parked by Cortex here."); }
       return;
     }
@@ -97,7 +99,8 @@ function main(argv: string[]): void {
       const arg = (flag: string) => { const i = rest.indexOf(flag); return i >= 0 ? rest[i + 1] : undefined; };
       const goal = arg("--goal"), next = arg("--next");
       const decisions = rest.flatMap((x, i) => (x === "--decision" && rest[i + 1] ? [rest[i + 1]!] : []));
-      if (goal || next || decisions.length) writeHandoff(p, { goal, next, decisions });
+      // the note belongs to the chat it is saved for (the newest real one here): its decisions bind that chat only
+      if (goal || next || decisions.length) writeHandoff(p, { goal, next, decisions, session: newestSession(p, p.root)?.session });
       const ok = rerenderNewest(p) || (refreshState(p, { harness: "manual", session: "manual" }, { snapshot: true }), true);
       console.log(ok ? `Handoff saved to ${statePath(p)}` : `Handoff note saved; ${statePath(p)} will include it after the next turn ends.`);
       return;
@@ -140,6 +143,24 @@ function main(argv: string[]): void {
     case "bench": {
       const r = spawnSync(node, [resolve(self, "..", "..", "bench", "run.ts"), ...rest], { stdio: "inherit" });
       process.exit(r.status ?? 0);
+    }
+    case "timeline": {
+      // kc timeline --before <ISO> [--limit 48]: older events for the panel's Show older, as JSON
+      const at = rest.indexOf("--before"), lim = rest.indexOf("--limit");
+      process.stdout.write(JSON.stringify(olderTimeline(repoOrDie(), rest[at + 1] ?? "", lim >= 0 ? Number(rest[lim + 1]) || 48 : 48)));
+      return;
+    }
+    case "notify": {
+      // one macOS notification from the panel (top right, Cortex's icon); "notified" only when one was sent, so the
+      // panel falls back to the app's own toast elsewhere (Linux, Windows, CORTEX_NO_NOTIFY)
+      if (process.platform !== "darwin" || process.env.CORTEX_NO_NOTIFY || !rest[1]) { console.log("not sent"); process.exitCode = 2; return; }
+      notifyMac(rest[0] || "Kapex Cortex", rest.slice(1).join(" ")); console.log("notified"); return;
+    }
+    case "notifier": {
+      // the macOS notifier app with Cortex's icon (core/notifier.ts): built once in the background at session start
+      if (rest[0] === "build") { const ok = buildNotifier(); console.log(ok ? "ready" : "not built (macOS only)"); return; }
+      if (rest[0] === "test") { notifyMac("Kapex Cortex", "Notifications show the Cortex icon."); console.log(notifierReady() ? "sent with the Cortex app" : "sent with osascript (run: kc notifier build)"); return; }
+      console.log("kc notifier build|test"); return;
     }
     case "hook":
       runHook(rest[0] ?? "", rest.includes("--plugin"));

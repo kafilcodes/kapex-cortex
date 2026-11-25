@@ -92,6 +92,9 @@ test("v3 hooks: Cortex adds nothing to messages; Stop writes the handoff; a new 
   assert.equal(hook("claude.sessionstart", { session_id: "s2", source: "startup" }).stdout, "", "a handoff under 10 minutes old is this same stretch of work: no notice");
   const old = new Date(Date.now() - 30 * 60_000);
   utimesSync(statePath(p), old, old);
+  // v4.5: the packet is pull-only, so by default a new chat gets nothing (no tokens, no stale side quests)
+  assert.equal(hook("claude.sessionstart", { session_id: "s2", source: "startup" }).stdout, "", "pull-only by default");
+  writeFileSync(join(p.priv, "prefs.json"), JSON.stringify({ startNotice: true }));
   const out = hook("claude.sessionstart", { session_id: "s2", source: "startup" }).stdout;
   assert.match(out, /^\{"hookSpecificOutput":\{"hookEventName":"SessionStart","additionalContext":"Kapex Cortex: A handoff packet \.vault\/STATE\.md exists/);
   assert.equal(hook("claude.sessionstart", { source: "compact" }).stdout, "", "after a compaction Claude Code reloads CLAUDE.md itself");

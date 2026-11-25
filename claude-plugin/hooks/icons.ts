@@ -30,6 +30,11 @@ const P: Record<string, string> = {
   save: '<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 14h8v7H8z"/>',
   dream: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/><path d="M16 3.5v3M14.5 5h3"/>',
   move: '<path d="M4 12h13M13 7l5 5-5 5"/><path d="M20 4v16"/>',
+  minus: '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
+  plus: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+  pen: '<path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/>',
+  // Cortex suggests: the prism mark as a line icon (a hexagon, three facet edges and the core), tinted by how much it matters
+  suggest: '<path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M12 2.8v6.6M20 16.6l-5.7-3.3M4 16.6l5.7-3.3"/><circle cx="12" cy="12" r="2.4"/>',
 }
 
 export type IconName = keyof typeof P

@@ -1,12 +1,23 @@
 {
   "name": "kapex-cortex",
-  "version": "4.0.0",
-  "description": "Kapex Cortex for Claude Code: a status strip and cost/cache panel, lossless handoffs between chats (and to OpenCode), Dreams that check Claude's own memory against what really happened, and a safety check for autonomous runs.",
+  "version": "4.5.0",
+  "description": "Kapex Cortex for Claude Code: lossless handoffs between chats with a mission contract that survives /clear and new chats, a live status strip and cost/cache panel, Dreams that check Claude's own memory against what really happened, and a safety check for autonomous runs.",
   "license": "MIT",
   "types": "./types/index.d.ts",
   "author": {
     "name": "Mohd. Kafil Khan",
     "url": "https://github.com/kafilcodes"
   },
+  "homepage": "https://github.com/kafilcodes/kapex-cortex",
+  "repository": "https://github.com/kafilcodes/kapex-cortex",
+  "keywords": [
+    "context-management",
+    "session-handoff",
+    "memory",
+    "prompt-cache",
+    "token-cost",
+    "mcp",
+    "claude-md"
+  ],
   "hooks": "./hooks/cortex-hooks.json"
 }

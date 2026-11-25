@@ -1,8 +1,33 @@
 {
   "name": "kapex-cortex",
-  "version": "4.0.0",
-  "description": "Human-lossless context for AI coding harnesses: invariants survive compaction, handoffs survive rate limits.",
+  "version": "4.5.0",
+  "description": "Claude Code plugin: lossless handoffs between chats (a mission contract that survives /clear and new chats), a live status strip and cost/cache panel, and Dreams that check CLAUDE.md and memory against what really happened. Zero dependencies.",
   "license": "MIT",
+  "author": {
+    "name": "Mohd. Kafil Khan",
+    "url": "https://github.com/kafilcodes"
+  },
+  "homepage": "https://github.com/kafilcodes/kapex-cortex#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kafilcodes/kapex-cortex.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kafilcodes/kapex-cortex/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "claude-desktop",
+    "context-management",
+    "session-handoff",
+    "ai-agent-memory",
+    "claude-md",
+    "prompt-cache",
+    "mcp",
+    "token-cost",
+    "developer-tools"
+  ],
   "type": "module",
   "bin": {
     "cortex": "bin/cortex"

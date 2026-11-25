@@ -17,6 +17,8 @@ import type { RepoPaths } from "./paths.ts";
  *   handoffAt        context % at which the panel offers a fresh chat from the handoff (lower with a cold cache): 80
  *   autoPark         park MCP servers and plugins unused in your recent chats here, from the next chat on: on
  *   sound            a short chime when a handoff is saved or a Dream finishes (the panel's own sound): on
+ *   startNotice      a one-line note to every new chat that a handoff exists: off (the packet is pull-only: /cortex-resume
+ *                    or the strip's Resume button; a chat on a new task never reads an old task's packet)
  */
 export const TOKEN_MODES = ["lean", "balanced", "rich"] as const;
 export const DREAM_BACKENDS = ["claude", "opencode", "api", "off"] as const;
@@ -27,12 +29,12 @@ export interface Prefs {
   greeting: boolean; name: string;
   dreamBackend: DreamBackend; dreamModel: string; dreamApi: "anthropic" | "openai"; dreamUrl: string;
   dreamTranscripts: number; autoDream: boolean;
-  quickCheck: boolean; handoffAt: number; autoPark: boolean; sound: boolean;
+  quickCheck: boolean; handoffAt: number; autoPark: boolean; sound: boolean; startNotice: boolean;
 }
 export const DEFAULT_PREFS: Prefs = {
   tokenMode: "balanced", greeting: true, name: "",
   dreamBackend: "claude", dreamModel: "sonnet", dreamApi: "anthropic", dreamUrl: "", dreamTranscripts: 10, autoDream: false,
-  quickCheck: true, handoffAt: 80, autoPark: true, sound: true,
+  quickCheck: true, handoffAt: 80, autoPark: true, sound: true, startNotice: false,
 };
 
 /** The handoff packet's size in characters (~4 per token), and whether it carries the assistant's last reply. */
@@ -61,6 +63,7 @@ function clean(raw: Record<string, unknown>): Partial<Prefs> {
   if (typeof raw.quickCheck === "boolean") out.quickCheck = raw.quickCheck;
   if (typeof raw.autoPark === "boolean") out.autoPark = raw.autoPark;
   if (typeof raw.sound === "boolean") out.sound = raw.sound;
+  if (typeof raw.startNotice === "boolean") out.startNotice = raw.startNotice;
   if (typeof raw.handoffAt === "number" && raw.handoffAt >= 50 && raw.handoffAt <= 95) out.handoffAt = Math.round(raw.handoffAt);
   return out;
 }
@@ -90,6 +93,7 @@ export function parsePref(key: string, value: string): { key: keyof Prefs; value
     case "quickCheck":
     case "autoPark":
     case "sound":
+    case "startNotice":
     case "autoDream": { const b = bool(value); return b === null ? `${key} must be on or off` : { key, value: b }; }
     case "name": return /^(?:\p{L}[\p{L}' -]{0,39})?$/u.test(value.trim()) ? { key, value: value.trim() } : "a name starts with a letter: letters and spaces, up to 40";
     case "dreamBackend": return DREAM_BACKENDS.includes(value as DreamBackend) ? { key, value: value as DreamBackend } : `dreamBackend must be one of ${DREAM_BACKENDS.join(", ")}`;
@@ -98,7 +102,7 @@ export function parsePref(key: string, value: string): { key: keyof Prefs; value
     case "dreamUrl": return value === "" || /^https?:\/\//.test(value) ? { key, value } : "dreamUrl must be a web address";
     case "dreamTranscripts": { const n = Number(value); return Number.isInteger(n) && n >= 1 && n <= 50 ? { key, value: n } : "dreamTranscripts must be a whole number from 1 to 50"; }
     case "handoffAt": { const n = Number(value); return Number.isInteger(n) && n >= 50 && n <= 95 ? { key, value: n } : "handoffAt must be a whole number from 50 to 95"; }
-    default: return `unknown setting "${key}" (tokenMode, greeting, name, dreamBackend, dreamModel, dreamApi, dreamUrl, dreamTranscripts, autoDream, quickCheck, handoffAt, autoPark, sound)`;
+    default: return `unknown setting "${key}" (tokenMode, greeting, name, dreamBackend, dreamModel, dreamApi, dreamUrl, dreamTranscripts, autoDream, quickCheck, handoffAt, autoPark, sound, startNotice)`;
   }
 }
 

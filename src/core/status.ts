@@ -1,10 +1,13 @@
 import { spawnSync } from "node:child_process";
+import { gitDirOf } from "./worktree.ts";
+import { cachedGit, gitKey } from "./gitcache.ts";
+import { recentGitInfo } from "./gitinfo.ts";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { dreaming, listDreams, type DreamReport } from "./dream.ts";
 import { readMemoryCheck } from "./tiers.ts";
-import { readEpisodes, type EpisodeView } from "./episodes.ts";
+import { compactEpisode, readEpisodes, type EpisodeView } from "./episodes.ts";
 import { computeHistory, type History } from "./history.ts";
 import { firstName } from "./identity.ts";
 import { nativeSummary, type NativeFile } from "./native.ts";
@@ -14,6 +17,7 @@ import { shortCommand, statePath } from "./state.ts";
 import { buildTimeline, chatLabel, type TimelineEvent } from "./timeline.ts";
 import { toolUsage, type Usage } from "./usage.ts";
 import { projectSpend, type Spend } from "./spend.ts";
+import { usageWindow, type UsageWindow } from "./window.ts";
 import { parkView, type ParkView } from "./park.ts";
 import { cortexFootprint } from "./plugin.ts";
 import { auditSafety, type SafetyView } from "./safety.ts";
@@ -27,6 +31,8 @@ export interface Status {
   /** the session journal, newest first */
   episodes: EpisodeView[];
   timeline: TimelineEvent[];
+  /** older events exist than the timeline carries (the panel's Show older fetches them) */
+  timelineMore: boolean;
   /** what a new chat will know after /cortex-resume, and what that costs */
   handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; /** the chat it came from, in a few words */ chat?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal: string; next: string; instructions: number; decisions: number; trail: number; commits: number; flagged: number } };
   /** Claude Code's own memory files: what loads into every session, and what each costs */
@@ -43,6 +49,8 @@ export interface Status {
   usage: Usage;
   /** tokens this project's chats used (from Claude Code's transcripts), and chats resumed from a handoff */
   spend: Spend;
+  /** what used the 5-hour plan: every chat in any project, in 10-minute slots (null when it could not be read) */
+  window: UsageWindow | null;
   /** MCP servers parked for this project: Cortex's record and what Claude Code's config says now */
   parked: ParkView;
   /** measured, each on its own: memory size against Claude Code's limits, scoped rules, open findings, clean checks */
@@ -52,6 +60,8 @@ export interface Status {
   migrated?: string;
   stateAt: string | null;
   health: "good" | "attention";
+  /** the folder that holds .vault/ (a linked worktree shares the main checkout's) and this checkout's git folder */
+  vaultRoot?: string; gitDir?: string;
 }
 
 function git(root: string, args: string[]): string | null {
@@ -59,14 +69,21 @@ function git(root: string, args: string[]): string | null {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
-function gitStatus(root: string): Status["git"] {
-  const st = git(root, ["status", "--porcelain=v2", "--branch"]);
-  if (st === null) return null;
-  const lines = st.split("\n");
-  const branch = lines.find((l) => l.startsWith("# branch.head "))?.slice(14) ?? "(detached)";
-  const dirty = lines.filter((l) => /^[12u] /.test(l)).length;
-  const untracked = lines.filter((l) => l.startsWith("? ")).length;
-  const refs = git(root, ["for-each-ref", "--sort=-creatordate", "--count=1", "--format=%(refname) %(objectname:short) %(creatordate:iso-strict)", "refs/cortex/wip/"]);
+function gitStatus(p: RepoPaths): Status["git"] {
+  const root = p.root;
+  // right after a reply the Stop hook has just asked git; its answer is reused while git's own files are unchanged
+  const recent = recentGitInfo(p);
+  let branch: string, dirty: number, untracked: number;
+  if (recent) ({ branch, dirty, untracked } = recent);
+  else {
+    const st = git(root, ["status", "--porcelain=v2", "--branch"]);
+    if (st === null) return null;
+    const lines = st.split("\n");
+    branch = lines.find((l) => l.startsWith("# branch.head "))?.slice(14) ?? "(detached)";
+    dirty = lines.filter((l) => /^[12u] /.test(l)).length;
+    untracked = lines.filter((l) => l.startsWith("? ")).length;
+  }
+  const refs = cachedGit(p, "wip", gitKey(root), () => git(root, ["for-each-ref", "--sort=-creatordate", "--count=1", "--format=%(refname) %(objectname:short) %(creatordate:iso-strict)", "refs/cortex/wip/"]));
   const [ref, sha, at] = (refs ?? "").split(" ");
   return { branch, dirty, untracked, wip: ref ? { ref, sha: sha ?? "", at: at ?? "" } : null };
 }
@@ -90,15 +107,21 @@ export function computeStatus(p: RepoPaths): Status {
   const sp = statePath(p);
   const head = existsSync(sp) ? readFileSync(sp, "utf8") : "";
   const recent = listDreams(p, 12);
-  const history = computeHistory(p);
+  const journal = readEpisodes(p, 400);
+  const tl: { turnsCut: boolean; more?: boolean } = { turnsCut: journal.length > 100 }; // read once: the handoff sums, the panel's turns and the Timeline share it
+  const history = computeHistory(p, journal);
   let migrated: string | undefined;
   try { migrated = (JSON.parse(readFileSync(p.marker, "utf8")) as { archive?: string }).archive; } catch { /* new project */ }
   const s: Status = {
     project: basename(p.root),
     root: p.root,
+    vaultRoot: p.vaultRoot, gitDir: gitDirOf(p.root) ?? undefined,
     name: firstName(prefs),
-    episodes: readEpisodes(p, 12).map((e) => ({ ...e, commands: e.commands.slice(0, 4), files: e.files.slice(0, 6) })),
-    timeline: buildTimeline(p, history, recent),
+    // the newest 12 whole; older turns (the Timeline shows 100) keep what an opened tile shows, so they open with details too
+    episodes: journal.slice(0, 100).map((e, i) => (i < 12 ? { ...e, commands: e.commands.slice(0, 4), files: e.files.slice(0, 6) }
+      : compactEpisode(e))),
+    timeline: buildTimeline(p, history, recent, journal.slice(0, 100), undefined, undefined, tl),
+    timelineMore: !!tl.more,
     handoff: {
       exists: !!head,
       ageMinutes: head ? minutesSince(sp) : null,
@@ -114,8 +137,9 @@ export function computeStatus(p: RepoPaths): Status {
         lastCheck: (/^## Last check\n(.+)$/m.exec(head)?.[1] ?? "").replace(/^`([^`]*)`/, (_, c: string) => shortCommand(c)).replace(/`/g, "").slice(0, 90),
         goal: (/^## Goal\n(.+)$/m.exec(head)?.[1] ?? "").slice(0, 300),
         next: (/^## Next action\n(.+)$/m.exec(head)?.[1] ?? "").slice(0, 300),
-        instructions: (head.match(/ _\(turn \d+\)_$/gm) ?? []).length,
-        decisions: (/\*\*Decisions recorded at handoff:\*\*\n((?:- .*\n?)+)/.exec(head)?.[1]?.match(/^- /gm) ?? []).length,
+        // the mission contract's binding rules count too (v4.5 keeps them there, carried whole), its decisions apart
+        instructions: (head.match(/ _\(turn \d+\)_$/gm) ?? []).length + (head.match(/^- \[(?:skill\/workflow|never|must)\] /gm) ?? []).length,
+        decisions: (/\*\*Decisions recorded at handoff:\*\*\n((?:- .*\n?)+)/.exec(head)?.[1]?.match(/^- /gm) ?? []).length + (head.match(/^- \[decision\] /gm) ?? []).length,
         trail: (head.match(/^- T\d+ /gm) ?? []).length + Number(/^- … (\d+) earlier turn/m.exec(head)?.[1] ?? 0),
         commits: (/^\*\*Commits this session\*\*.*$/m.exec(head)?.[0]?.match(/`[^`]+`/g) ?? []).length,
         flagged: readMemoryCheck(p)?.open.length ?? 0,
@@ -123,7 +147,7 @@ export function computeStatus(p: RepoPaths): Status {
     },
     native: nativeSummary(p.root),
     dream: { running: dreaming(p), recent },
-    git: gitStatus(p.root),
+    git: gitStatus(p),
     hooks: { ...hookP95(p), cap: 150 },
     opencode: { installed: existsSync(join(homedir(), ".opencode", "bin", "opencode")), plugin: existsSync(join(p.root, ".opencode", "plugins", "kapex-cortex.ts")) },
     footprint: cortexFootprint(),
@@ -131,6 +155,7 @@ export function computeStatus(p: RepoPaths): Status {
     history,
     usage: toolUsage(p),
     spend: projectSpend(p),
+    window: (() => { try { return usageWindow(join(p.priv, "window-cache.json")); } catch { return null; } })(),
     parked: parkView(p),
     memHealth: memHealth(p, nativeSummary(p.root), recent),
     prefs: { ...prefs, tokens: { handoff: Math.round(head.length / 4) } },
@@ -138,7 +163,8 @@ export function computeStatus(p: RepoPaths): Status {
     stateAt: head ? new Date(statSync(sp).mtimeMs).toISOString() : null,
     health: "good",
   };
-  const waiting = recent.find((d) => d.status === "proposed" && d.findings.some((f) => f.action.op !== "none"));
+  // a guarded rule (op none) still waits for you: Fix the code, change the rule, or Keep
+  const waiting = recent.find((d) => d.status === "proposed" && d.findings.some((f) => !f.done && !f.skip));
   s.health = waiting || s.handoff.ready || s.native.files.some((f) => f.over && f.loads === "first-200") ? "attention" : "good";
   return s;
 }

@@ -30,12 +30,14 @@ const KINDS: [string, (n: string) => boolean][] = [
 export function burnCard(els: ElementTable, u: Kit, s: StatusView, px: number): JSX.Element | null {
   const { Box, Text } = els
   const days = s.spend?.days
-  const entries = Object.entries(days ?? {}).filter(([d, v]) => realDay(d) && Number.isFinite(v) && v > 0) // real calendar days only.sort(([a], [b]) => a.localeCompare(b))
+  const entries = Object.entries(days ?? {}).filter(([d, v]) => realDay(d) && Number.isFinite(v) && v > 0).sort(([a], [b]) => a.localeCompare(b)) // real calendar days only, oldest first
   if (!entries.length) return null
   const today = localDay(Date.now())
   const first = entries[0]![0]
   const span = Math.round((Date.parse(`${today}T12:00:00`) - Date.parse(`${first}T12:00:00`)) / DAY) + 1 // round: a daylight-saving day is 23 or 25 h
-  const weeks = Math.max(8, Math.min(26, Math.ceil(span / 7) + 1))
+  // a young project shows a few weeks with bigger cells, not a grid of empty weeks before it began (craft: the eye
+  // lands on what's there)
+  const weeks = Math.max(4, Math.min(26, Math.ceil(span / 7) + 1))
   const inner = Math.max(200, px - 52)
   const wide = inner >= 620
   const gridW = wide ? Math.min(Math.round(inner * 0.62), 36 + weeks * 25) : inner

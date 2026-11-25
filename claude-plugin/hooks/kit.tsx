@@ -30,7 +30,7 @@ export function kit(els: ElementTable, surface: string) {
      * what its row leaves (padding and gaps never push it to a new line, and a card alone on its row spans it).
      * "100%" means "the whole width": no width at all, so it stretches inside its column and never overflows. */
     card: (key: string, width: string, children: (JSX.Element | null)[], accent?: string) => (
-      <Box key={key} {...(width === '100%' ? {} : { width })} flexGrow={1} minWidth={24} flexDirection="column" gap={1} backgroundColor={K.card} borderStyle="round" borderColor={accent ?? K.hairline} paddingX={2} paddingY={1}>
+      <Box key={key} {...(width === '100%' ? {} : { width })} flexGrow={1} minWidth={24} flexDirection="column" gap={1} backgroundColor={K.card} borderStyle="round" borderColor={accent ?? K.cardEdge} paddingX={2} paddingY={1}>
         {children}
       </Box>
     ),

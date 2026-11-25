@@ -1,7 +1,8 @@
-import { readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { RepoPaths } from "./paths.ts";
+import { renameRetry } from "../util/atomic.ts";
 
 /**
  * Parking an MCP server for this project: Claude Code's own switch, the same per-project `disabledMcpServers` list in
@@ -44,7 +45,7 @@ function writeDisabled(p: RepoPaths, change: (cur: string[]) => string[]): strin
   let mode = 0o600;
   try { mode = statSync(file).mode & 0o777; } catch { /* keep private */ }
   writeFileSync(tmp, JSON.stringify(cfg, null, 2), { mode }); // same permissions: the file holds account details
-  renameSync(tmp, file); // atomic: Claude Code never reads half a file
+  try { renameRetry(tmp, file); } catch { try { unlinkSync(tmp); } catch { /* gone */ } return "Couldn't save Claude Code's settings (~/.claude.json). Try again, or use /mcp."; } // atomic: Claude Code never reads half a file
   return disabledHere(p);
 }
 

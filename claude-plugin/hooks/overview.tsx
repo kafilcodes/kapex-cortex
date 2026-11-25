@@ -193,7 +193,7 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
       u.head('sv-h', 'What Cortex saved you'),
       <Box key="sv-r" flexDirection="row" alignItems="center" columnGap={2} flexWrap="nowrap">
         <Box flexDirection="column" gap={0} flexGrow={1} flexShrink={1} minWidth={18}>
-          <Text key="sv-s" size="heading" weight="semibold" tabular color={K.text}>{`${k(saved)} tokens`}</Text>
+          <Text key="sv-s" size="heading" weight="bold" tabular color={saved ? K.emerald : K.text}>{`${k(saved)} tokens`}</Text>
           <Text size="caption" color={K.label}>{sp?.resumed ? `not re-read, because ${sp.resumed} chat${sp.resumed === 1 ? '' : 's'} started from a handoff instead of a big old one` : 'saved so far: no chat has started from a handoff yet'}</Text>
         </Box>
         {u.Svg && pairPx >= 300 ? <Box key="sv-art" flexShrink={0}>{u.graphic('sv-m', sceneSvg('saved', 84), 'Cortex beside a stack of saved tokens')}</Box> : null}
@@ -205,20 +205,22 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
       </Box></Box>,
   ])
   const capsW = pairPx >= 560 ? Math.min(420, Math.round(pairPx * 0.55)) : Math.min(pairPx, 520)
+  const keyBeside = pairPx - capsW >= 150
   const costCard = u.card('cost', mid ? '40%' : '90%', [
       u.head('cost-h', 'What every message carries'),
       carried ? <Text key="cost-s" size="caption" color={K.label}>{`Every message starts with ${k(carried)} tokens of setup.`}</Text> : null,
       usedRows.length ? <Box key="cost-row" flexGrow={1} flexDirection="row" flexWrap="wrap" alignItems="flex-end" columnGap={3} rowGap={1}>
-        {u.graphic('g-caps', capsules({ items: usedRows.slice(0, 6).map((r, i) => ({ label: short(r.name), value: r.tokens, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length]!, note: k(r.tokens) })), width: capsW, height: 92, animate: animateFor('caps', usedRows.map(r => r.tokens).join(',')) }), usedRows.map(r => `${plain(r.name)} ${k(r.tokens)}`).join(', '))}
-        {/* where the card is wide, each part's share beside the chart (real data, not a gap) */}
-        {pairPx - capsW >= 200 ? <Box key="cost-lg" flexDirection="column" gap={0} flexGrow={1} minWidth={20} paddingBottom={1}>
+        {u.graphic('g-caps', capsules({ items: usedRows.slice(0, 6).map((r, i) => ({ label: short(r.name), value: r.tokens, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length]!, note: k(r.tokens) })), width: capsW, height: 104, animate: animateFor('caps', usedRows.map(r => r.tokens).join(',')) }), usedRows.map(r => `${plain(r.name)} ${k(r.tokens)}`).join(', '))}
+        {/* each part's colour, name and share at every width (the capsules' colours mean nothing without it): beside the
+            chart where there's room, else one wrapping line under it */}
+        <Box key="cost-lg" flexDirection={keyBeside ? 'column' : 'row'} flexWrap="wrap" columnGap={3} rowGap={0} flexGrow={1} minWidth={20} paddingBottom={keyBeside ? 1 : 0}>
           {usedRows.slice(0, 6).map((r, i) => (
             <Box key={`cl-${r.name}`} flexDirection="row" justifyContent="space-between" columnGap={1}>
               <Box flexDirection="row" gap={1} alignItems="center">{u.dot(`cld-${r.name}`, CATEGORY_COLORS[i % CATEGORY_COLORS.length]!)}<Text size="caption" color={K.label}>{plain(r.name)}</Text></Box>
               <Text size="caption" tabular color={K.muted}>{`${Math.round((100 * r.tokens) / Math.max(1, carried))}%`}</Text>
             </Box>
           ))}
-        </Box> : null}
+        </Box>
       </Box> : u.tag('cost-wait', 'pending', K.silver, 'Shows after Claude\'s first reply in this chat.'),
       carried ? u.muted('cost-n', 'Cached after the first reply, so re-reading it costs about a tenth.') : null,
   ])

@@ -4,7 +4,7 @@ import { dreaming, listDreams, runDream, type DreamReport } from "./dream.ts";
 import { nativeFiles } from "./native.ts";
 import type { RepoPaths } from "./paths.ts";
 import { rememberCheck } from "./quick.ts";
-import { gitInfo } from "./state.ts";
+import { gitInfo } from "./gitinfo.ts";
 
 /**
  * The Quick check the Stop hook starts in the background when a memory file or the code changed: Cortex's own checks
@@ -17,7 +17,7 @@ export const treeOf = (gi: { branch: string; diffStat: string } | null) => `${gi
 
 export async function quickCheck(p: RepoPaths): Promise<string> {
   const files = nativeFiles(p.root).map((f) => f.path);
-  const tree = treeOf(gitInfo(p.root, "quick", false));
+  const tree = treeOf(gitInfo(p, "quick"));
   const latest = listDreams(p, 1)[0];
   const open = latest && (latest.status === "proposed" || latest.status === "applied") ? latest.findings.filter((f) => !f.done) : [];
   const waiting = open.some((f) => f.by === "model") || (open.length > 0 && !!latest?.findings.some((f) => f.done));

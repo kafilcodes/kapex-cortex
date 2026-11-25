@@ -175,7 +175,8 @@ export function hourGrid(o: { counts: number[][]; width: number; animate: boolea
  * shrinks until every label fits. */
 export function radar(o: { axes: { label: string; value: number; note?: string }[]; size: number; animate: boolean }): string {
   const S = Math.round(o.size), n = Math.max(3, o.axes.length), axes = o.axes.slice(0, Math.max(3, n))
-  const LS = 10.5, NS = 12, GAP = 9, LINE = 15
+  // GAP: a full tip (dot and stroke) keeps ≥ 8 px from its label even on a slanted axis (9 left ~5 px on Run at 76%)
+  const LS = 10.5, NS = 12, GAP = 15, LINE = 15
   const ang = (i: number) => -Math.PI / 2 + (i * 2 * Math.PI) / n
   const blocks = axes.map((a) => ({ w: Math.max(textWidth(a.label, LS), a.note ? textWidth(a.note, NS, 600) : 0), h: a.note ? 28 : 13 }))
   // where each label block sits for radius R, relative to the centre: [left, top, right, bottom]

@@ -167,7 +167,7 @@ test('the header says how the last action went as a chip: a tick and its words a
   await ui.unmount()
 })
 
-test('timeline paging: the button says what a press adds, the count of hidden events updates, and Back to newest resets it', async ($, on) => {
+test('timeline: Show older grows the list and says how much older is loaded; Back to newest returns to the first 24', async ($, on) => {
   mock.clock(on, { now: Date.now() })
   const many = Array.from({ length: 60 }, (_, i) => ({ id: `c-${i}`, ts: iso((i + 1) * 3_600_000), kind: 'commit', title: `Commit number ${i}`, tags: [`abc${i}`], tone: 'info' }))
   engine(on, { status: { ...STATUS, timeline: many } })
@@ -176,18 +176,16 @@ test('timeline paging: the button says what a press adds, the count of hidden ev
   const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'tab-timeline' })
   const said = async (re: RegExp) => !!(await ui.find({ type: 'Text', text: re }))
-  const button = async () => String((await ui.find({ key: 'tl-more' }))?.text ?? '')
-  expect(await button()).toBe('Show 24 older')
-  expect(await said(/^36 older events not shown$/)).toBe(true)
+  expect(String((await ui.find({ key: 'tl-more' }))?.text ?? '')).toBe('Show older')
+  expect(await said(/^1–24 of 60 · 36 older loaded$/)).toBe(true)
   expect(await ui.find({ key: 'tl-less' })).toBeUndefined()
   await ui.press({ key: 'tl-more' })
-  expect(await button()).toBe('Show the last 12 older') // not "24" again: only 12 are left
-  expect(await said(/^12 older events not shown$/)).toBe(true)
+  expect(await said(/^1–48 of 60 · 12 older loaded$/)).toBe(true)
   await ui.press({ key: 'tl-more' })
   expect(await ui.find({ key: 'tl-more' })).toBeUndefined()
-  expect(await said(/^All 60 events shown$/)).toBe(true)
+  expect(await said(/^13–60 of 60 · the oldest$/)).toBe(true) // at most 48 drawn: the newest 12 sit above
   await ui.press({ key: 'tl-less' })
-  expect(await said(/^36 older events not shown$/)).toBe(true)
+  expect(await said(/^1–24 of 60 · 36 older loaded$/)).toBe(true)
   await ui.unmount()
 })
 
@@ -212,7 +210,7 @@ async function handoffNotice($: any, on: any, sound: boolean) {
 
 test('notifications: a saved handoff shows a strip chip with an icon, a short toast and Cortex\'s own chime', async ($, on) => {
   const r = await handoffNotice($, on, true)
-  expect(r.strip).toContain('Handoff saved · resume copied')
+  expect(r.strip).toMatch(/Handoff saved( · resume copied)?/) // the chip keeps its first words on a narrow strip
   expect(r.toasts.some(t => /Handoff saved/.test(t))).toBe(true)
   expect(r.played.some(p => /sounds\/done\.wav/.test(p))).toBe(true)
 })

@@ -3,6 +3,7 @@ import type { RepoPaths } from "./paths.ts";
 import type { HandoffNote } from "./state.ts";
 import type { Carry } from "./carry.ts";
 import { readTurns, type Turn } from "./turns.ts";
+import { readEpisodes } from "./episodes.ts";
 
 /**
  * The brief (layer 1 of the context pack): what a fresh chat needs to continue, and nothing more.
@@ -75,7 +76,7 @@ export function withoutLeadIn(text: string): string {
   return t;
 }
 
-export function buildBrief(p: RepoPaths, a: { session: string; lastAssistant?: string; handoff: HandoffNote | null; heading: string; now: Date; carry?: Carry | null }): Brief {
+export function buildBrief(p: RepoPaths, a: { session: string; lastAssistant?: string; handoff: HandoffNote | null; heading: string; now: Date; carry?: Carry | null; /** the mission contract's north star */ mission?: string }): Brief {
   const all = readTurns(p, a.session).map((t) => ({ ts: t.ts, text: askOf(t) })).filter((t) => t.text.length >= 15);
   // a continuation keeps the goal it continues: what a message says after its lead-in ("Continue: the limit reset.")
   // is what can become the goal, and a message that is only a continuation never does
@@ -88,22 +89,31 @@ export function buildBrief(p: RepoPaths, a: { session: string; lastAssistant?: s
   const task = named ?? [...asks].reverse().find((t) => t.text.length >= 60) ?? first;
   const h = a.handoff;
   // no turns recorded yet (kc handoff run on its own): the handoff you just wrote is this session's goal and next step
-  const thisSession = !!h && (h.session === a.session || !all[0] || h.ts >= all[0].ts);
+  // a note names its chat (v4.5); an older note without one counts for a chat that began before it was written
+  const thisSession = !!h && (h.session ? h.session === a.session : !all[0] || h.ts >= all[0].ts);
   const handoffAge = h ? age(a.now.getTime() - Date.parse(h.ts)) : "";
 
   let goal: string;
-  const stated = asks.some((t) => t.text.length >= 60); // a real task said in this chat, not just "docs pass 2"
+  const statedTask = asks.some((t) => t.text.length >= 60); // a real task said in this chat, not just "docs pass 2"
   if (thisSession && h?.goal) goal = h.goal;
-  else if (a.carry?.goal && !stated) goal = `${a.carry.goal}\n\n_Carried from the chat this one continues (“${a.carry.chat}”)._`;
+  // a chat that only resumed has no goal of its own: the mission's north star stands (the parent's rolling goal is often
+  // a step it already finished, which read as stale to a fresh reader)
+  else if (a.mission && !statedTask) goal = `${oneLine(a.mission, 300)}\n\n_The mission's north star: this chat has only continued it so far._`;
+  else if (a.carry?.goal && !statedTask) goal = `${a.carry.goal}\n\n_Carried from the chat this one continues (“${a.carry.chat}”)._`;
   else if (task) goal = oneLine(task.text, 300) + (h?.goal ? `\n\n_Earlier handoff goal (${handoffAge} ago, another session; may be done): ${oneLine(h.goal, 200)}_` : "");
   else if (h?.goal) goal = `${h.goal}\n\n_From an earlier session (${handoffAge} ago). It may be done: check the working tree and git log first._`;
   else goal = a.heading || "_Not set. Run /cortex-handoff to record one._";
 
   const fromReply = nextFromReply(a.lastAssistant ?? "");
+  // the newest step a reply in this chat stated ("Next: …"): small follow-ups after it don't replace the plan
+  const stated = readEpisodes(p, 200).find((e) => e.session === a.session && e.next);
   let next: string;
   if (thisSession && h?.next && (!latest || h.ts >= latest.ts)) next = h.next;
   else if (fromReply) next = fromReply;
+  else if (stated) next = `${oneLine(stated.next, 300)}${latest && latest.ts > stated.end ? ` _(stated earlier in this chat; since then you asked: “${oneLine(latest.text, 120)}”)_` : ""}`;
   else if (latest && latest.ts !== task?.ts) next = `Continue: ${oneLine(latest.text, 300)}`; // by time: asks are copies of all
+  // a chat that has set no next step of its own (it only resumed) keeps the one it was handed, word for word
+  else if (a.carry?.next && !asks.some((t) => t.text.length >= 60)) next = `Carried from the chat this one continues (“${oneLine(a.carry.chat, 60)}”): ${a.carry.next}`;
   else next = "Continue from the last assistant message below; confirm with the user if it is unclear.";
 
   return { goal, next };

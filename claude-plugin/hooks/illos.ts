@@ -17,15 +17,6 @@ export function illoHandoff(width = 220): string {
   return svg(width, width * 0.5, 220, 110, `${win(6, 6, 72, 100)}${full}${arrow}${doc}${fresh}${spark(140, 22, 5)}${spark(206, 6, 3.5, K.emerald)}`)
 }
 
-/** A quiet night over a stack of notes with a check: a Dream that found nothing, or every finding decided. */
-export function illoDreamClean(width = 180): string {
-  const moon = `<path d="M44 18a20 20 0 1 0 22 26A16 16 0 0 1 44 18z" fill="${K.emerald}" fill-opacity="0.85"/>`
-  const stars = `${spark(86, 16, 4)}${spark(104, 34, 2.6, K.emerald)}${spark(20, 54, 3)}`
-  const notes = `<g transform="translate(88 44)"><rect x="10" y="-6" width="64" height="50" rx="7" fill="${G}" fill-opacity="0.08" stroke="${G}" stroke-opacity="0.35" stroke-width="2"/><rect width="64" height="50" rx="7" fill="${G}" fill-opacity="0.12" stroke="${G}" stroke-opacity="0.55" stroke-width="2"/>${bar(10, 12, 34)}${bar(10, 22, 44)}${bar(10, 32, 26)}</g>`
-  const check = `<circle cx="150" cy="92" r="13" fill="${K.emerald}"/><path d="M143.5 92l4.5 4.5 8-9" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`
-  return svg(width, width * 0.61, 180, 110, `${moon}${stars}<path d="M8 104 H172" stroke="${G}" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/>${notes}${check}`)
-}
-
 /** Notes being sorted: Dream not run yet, or a Dream running. */
 export function illoDreamStart(width = 180): string {
   const moon = `<path d="M40 20a18 18 0 1 0 20 24A14 14 0 0 1 40 20z" fill="${K.emerald}" fill-opacity="0.5"/>`

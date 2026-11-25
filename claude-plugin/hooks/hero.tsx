@@ -1,9 +1,11 @@
+import { putInBox } from './ask'
 import type { ElementTable } from 'claude-code'
 
 import type { CacheView, LiveView, StatusView, ViewState } from '../types'
 import { act, handOff, setCostsSub, setFlow, setSub, setTab, toReview, type Dollar } from './data'
 import type { Kit } from './kit'
-import { moodSvg, type Mood } from './mascot'
+import { alive, moodSvg, type Mood } from './mascot'
+import { animateFor } from './anim'
 import { flaggedNotes, switchParts, type Switch } from './switch'
 import { K, RESUME } from './theme'
 import type { Tip } from './tips'
@@ -46,7 +48,7 @@ export function heroRow($: Dollar, els: ElementTable, u: Kit, o: { s: StatusView
       u.line('hero-d', tip.detail, true, K.label, 'caption'),
       // the one primary button, clear of the reason above it
       tip.action ? <Box key="hero-bw" paddingTop={1}>{row('hero-b', [tip.action === 'resume'
-        ? <Button key="tip-go" variant="primary" onPress={() => { void $.prompt.submit({ text: RESUME }) }}>Continue from the handoff</Button>
+        ? <Button key="tip-go" variant="primary" onPress={() => { void putInBox($, RESUME) }}>Continue from the handoff</Button>
         : tip.action === 'handoff' ? <Button key="tip-go" variant="primary" onPress={() => { void (flaggedNotes(s) ? setFlow($, 'confirm') : handOff($)) }}>Hand off now</Button>
         : tip.action === 'dream' ? <Button key="tip-go" variant="primary" onPress={() => { void act($, 'Dream started', ['dream']); void setTab($, 'data'); void setSub($, 'dream') }}>Dream now</Button>
         : tip.action === 'review' ? <Button key="tip-go" variant="primary" onPress={() => { void setTab($, 'data'); void setSub($, 'dream') }}>Review</Button>
@@ -71,7 +73,7 @@ export function heroRow($: Dollar, els: ElementTable, u: Kit, o: { s: StatusView
         {body}
       </Box>
       {u.Svg ? <Box key="hero-m" flexShrink={0} flexDirection="row" alignItems="flex-end" columnGap={1}>
-        <u.Svg key="hero-mascot" source={moodSvg(mood, w)} alt={`Cortex: ${mood}`} width={w} height={Math.round(w * 0.7)} />
+        <u.Svg key="hero-mascot" source={animateFor('hero-mascot', mood) ? alive(moodSvg(mood, w)) : moodSvg(mood, w)} alt={`Cortex: ${mood}`} width={w} height={Math.round(w * 0.7)} />
         {/* Blocky, the robot's companion, feels the same: cool in pixel shades when all is well, worried when it's time to act */}
         {o.cols >= 56 ? <u.Svg key="hero-blocky" source={blocky(PAL[mood] ?? 'idle', w >= 150 ? 48 : 40)} alt={`Blocky: ${PAL[mood] ?? 'idle'}`} width={w >= 150 ? 48 : 40} height={Math.round((w >= 150 ? 48 : 40) * 0.9)} /> : null}
       </Box> : null}

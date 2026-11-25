@@ -1,10 +1,10 @@
 import { atom, read, update } from 'claude-code'
 
 import type { StatusView } from '../types'
-import type { Dollar } from './data'
+import { kc, type Dollar } from './data'
 
 // Cortex's notifications, one call each: a short chip in the status strip with the Kapex mark and an icon (it clears
-// itself after a few seconds), a toast with the same few words, and Cortex's own sound (scripts/sounds.ts made it:
+// itself after a few seconds), a macOS notification (top right; the app's toast elsewhere) with the same few words, and Cortex's own sound (scripts/sounds.ts made it:
 // a soft rising chime for good news, two low notes when something needs you). Only for things worth a glance: a
 // handoff saved, a Dream or quick check finished, unused tools turned off, a refresh that stopped working. Settings
 // clicks never chime. The sound follows the Sounds setting (on by default).
@@ -23,7 +23,11 @@ export async function readFlash($: Dollar): Promise<Flash | null> {
 export async function notify($: Dollar, kind: FlashKind, text: string, s?: StatusView | null): Promise<void> {
   const at = Date.now()
   await update($, flash, () => ({ kind, text, at })).catch(() => undefined)
-  try { $.ui.toast(text, { timeoutMs: 4_000 }) } catch { /* a surface without toasts: the strip chip still shows */ }
+  // on a Mac the notice is a macOS notification (top right, where the system's own notices are, with Cortex's icon);
+  // elsewhere, or if that fails, the app's toast
+  void kc($, ['notify', 'Kapex Cortex', text]).then(r => r.ok && r.out.trim() === 'notified', () => false).then(sent => {
+    if (!sent) try { $.ui.toast(text, { timeoutMs: 4_000 }) } catch { /* a surface without toasts: the strip chip still shows */ }
+  })
   if (s && s.prefs?.sound !== false) void $.audio.play({ asset: kind === 'alert' ? 'sounds/alert.wav' : 'sounds/done.wav' }).catch(() => undefined)
   // one-shot: takes this chip away (never a newer one) once it has been seen
   try { $.clock.after(SHOW_MS, () => { void update($, flash, f => (f && f.at === at ? null : f)).catch(() => undefined) }) } catch { /* no clock */ }

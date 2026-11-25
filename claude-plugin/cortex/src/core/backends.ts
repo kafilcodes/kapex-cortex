@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { apiBase, callHttpModel } from "./api-call.ts";
+
 /**
  * The models a Dream can call. Each takes a system prompt and one message and returns the model's text, or
  * throws with a plain-English reason. All have a hard timeout; none ever runs inside a hook.
@@ -101,30 +103,11 @@ async function viaOpencode(system: string, message: string, model: string, o: Ca
   return text;
 }
 
-async function viaApi(system: string, message: string, cfg: ModelConfig, o: CallOptions): Promise<string> {
+async function viaApi(system: string, message: string, cfg: ModelConfig, o: CallOptions, json: boolean): Promise<string> {
   const key = apiKey();
   if (!key) throw new Error("no API key: set CORTEX_CLASSIFIER_KEY, or save it with `kc key` (macOS keychain)");
-  const signal = AbortSignal.timeout(o.timeoutMs ?? TIMEOUT_MS);
-  const max = o.maxTokens ?? 800;
-  if (cfg.api === "anthropic") {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST", signal,
-      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: cfg.model, max_tokens: max, temperature: 0, system, messages: [{ role: "user", content: message }] }),
-    });
-    const j = (await r.json()) as { content?: { type: string; text?: string }[]; error?: { message?: string } };
-    if (!r.ok) throw new Error(`Anthropic API ${r.status}: ${j.error?.message ?? "error"}`);
-    return (j.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
-  }
-  const base = cfg.url.replace(/\/+$/, "");
-  const r = await fetch(`${base}/chat/completions`, {
-    method: "POST", signal,
-    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: cfg.model, temperature: 0, max_tokens: max, messages: [{ role: "system", content: system }, { role: "user", content: message }] }),
-  });
-  const j = (await r.json()) as { choices?: { message?: { content?: string } }[]; error?: { message?: string } };
-  if (!r.ok) throw new Error(`API ${r.status}: ${j.error?.message ?? "error"}`);
-  return j.choices?.[0]?.message?.content ?? "";
+  // retries, plain reasons and thinking models are handled in api-call.ts
+  return callHttpModel({ api: cfg.api, url: cfg.url, model: cfg.model, key }, system, message, { timeoutMs: o.timeoutMs ?? TIMEOUT_MS, maxTokens: o.maxTokens ?? 800, json });
 }
 
 /** Ask the configured model. Throws on any problem (the caller saves the reason and shows it in the panel). */
@@ -137,8 +120,8 @@ export async function askModel(cfg: ModelConfig, system: string, message: string
   if (backend === "claude") return viaClaude(system, message, cfg.model, schema, o);
   if (backend === "opencode") return viaOpencode(system, message, cfg.model, o);
   if (backend === "api") {
-    if (cfg.api === "openai") { const u = urlProblem(cfg.url); if (u) throw new Error(u); }
-    return viaApi(system, message, cfg, o);
+    if (cfg.api === "openai") { const u = urlProblem(apiBase(cfg.url)); if (u) throw new Error(u); }
+    return viaApi(system, message, cfg, o, !!schema);
   }
   throw new Error(`"${cfg.backend}" can't run a model`);
 }

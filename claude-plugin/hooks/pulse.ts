@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 
 import { cacheState } from './charts'
-import { lastLimits, lastStamp, readCache, refresh, refreshLive, statusOrSaved, vaultStamp, type Dollar } from './data'
+import { ensureChat, lastLimits, lastStamp, readCache, refresh, refreshLive, statusOrSaved, vaultStamp, type Dollar } from './data'
 
 // The strip's heartbeat: it keeps the strip true between turns, with no turn, no model call and no redraw that changes
 // nothing (a redraw happens only when `pulse` gets a new value).
@@ -32,9 +32,13 @@ function schedule($: Dollar, ms: number): void {
   timer = $.clock.after(ms, () => { timer = null; void beat($) })
 }
 
-/** Session start (and every plugin reload): one timer, first beat soon. */
-export function startPulse($: Dollar): void { stopped = false; busy = false; lastFull = Date.now(); schedule($, 1_500) }
-export function stopPulse(): void { stopped = true; timer?.cancel(); timer = null }
+/** Session start (and every plugin reload), and a /clear or resume (a new chat in the same process): one timer, first
+ * beat soon. Never stacked: the one pending is cancelled first. */
+export function startPulse($: Dollar): void { stopped = false; busy = false; lastFull = Date.now(); schedule($, 1_500) } // a beat in flight keeps its flag: no overlap
+/** The process is leaving (exit, logout, a signal): no beat may start again. Not for a /clear: the strip lives on. */
+export function stopPulse(): void { stopped = true; busy = false; timer?.cancel(); timer = null }
+/** For tests and the leak check: whether a beat is scheduled, and whether the heartbeat has stopped for good. */
+export const pulseState = () => ({ scheduled: timer !== null, stopped, busy, running })
 /** A main-thread turn began: fast beats until it ends. */
 export function turnStarted($: Dollar): void { busy = true; busySince = Date.now(); schedule($, FAST) }
 /** It ended: back to idle, with a beat soon to catch what the Stop hook writes just after. */
@@ -58,8 +62,9 @@ async function beat($: Dollar): Promise<void> {
     // a turn whose end never reached us (a crash, a lost worker) stops counting as running after 30 minutes
     if (busy && Date.now() - busySince > 30 * 60_000) busy = false
     if (busy) { await refreshLive($); return }
+    if (await ensureChat($)) await refreshLive($) // a new chat in this process that no event announced
     const s = await statusOrSaved($)
-    const stamp = s ? await vaultStamp($, s.root) : ''
+    const stamp = s ? await vaultStamp($, s.root, s.vaultRoot, s.gitDir) : ''
     const now = Date.now()
     if (s && ((lastStamp() && stamp !== lastStamp()) || s.dream.running || now - lastFull > FULL)) { lastFull = now; await refresh($) }
     const cv = await readCache($)

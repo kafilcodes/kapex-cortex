@@ -1,5 +1,5 @@
 {
- "at": "2026-11-17T03:19:08.994Z",
+ "at": "2026-11-25T15:23:21.746Z",
  "node": "v26.8.1",
  "runs": 50,
  "turns": 25,
@@ -20,20 +20,20 @@
   "byteIdenticalAfterUndo": true
  },
  "handoff": {
-  "stateTokens": 910,
+  "stateTokens": 1118,
   "answerable": 10,
   "of": 10,
   "missed": []
  },
  "speedMs": {
   "stopHook": {
-   "p50": 52.1,
-   "p95": 59.7,
+   "p50": 39.4,
+   "p95": 56.7,
    "n": 50
   },
   "sessionStartHook": {
-   "p50": 30.2,
-   "p95": 33.1,
+   "p50": 31.1,
+   "p95": 33.7,
    "n": 50
   },
   "quickGateUnchanged": {
@@ -47,8 +47,8 @@
    "n": 20
   },
   "quickCheckRun": {
-   "p50": 63.8,
-   "p95": 65.8,
+   "p50": 60.9,
+   "p95": 68.1,
    "n": 20
   },
   "spendCached": {
@@ -57,14 +57,31 @@
    "n": 50
   },
   "statusRead": {
-   "p50": 156.7,
-   "p95": 198.4,
+   "p50": 63.6,
+   "p95": 86.1,
    "n": 20
   }
  },
- "stopHookPeakMemoryMB": 60,
+ "stopHookPeakMemoryMB": 61,
+ "telephone": {
+  "hops": 5,
+  "probes": 13,
+  "of": 13,
+  "missed": [],
+  "facts": 7,
+  "factsOf": 7,
+  "baseline": "v4.0.0",
+  "mainFacts": 3,
+  "mainMissed": [
+   "chat 1: mandatory skill",
+   "chat 1: rejected approach, the user's words",
+   "chat 1: goal",
+   "chat 5: newest next step"
+  ],
+  "stopP95": 94.4
+ },
  "bars": {
-  "stopP95": 150,
+  "stopP95": 60,
   "quickGateUnchanged": 1,
   "quickCheckRun": 350,
   "spendCached": 10

@@ -7,8 +7,9 @@ import { armAnimation } from './anim'
 import { loadout } from './loadout'
 import { dreamFinished, notify } from './notify'
 import { freshLimits, isStatus, usable } from './shape'
-export { freshLimits }
-export { animateFor } from './anim'
+import { cacheTtl, toReview, vaultStamp } from './chat'
+export { ago, minsSince, toReview, vaultStamp } from './chat'
+export { freshLimits }; export { animateFor } from './anim'
 
 // Kapex Cortex panel state and refresh. Data: Claude Code's own numbers ($.session.usage/model/turns, turn.complete usage)
 // plus `kc status --json`. No timer: refreshes on turn end, button press or panel open, writes state only
@@ -31,6 +32,8 @@ export const warned = atom({ plugin: 'kapex-cortex', key: 'warned' } as const, [
 export const view = atom({ plugin: 'kapex-cortex', key: 'view' } as const, { collapsed: [], more: {}, editing: '', expanded: [], sub: '' } as ViewState, { shape: 'view-2' })
 // why the last refresh failed ('' when it worked): shown in the strip instead of the strip vanishing
 export const fail = atom({ plugin: 'kapex-cortex', key: 'fail' } as const, '', { shape: 'fail-1' })
+// the chat the per-chat values above belong to (live, cache, history, warned, note): another id means they are stale
+export const chat = atom({ plugin: 'kapex-cortex', key: 'chat' } as const, '', { shape: 'chat-1' })
 
 export type Dollar = Parameters<Hook<'session.start'>>[0]
 const STORE_STATUS = 'last-status-v3' // v3 status has another shape: a v2 one saved before the update is never read
@@ -47,7 +50,7 @@ const lastJson = { s: '', l: '' }
 let nodeBin = ''
 export async function kc($: Dollar, args: string[]): Promise<{ ok: boolean; out: string }> {
   const dir = await read($, project)
-  const cli = `${$.plugin.root}/cortex/src/cli.ts`
+  const cli = args[0] === 'status' && args[1] === '--json' && args.length === 2 ? `${$.plugin.root}/cortex/src/status.mjs` : `${$.plugin.root}/cortex/src/cli.ts` // status --json: pre-built (no type stripping)
   const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''
   const tries = nodeBin ? [nodeBin] : ['node', `${home}/.local/bin/node`, '/opt/homebrew/bin/node', '/usr/local/bin/node']
   let why = ''
@@ -65,25 +68,6 @@ export async function kc($: Dollar, args: string[]): Promise<{ ok: boolean; out:
   return { ok: false, out: /timed? ?out/i.test(why) ? why : 'Node.js 23.6 or newer is needed (nodejs.org) and was not found.' }
 }
 
-/** Cache lifetime: the person's setting, else env, else inferred from the plan (subscription → 1 h). */
-async function cacheTtl($: Dollar, hasPlanLimits: boolean): Promise<{ ttl: '5m' | '1h'; source: string }> {
-  try {
-    const st = (await $.settings.read()) as { promptCacheTtl?: string }
-    if (st.promptCacheTtl === '1h' || st.promptCacheTtl === '5m') return { ttl: st.promptCacheTtl, source: 'your setting' }
-  } catch { /* no settings */ }
-  if (await $.env.get('FORCE_PROMPT_CACHING_5M')) return { ttl: '5m', source: 'env' }
-  const env = await $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL')
-  if (env === '1h' || env === '5m') return { ttl: env, source: 'env' }
-  if (await $.env.get('ENABLE_PROMPT_CACHING_1H')) return { ttl: '1h', source: 'env' }
-  return hasPlanLimits ? { ttl: '1h', source: 'assumed for subscription' } : { ttl: '5m', source: 'API default' }
-}
-
-/** The files other chats and tools write here (handoff, journal, Dreams, git): their times, joined. Read by the
- * strip's heartbeat to know, with four stats and no Node, that a full refresh would show something new. */
-export async function vaultStamp($: Dollar, root: string): Promise<string> {
-  const at = (f: string) => $.fs.stat(`${root}/${f}`).then(x => String(x.mtimeMs), () => '-')
-  return (await Promise.all(['.vault/STATE.md', '.vault/private/episodes.jsonl', '.vault/dreams', '.git/logs/HEAD'].map(at))).join(':')
-}
 let seenStamp = ''
 /** The stamp the last full refresh started from ('' before the first). */
 export const lastStamp = () => seenStamp
@@ -105,7 +89,7 @@ async function guarded($: Dollar): Promise<void> {
 }
 async function refreshOnce($: Dollar): Promise<void> {
   const prev = await read($, status), root = prev?.root
-  if (root) seenStamp = await vaultStamp($, root).catch(() => '')
+  if (root) seenStamp = await vaultStamp($, root, prev?.vaultRoot, prev?.gitDir).catch(() => '')
   let r = await kc($, ['status', '--json'])
   let s: StatusView | null = null
   if (!r.ok) {
@@ -123,7 +107,7 @@ async function refreshOnce($: Dollar): Promise<void> {
   const was = await read($, fail)
   if (was !== failed) { await update($, fail, () => failed); if (failed && !was) void notify($, 'alert', 'Cortex couldn\'t refresh', s) } // once, when it starts failing
   if (r.ok && s) void $.store.set(STORE_STATUS, s).catch(() => undefined) // instant strip after a restart or app update
-  if (!root && s?.root) seenStamp = await vaultStamp($, s.root).catch(() => '')
+  if (!root && s?.root) seenStamp = await vaultStamp($, s.root, s.vaultRoot, s.gitDir).catch(() => '')
   const l = await liveNow($)
   if (l) {
     const t = await cacheTtl($, l.limits.some(x => x.kind === 'five_hour'))
@@ -157,9 +141,30 @@ async function liveNow($: Dollar): Promise<LiveView | null> {
   } catch { return null }
 }
 /** Live numbers only, while a turn runs: the strip's ring climbs as the chat grows, without starting Node. */
-export async function refreshLive($: Dollar): Promise<void> { const l = await liveNow($); if (l) await putLive($, l) }
+export async function refreshLive($: Dollar): Promise<void> { await ensureChat($); const l = await liveNow($); if (l) await putLive($, l) }
+
+/**
+ * Per-chat values belong to one session id. A new chat, a /clear or a resume in the same process (which fires
+ * session.end and no session.start) starts them over at once: context 0%, cache "starts on reply", no history, so the
+ * strip never shows the last chat's numbers until a reply. Project values (plan use, status, handoff) stay.
+ * Returns true when it reset.
+ */
+export async function ensureChat($: Dollar, ended = ''): Promise<boolean> {
+  const id = await $.session.id().catch(() => '')
+  if (!ended && (!id || (await read($, chat)) === id)) return false // `ended`: a chat just ended, so reset whatever id the engine names
+  lastJson.l = ''
+  await update($, live, () => null)
+  await update($, cache, c => ({ ...c, lastAt: null, read: 0, write: 0, input: 0 }))
+  await update($, history, () => [])
+  await update($, warned, () => [])
+  await update($, note, () => '')
+  await update($, view, (v): ViewState => ({ ...v, flow: '', expanded: [], editing: '' }))
+  await update($, chat, () => (id === ended ? '' : id)) // still the ended id: the heartbeat learns the new one
+  return true
+}
 /** Writes the live numbers only when they changed (a write redraws the strip and panel). */
 async function putLive($: Dollar, l: LiveView | null): Promise<void> {
+  if (l?.sessionId && l.sessionId !== (await read($, chat))) await ensureChat($) // numbers of a chat that just began
   const lj = JSON.stringify(l)
   if (lj === lastJson.l) return
   lastJson.l = lj
@@ -180,19 +185,17 @@ export async function refreshNow($: Dollar): Promise<void> {
   await update($, note, () => `Refreshed at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`)
 }
 
-export async function act($: Dollar, label: string, args: string[]): Promise<void> {
+export async function act($: Dollar, label: string, args: string[], sayOut = false): Promise<void> {
   await update($, note, () => `${label}…`)
   const r = await kc($, args)
   await refresh($)
   if (label === 'Checked' && r.ok) { const s = await read($, status), n = toReview(s); void notify($, 'done', n ? `Quick check · ${n} to look at` : 'Quick check · all clear', s) }
   // the header draws the note as a status chip: done → a tick and the action's own words ("Saved"), else what went wrong
-  await update($, note, () => (r.ok ? label : `${label}: ${(r.out.split('\n')[0] ?? '').slice(0, 120)}`))
+  await update($, note, () => (r.ok ? (sayOut ? (r.out.split('\n')[0] ?? label).slice(0, 120) : label) : `${label}: ${(r.out.split('\n')[0] ?? '').slice(0, 120)}`)) // sayOut: the command's own words on success
 }
 
-export const ago = (m: number | null) => (m === null ? 'never' : m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`)
-export const minsSince = (iso?: string | null) => (iso && Number.isFinite(Date.parse(iso)) ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000)) : null) // unreadable: "never", not NaN
 // transparent: Claude Code's own light or dark canvas shows through, so the panel looks native in both modes
-export function openPane($: Dollar) { armAnimation('open'); return $.ui.open({ id: PANE, title: 'Kapex Cortex', backgroundColor: 'transparent' }) }
+export function openPane($: Dollar) { armAnimation('open'); void setMore($, 'timeline', 0).catch(() => undefined); return $.ui.open({ id: PANE, title: 'Kapex Cortex', backgroundColor: 'transparent' }) } // opened afresh: the Timeline starts at the newest page
 
 // Every state read and write goes through these (the validator wants atoms used in the file that declares them).
 export async function snapshot($: Dollar) {
@@ -207,8 +210,6 @@ export async function stampCache($: Dollar, u?: { input_tokens: number; cache_re
   await update($, cache, c => ({ ...c, lastAt: Date.now(), ...(u ? { read: u.cache_read_input_tokens, write: u.cache_creation_input_tokens, input: u.input_tokens } : {}) }))
 }
 
-/** Changes the newest Dream proposes and you haven't looked at yet (it must still be "proposed"). */
-export const toReview = (s: StatusView | null | undefined) => { const d = s?.dream?.recent?.[0]; return d && d.status === 'proposed' ? d.findings.filter(f => !f.skip && !f.done).length : 0 }
 
 export async function readView($: Dollar): Promise<ViewState> { return read($, view) }
 export async function toggleGroup($: Dollar, g: string): Promise<void> {
@@ -217,6 +218,8 @@ export async function toggleGroup($: Dollar, g: string): Promise<void> {
 export async function showMore($: Dollar, g: string, step = 10): Promise<void> {
   await update($, view, v => ({ ...v, more: { ...v.more, [g]: Math.max(0, (v.more[g] ?? 0) + step) } })) // never below zero: two quick presses of Back to newest
 }
+/** Sets a group's paging to an exact place (a press reads the state as it is now, never a stale count from its drawing). */
+export async function setMore($: Dollar, g: string, at: number): Promise<void> { await update($, view, v => ({ ...v, more: { ...v.more, [g]: Math.max(0, Math.floor(at) || 0) } })) }
 export async function setEditing($: Dollar, id: string): Promise<void> { await update($, view, v => ({ ...v, editing: id })) }
 
 /** Plan numbers last seen (any chat), for the cards and strip before this chat's first reply. */

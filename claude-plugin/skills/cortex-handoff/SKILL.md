@@ -1,6 +1,7 @@
 ---
 name: cortex-handoff
 description: Record a handoff so another tool or model can continue this work (Kapex Cortex). Use when the user says hand off, save state, I'm about to switch tools, or before a usage limit.
+disable-model-invocation: true
 ---
 
 1. Decide, in one sentence each: the overall **goal** of the current work, and the concrete **next action** (which file, function or command comes next).

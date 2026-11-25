@@ -1,9 +1,10 @@
-import type { ElementTable } from 'claude-code'
-import { sceneSvg } from './mascot'
+import { atom, read, update, type ElementTable } from 'claude-code'
+import { pageScene } from './mascot'
 
-import type { StatusView, TimelineEventView, ViewState } from '../types'
+import type { OlderView, StatusView, TimelineEventView, ViewState } from '../types'
 import { k } from './charts'
-import { act, ago, minsSince, showMore, type Dollar } from './data'
+import { act, ago, kc, minsSince, setMore, type Dollar } from './data'
+import { PANE } from './data'
 import { outcome } from './cards'
 import type { Kit } from './kit'
 import { K } from './theme'
@@ -24,8 +25,9 @@ const KIND: Record<string, { icon: string; label: string; lane: number }> = {
 }
 // one colour per row (failures in rose); amber is kept for warnings, so handoffs get the deep emerald
 const LANES: [string, string][] = [['Replies', K.emerald], ['Commits', K.silver], ['Handoffs', K.pine], ['Dreams', '#14B8A6']]
-/** Events per page of the list: the newest page, then this many more per press of "Show older". */
-const PAGE = 24
+/** Events per page. The list shows one page at a time (Older / Newer move it), never a list that keeps growing: the
+ * desktop app drops a pane whose drawing gets too big (~150 KB a page; 160 events at once were ~750 KB and blanked it). */
+export const PAGE = 24
 const TONE: Record<string, string> = { ok: K.emerald, warn: K.amber, bad: K.rose, info: K.silver }
 const dayOf = (iso: string) => {
   if (!Number.isFinite(Date.parse(iso))) return 'Earlier' // an unreadable time: grouped last, never "Invalid Date"
@@ -68,15 +70,65 @@ function chartOnce(key: string, make: () => string): string {
   return chartMemo.svg
 }
 
-export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView, vw: ViewState, px: number): JSX.Element {
+// The list loads as you go, newest first: 24 to start, Show older adds 24 below and scrolls to the first of them. At
+// most WINDOW tiles are drawn at once (a pane full of drawings is what once blanked it): past that, the newest drop
+// off the top and Show newer brings them back. The status carries the newest 160 events; past them, Show older asks
+// the core for the next ones (kc timeline --before), so the list reaches back as far as the history goes.
+export const WINDOW = 48
+export type Older = OlderView
+export const olderTl = atom({ plugin: 'kapex-cortex', key: 'tl-older' } as const, { events: [], episodes: [], more: true, loading: false, from: '' } as Older, { shape: 'tl-older-1' })
+export async function readOlder($: Dollar): Promise<Older> { try { return await read($, olderTl) } catch { return { events: [], episodes: [], more: true, loading: false, from: '' } } }
+
+/** Shows the list down to event `end` (one past the last), then scrolls to `key` (a tile) or the very top. */
+async function go($: Dollar, end: number, key?: string): Promise<void> {
+  await setMore($, 'timeline', end)
+  try { await $.ui.scroll(key ? { in: PANE, to: { key }, block: 'start' } : { in: PANE, to: 'start' }) } catch { /* a surface that can't scroll: the list still changed */ }
+}
+/** Show older: from what is loaded, else from the core first (the next 48 before the oldest event loaded). */
+async function older($: Dollar, all: TimelineEventView[], end: number, newest: string): Promise<void> {
+  if (end >= all.length) {
+    const o = await readOlder($)
+    if (o.loading) return
+    const last = all[all.length - 1]
+    if (!last || (!o.more && o.from === newest)) return
+    await update($, olderTl, x => ({ ...x, loading: true }))
+    // a fetch that fails (a timeout, a crash, words instead of JSON) keeps Show older for another try, never "the oldest"
+    let got: Omit<Older, 'loading' | 'from'> | null = null
+    try {
+      const r = await kc($, ['timeline', '--before', last.ts, '--limit', '48'])
+      const j = JSON.parse(r.out) as Omit<Older, 'loading' | 'from'>
+      if (r.ok && Array.isArray(j.events)) got = { events: j.events, episodes: Array.isArray(j.episodes) ? j.episodes : [], more: !!j.more }
+    } catch { /* kept as a failure below */ }
+    const ids = new Set(all.map(e => e.id)), fresh = got ? got.events.filter(e => !ids.has(e.id)) : [] // `before` is inclusive: drop what shows already
+    try {
+      await update($, olderTl, x => {
+        const keep = x.from === newest ? x : { events: [], episodes: [], more: true, loading: false, from: newest }
+        if (!got) return { ...keep, loading: false, from: newest }
+        return { events: [...keep.events, ...fresh], episodes: [...keep.episodes, ...got.episodes], more: got.more, loading: false, from: newest }
+      })
+    } finally { await update($, olderTl, x => (x.loading ? { ...x, loading: false } : x)).catch(() => undefined) }
+    if (!got) { try { $.ui.toast('Couldn\'t load older events: try again', { timeoutMs: 4_000 }) } catch { /* no toasts here */ } return }
+    if (!fresh.length) return
+    await go($, end + PAGE, `tile-${fresh[0]!.id}`)
+    return
+  }
+  await go($, Math.min(all.length, end + PAGE), `tile-${all[end]!.id}`)
+}
+
+export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView, vw: ViewState, px: number, more: Older | null = null): JSX.Element {
   const { Box, Text, Button } = els
   const t = tiles($, els, u, vw.expanded, px)
-  const all = s.timeline ?? []
-  const extra = Math.max(0, vw.more.timeline ?? 0)
-  const limit = PAGE + extra
-  const events = all.slice(0, limit)
-  const hidden = Math.max(0, all.length - limit)
-  const eps = new Map((s.episodes ?? []).map(e => [`turn-${e.id}`, e]))
+  // what the status carries, then what Show older fetched before its oldest (kept while the newest event is the same)
+  const loaded = s.timeline ?? [], newest = loaded[0]?.id ?? ''
+  const extra = more && more.from === newest ? more : null
+  const seen = new Set(loaded.map(e => e.id))
+  const all = [...loaded, ...(extra?.events ?? []).filter(e => !seen.has(e.id))]
+  const end = Math.min(all.length, Math.max(PAGE, Math.floor(vw.more.timeline ?? 0)))
+  const begin = Math.max(0, end - WINDOW)
+  const events = all.slice(begin, end)
+  // the core has more when the status says it was cut (timelineMore) and the last fetch didn't reach the start
+  const hidden = Math.max(0, all.length - end), canFetch = (s.timelineMore ?? loaded.length >= 160) && (!extra || extra.more)
+  const eps = new Map([...(s.episodes ?? []), ...(extra?.episodes ?? [])].map(e => [`turn-${e.id}`, e]))
   const days: [string, TimelineEventView[]][] = []
   // one group per day even if events arrive out of order (each day's key is unique, so the list never has twins)
   const byDay = new Map<string, TimelineEventView[]>()
@@ -100,7 +152,7 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
     return t.tile({
       id: ev.id, icon: kind.icon, color: TONE[ev.tone] ?? K.silver, lead: leadOf(ev, res), title: typed ? tidy(ev.title, 90, open) || ev.title : ev.title, time: time(ev.ts),
       // the outcome badge already says how the checks went: don't repeat it as a tag
-      badges: [[kind.label, TONE[ev.tone] ?? K.label], res ? [res.text, res.color, res.icon] : null, ...ev.tags.filter(x => !(res && /^tests /.test(x))).slice(0, ep ? 2 : 4).map(x => [x] as [string])],
+      badges: [[kind.label, TONE[ev.tone] ?? K.label], res ? [res.text, res.color, res.icon] : null, ...ev.tags.filter(x => !(res && (/^tests /.test(x) || x.toLowerCase() === res.text.toLowerCase()))) /* say it once: no tag repeating the outcome badge */.slice(0, ep ? 2 : 4).map(x => [x] as [string])],
       preview: ev.detail && typed ? tidy(ev.detail, 140, open) : ev.detail,
       body: ep && busy(ep) ? [
         t.stats(`tm-${ev.id}`, [
@@ -115,13 +167,34 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
     })
   }
 
+  // the list's ends: Show newer once the newest dropped off the top; Show older while anything older is loaded or the
+  // core may have more; Back to newest from anywhere past the first 24; one line says what shows and how far back
+  const span = events.length ? (() => { const a = dayOf(events[events.length - 1]!.ts), b = dayOf(events[0]!.ts); return a === b ? a : `${a} – ${b}` })() : ''
+  const top = begin > 0 ? (
+    <Box key="tl-top" flexDirection="row" justifyContent="center" alignItems="center" columnGap={2} rowGap={1} flexWrap="wrap">
+      <Button key="tl-newer" variant="secondary" onPress={() => { void go($, Math.max(PAGE, end - PAGE)) }}>Show newer</Button>
+      <Text key="tl-top-n" size="caption" tabular color={K.muted}>{`${begin} newer event${begin === 1 ? '' : 's'} above`}</Text>
+    </Box>
+  ) : null
+  const foot = all.length > PAGE || canFetch ? (
+    <Box key="tl-page" flexDirection="column" gap={0} alignItems="center">
+      <Box flexDirection="row" justifyContent="center" alignItems="center" columnGap={2} rowGap={1} flexWrap="wrap">
+        {hidden > 0 || canFetch ? <Button key="tl-more" variant="secondary" onPress={() => { void older($, all, end, newest) }}>{more?.loading ? 'Loading…' : 'Show older'}</Button> : null}
+        {end > PAGE ? <Button key="tl-less" plain onPress={() => { void go($, PAGE) }}><Text size="caption" color={K.label}>Back to newest</Text></Button> : null}
+      </Box>
+      <Text key="tl-left" size="caption" tabular color={K.muted}>{`${begin + 1}–${end} of ${all.length}${hidden > 0 ? ` · ${hidden} older loaded` : canFetch ? ' · more in history' : ' · the oldest'}`}</Text>
+      {span ? <Text key="tl-days" size="caption" color={K.label}>{`Showing ${span}`}</Text> : null}
+    </Box>
+  ) : null
+
   return (
     <Box flexDirection="column" gap={1}>
-      {u.intro('tl-in', sceneSvg('timeline', 100), 'Cortex at the timeline', 'What happened, newest first', 'Every reply, commit, handoff and memory check in this project.', companion('idle', px))}
+      {u.intro('tl-in', pageScene('timeline', 100), 'Cortex at the timeline', 'What happened, newest first', 'Every reply, commit, handoff and memory check in this project.', companion('idle', px))}
       {u.card('tl-act', '100%', [
         u.head('tl-act-h', now - from > 36 * 3_600_000 ? 'The last 7 days' : 'Today', `${shown.length} event${shown.length === 1 ? '' : 's'}`),
         shown.length ? u.graphic('g-lanes', chart, `${shown.length} events: ${LANES.map(([l], i) => `${shown.filter(e => (KIND[e.kind] ?? KIND.turn!).lane === i).length} ${l.toLowerCase()}`).join(', ')}`) : u.tag('tl-none', 'turn', K.silver, 'Nothing yet. Each reply, commit, handoff and Dream shows up here.'),
       ])}
+      {top}
       {days.map(([day, list]) => (
         <Box key={`day-${day}`} flexDirection="column" gap={1}>
           {t.groupHead(`dh-${day}`, 'pending', K.emerald, day, `${list.length} event${list.length === 1 ? '' : 's'}`)}
@@ -131,15 +204,7 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
           }), day === 'Today' ? K.emerald : K.ink)}
         </Box>
       ))}
-      {/* paging: the button says exactly what a press adds, the count beside it how many older events are still
-          hidden (it updates with every press), and once you've paged back, one press returns to the newest */}
-      {all.length && (all.length > limit || extra > 0) ? (
-        <Box key="tl-page" flexDirection="row" justifyContent="center" alignItems="center" columnGap={2} rowGap={1} flexWrap="wrap">
-          {hidden > 0 ? <Button key="tl-more" onPress={() => { void showMore($, 'timeline', PAGE) }}>{hidden > PAGE ? `Show ${PAGE} older` : `Show the last ${hidden} older`}</Button> : null}
-          <Text key="tl-left" size="caption" tabular color={K.muted}>{hidden > 0 ? `${hidden} older event${hidden === 1 ? '' : 's'} not shown` : `All ${all.length} events shown`}</Text>
-          {extra > 0 ? <Button key="tl-less" plain onPress={() => { void showMore($, 'timeline', -extra) }}><Text size="caption" color={K.label}>Back to newest</Text></Button> : null}
-        </Box>
-      ) : null}
+      {foot}
     </Box>
   )
 }

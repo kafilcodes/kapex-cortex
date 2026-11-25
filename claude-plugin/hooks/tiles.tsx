@@ -29,11 +29,15 @@ export type TileSpec = {
   actions?: (JSX.Element | null)[]
   /** actions that always show (e.g. Approve / Reject), next to the expand control */
   quick?: (JSX.Element | null)[]
+  /** one line above the badges and actions: what Cortex suggests, read before choosing */
+  suggest?: JSX.Element | null
   accent?: string
   /** the title is the content (a memory): show it wrapped, cut to a preview until expanded */
   wrap?: boolean
   /** one line of a list (Memory files): the expand control sits on the title's row and no badge row is drawn */
   compact?: boolean
+  /** a row inside `rows` (one shared card): no surface or edge of its own */
+  flat?: boolean
 }
 
 export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[], px = 800) {
@@ -73,8 +77,37 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[], 
       </Box>
     )
   }
+  /** Rows inside an open tile, joined by a mini rail: a thin spine on the left with an elbow into each row, like the
+   * Timeline's rail at a smaller scale, so a tile's own items read as one connected list. `lines` estimates each row's
+   * text lines (caption size); the halves reach about 0.8 of the way to the next row's middle and overlap there. */
+  // `from`: px the first row's line reaches up, out of the body to the tile's badge row (the body is inset 4 columns,
+  // so the spine sits under the first badge): the wire then starts at that badge, e.g. Memory's "Applied"
+  const twig = (key: string, rows: { el: JSX.Element; lines?: number }[], color: string = K.ink, from = 0) => {
+    if (rows.length < 2 && !from) return <Box key={key} flexDirection="column" gap={1}>{rows.map(r => r.el)}</Box>
+    // each elbow sits on its row's first line (one text row, where the icon is; Box sizes are text rows), so two elbows are one row plus the gap apart; each
+    // half reaches 0.6 of that and they overlap, with room to spare if a row wraps to fewer lines than estimated
+    const hts = rows.map(r => 4 + 17 * Math.max(1, r.lines ?? 1))
+    const reach = (i: number) => Math.round(0.6 * (hts[i]! + 8))
+    return (
+      <Box key={key} flexDirection="column" gap={1}>
+        {rows.map((r, i) => (
+          <Box key={`${key}-r${i}`} flexDirection="row" gap={0} alignItems="flex-start">
+            <Box key={`${key}-rb${i}`} height={1} flexShrink={0} overflow="visible" flexDirection="column" justifyContent="center">{rail(`${key}-rl${i}`, i > 0 ? reach(i - 1) : from, i < rows.length - 1 ? reach(i) : 0, color)}</Box>
+            <Box width="90%" flexGrow={1} flexShrink={1} minWidth={20} flexDirection="column">{r.el}</Box>
+          </Box>
+        ))}
+      </Box>
+    )
+  }
   /** a flat list of tiles: no connectors, because nothing in it is a child of anything else */
   const stack = (key: string, items: JSX.Element[]) => <Box key={key} flexDirection="column" gap={1}>{items}</Box>
+  /** a list as rows on one card (craft: lists are made of rows, not a card per row): tiles drawn `flat`, a hairline
+   * between them (a 1 px drawing clipped to the card's width; plain space where drawings can't show) */
+  const rows = (key: string, items: JSX.Element[]) => (
+    <Box key={key} flexDirection="column" backgroundColor={K.card} borderStyle="round" borderColor={K.cardEdge} paddingX={2}>
+      {items.flatMap((it, i) => i === 0 ? [it] : [u.Svg ? <Box key={`${key}-d${i}`} overflow="hidden" flexDirection="row"><u.Svg key={`${key}-ds${i}`} source={`<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1"><rect width="2400" height="1" fill="${K.hairline}"/></svg>`} alt="divider" width={2400} height={1} /></Box> : null, it])}
+    </Box>
+  )
   /** an icon, a value and what it counts, side by side */
   const metric = (key: string, icon: string, color: string, value: string, label: string, width = '30%') => (
     <Box key={key} {...(width === '100%' ? {} : { width })} flexGrow={1} minWidth={14} flexDirection="row" gap={1} alignItems="center" backgroundColor={K.pill} {...u.inset()} paddingX={1} paddingY={1}>
@@ -129,7 +162,7 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[], 
     const badges = (t.badges ?? []).filter((b): b is [string, string?, string?] => !!b)
     const inline = !!t.compact && !badges.length && !t.quick?.some(Boolean)
     return (
-      <Box key={`tile-${t.id}`} flexDirection="column" gap={1} backgroundColor={K.card} borderStyle="round" borderColor={t.accent ?? K.hairline} paddingX={2} paddingY={1}>
+      <Box key={`tile-${t.id}`} flexDirection="column" gap={1} {...(t.flat ? {} : { backgroundColor: K.card, borderStyle: 'round', borderColor: t.accent ?? K.cardEdge, paddingX: 2 })} paddingY={1}>
         <Box flexDirection="row" gap={1} alignItems={t.lead && u.Svg && !open ? 'center' : 'flex-start'}>
           {t.lead && u.Svg
             ? <Box key={`tl-${t.id}`} flexShrink={0}><u.Svg key={`tn-${t.id}`} source={leadSvg(t.lead.kind, leadPx, t.lead.tint, t.lead.muted)} alt={t.lead.alt} width={leadPx} height={leadPx} /></Box>
@@ -145,9 +178,10 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[], 
             {t.preview ? <Text size="caption" color={K.label}>{open ? t.preview : preview(t.preview)}</Text> : null}
           </Box>
         </Box>
+        {t.suggest ?? null}
         {inline ? null : <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} rowGap={1} flexWrap="wrap">
           <Box flexDirection="row" gap={1} flexWrap="wrap" flexShrink={1}>{badges.map(([text, color, ic], i) => badge(`tb-${t.id}-${i}`, text, color, ic))}</Box>
-          <Box flexDirection="row" gap={1} alignItems="center" flexGrow={1} justifyContent="flex-end">
+          <Box flexDirection="row" gap={1} alignItems="center" flexGrow={1} justifyContent="flex-end" flexWrap="wrap">
             {t.quick ?? null}
             {toggle}
           </Box>
@@ -168,5 +202,5 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[], 
       {right ?? null}
     </Box>
   )
-  return { badge, metric, stats, seg, tile, groupHead, railed, stack }
+  return { badge, metric, stats, seg, tile, groupHead, railed, twig, stack, rows }
 }

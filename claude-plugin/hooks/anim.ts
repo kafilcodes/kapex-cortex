@@ -16,6 +16,8 @@ export function beginPass(): boolean {
   arm = null
   return !!pass
 }
+/** Whether this render is the armed pass after opening the panel (not a Refresh): for greetings that only belong there. */
+export const openingPass = (): boolean => pass?.mode === 'open'
 /** Ends the render's pass: true when any drawing in it animated. */
 export function endPass(): boolean { const any = !!pass?.any; pass = null; return any }
 /** Whether a drawing animates in this render: always in the pass after opening, only on change after Refresh. */

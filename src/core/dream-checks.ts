@@ -128,7 +128,9 @@ export function mechanicalChecks(root: string, files: NativeFile[], ents: Entry[
   // 5. duplicates: the same note twice; the copy in the weaker place goes (yours and CLAUDE.md win over auto memory)
   // a note an earlier check already flagged is reported once, not again as a copy
   const flaggedAt = new Set(out.filter((f) => f.line).map((f) => `${f.file}:${f.line}`));
-  const pool = ents.filter((e) => contentWords(e.text).length >= 4 && !/\]\([^)\s]+\.md\)/.test(e.text) && !flaggedAt.has(`${e.file}:${e.line}`));
+  // the main checkout's copy of this project's own files (when working in a git worktree inside it) is the same file,
+  // not a second note: comparing them would flag every line, and Apply would empty the branch's CLAUDE.md
+  const pool = ents.filter((e) => !fileOf.get(e.file)?.twin && contentWords(e.text).length >= 4 && !/\]\([^)\s]+\.md\)/.test(e.text) && !flaggedAt.has(`${e.file}:${e.line}`));
   const dropped = new Set<Entry>();
   for (let i = 0; i < pool.length; i++) {
     for (let j = i + 1; j < pool.length; j++) {

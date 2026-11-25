@@ -4,133 +4,137 @@
 
 # Kapex Cortex
 
-**See what every Claude Code message costs, switch chats without losing your place, and keep Claude's memory true.**
+**Switch Claude Code chats without losing context, see what every message costs, and keep Claude's memory true.**
 
-![version](https://img.shields.io/badge/version-4.0.0-10B981)
-![license](https://img.shields.io/badge/license-MIT-10B981)
-![deps](https://img.shields.io/badge/runtime%20deps-0-8b949e)
-![always-on context](https://img.shields.io/badge/always--on%20context-~280%20tokens-10B981)
-![Stop hook p95](https://img.shields.io/badge/Stop%20hook%20p95-~50%20ms-10B981)
+[![version](https://img.shields.io/badge/version-4.5.0-10B981)](CHANGELOG.md)
+[![license](https://img.shields.io/badge/license-MIT-10B981)](LICENSE)
+[![runtime deps](https://img.shields.io/badge/runtime%20deps-0-8b949e)](package.json)
+[![tokens added to your chats](https://img.shields.io/badge/tokens%20added%20to%20your%20chats-0-10B981)](docs/ARCHITECTURE.md#3-zero-passive-injection)
+[![Stop hook](https://img.shields.io/badge/Stop%20hook-39%20ms%20median-10B981)](#benchmarks)
+[![CI](https://github.com/kafilcodes/kapex-cortex/actions/workflows/ci.yml/badge.svg)](https://github.com/kafilcodes/kapex-cortex/actions/workflows/ci.yml)
 
 </div>
 
-<p align="center"><img src="docs/screenshots/strip.png" width="640" alt="The status strip above the prompt: context ring, cache countdown, plan use and the handoff state"></p>
+**Kapex Cortex is an open-source Claude Code plugin** (MIT, zero runtime dependencies) that adds what Claude Code and Claude Desktop don't have: a **lossless handoff** so a new chat continues exactly where the last one stopped, even five chats later; a **live status strip** with context %, a prompt-cache countdown and plan use; a **costs panel** that shows what every MCP server and skill adds to each message; and **Dreams** that check `CLAUDE.md` and Claude's memory against what really happened. It adds **0 tokens** to your normal chats.
 
-<p align="center"><img src="docs/screenshots/overview.png" width="860" alt="The Cortex panel, Overview page: context gauge, plan, cache and handoff cells, the last turn and what a new chat would get"></p>
+<p align="center"><img src="docs/screenshots/strip.png" width="720" alt="The Cortex status strip above the Claude Code prompt: context ring at 42%, cache warm until 6:11 PM, an all-good check and the Open Cortex button"></p>
 
-## Install (10 seconds)
+<p align="center"><img src="docs/screenshots/overview.png" width="860" alt="The Cortex panel's Overview on the Kapex Obsidian theme: chat context gauge at 42%, 5-hour plan and weekly use, prompt-cache countdown, the last turn, the saved handoff and what every message carries"></p>
 
-You need [Node.js 23.6+](https://nodejs.org). In Claude Code (CLI or Desktop):
+## Install
 
-```
+You need [Node.js 23.6+](https://nodejs.org). In Claude Code (CLI or Desktop), paste:
+
+```text
 /plugin marketplace add kafilcodes/kapex-cortex
 /plugin install kapex-cortex@kapex-cortex
 ```
 
-Open a new chat, press **Open Cortex** above the prompt (or type `/kc`), and press **Turn on Cortex** once. A three-step intro shows what's where.
+In the install pane, pick **Install for you (user scope)** so Cortex works in every repository and over SSH. Then run `/reload-plugins` (or open a new chat), press **Open Cortex** above the prompt (or type `/kc`), and press **Turn on Cortex** once in each project.
 
-## What is Kapex Cortex?
+From a terminal instead:
 
-Kapex Cortex is an open-source **Claude Code plugin** (MIT, zero runtime dependencies) that adds four things Claude Code doesn't have, and works *with* Claude Code's own memory instead of keeping a store of its own:
+```bash
+claude plugin marketplace add kafilcodes/kapex-cortex && claude plugin install kapex-cortex@kapex-cortex --scope user
+```
 
-| | What it adds | Why it matters |
+### Install with your AI agent (one prompt)
+
+Paste this into Claude Code, Codex or OpenCode:
+
+```text
+Install the Kapex Cortex plugin for Claude Code and verify it. Steps: 1) check `node --version` is 23.6 or newer (stop and tell me if not); 2) run `claude plugin marketplace add kafilcodes/kapex-cortex`; 3) run `claude plugin install kapex-cortex@kapex-cortex --scope user`; 4) run `claude plugin details kapex-cortex` and confirm it lists the skills cortex-resume, cortex-handoff, cortex-init and kc and five hooks; 5) tell me to run /reload-plugins (or open a new chat) and then /kc to open the panel and press Turn on Cortex. Don't change any other setting.
+```
+
+## What it does
+
+| | What you get | Why it matters |
 |---|---|---|
-| **Status strip** | One line above the prompt, live between replies (it notices the cache going cold or a plan window resetting without a new message): context ring, cache countdown, 5-hour plan, and a traffic-light tip: green "All good", amber "fine to continue" (cache cooling, filling up, a Dream due), red with the move and what it saves ("82% full · hand off, save ~800k"), one press to act | Claude Code shows no cache timer, and plan use is behind `/usage` |
-| **Costs & usage** | What each MCP server and skill adds to *every* message, with one press to turn off the unused ones; your token burn day by day (a contribution grid kept from the project's first day), when you work (weekday × hour) and what Claude does here (its tools, as a radar) | Unused tools can cost thousands of tokens per message, unseen; Claude Code shows no history of your own use |
-| **Lossless handoff** | After every reply, `.vault/STATE.md`: the session's goal and your standing instructions, the trail of earlier turns, and the last exchanges word for word. `/cortex-resume` continues in a new chat (or in OpenCode after a usage limit) | A new chat starts from about 2k–7k tokens and keeps the plan, instead of a cold re-read or a lossy summary |
-| **Dream** | Checks `CLAUDE.md`, `.claude/rules/` and auto memory against what really happened (your chats, test runs, git), and proposes fixes you Apply and Undo | One wrong note ("`npm test` is broken") is trusted by every future chat |
-| **Safety for long runs** | Checks for readable secrets, the sandbox, and a test gate that sends Claude back when checks fail; one press to fix, one to undo | Deny rules hold before auto mode's own safety check, and a real gate stops Claude finishing on red tests |
+| **Lossless handoff** | After every reply, `.vault/STATE.md` holds a **mission contract** (the goal, your rules in your own words, the approaches you rejected) plus the turn trail and the last exchanges word for word. `/cortex-resume` continues in a new chat, after `/clear`, in a git worktree, or in OpenCode after a usage limit | A new chat starts from about 1–2k tokens with nothing lost, instead of a cold re-read or a lossy summary |
+| **Status strip** | One line above the prompt, live between replies: context ring, prompt-cache countdown, 5-hour plan, and one tip ("82% full · hand off, save ~800k") | Claude Code shows no cache timer, and plan use hides behind `/usage` |
+| **Costs & usage** | What each MCP server and skill adds to *every* message, one press to turn off unused ones, token burn by day, when you work, what Claude does | Unused tools can cost thousands of tokens per message, unseen |
+| **Dream** | Checks `CLAUDE.md`, `.claude/rules/` and auto memory against your chats, test runs and git; proposes fixes you Apply or Undo | One wrong note ("`npm test` is broken") is trusted by every future chat |
+| **Safety for long runs** | Checks for readable secrets, the sandbox and a test gate before auto mode; one press to fix, one to undo | Deny rules hold before auto mode's own check |
 
-## Common questions
+## How it works
 
-### Does Cortex change Claude Code's prompts, cache or context?
+Cortex is shell hooks that write files when a reply ends (no model, no tokens) plus a panel that draws beside the chat. Nothing is added to your prompts. [Full architecture with diagrams →](docs/ARCHITECTURE.md)
 
-No. Cortex never rewrites, compresses or injects into your messages, so Claude Code's prompt cache and compaction work exactly as designed. Its hooks write files; its panel and strip draw beside the chat. What it adds to Claude's context:
-
-- **~280 tokens in every session**: the names and descriptions of its four skills (`claude plugin details kapex-cortex` reports this; the panel shows the live number).
-- **One short note** when a chat opens with a handoff waiting.
-- Whatever you choose to run: a skill (`/cortex-resume`), a fresh-eyes check, a Dream on your plan.
-
-### How is it different from what Claude Code already does?
-
-| Need | Claude Code built in | Cortex adds |
-|---|---|---|
-| Context use | `/context` (on demand) | A live ring above the prompt, a trend, turns left before compaction |
-| Plan limits | `/usage` | 5-hour and weekly bars always in view, with reset times |
-| Prompt cache | Works silently | A countdown of how long the cache stays warm, and a tip before it cools on a big chat |
-| Memory | `CLAUDE.md`, rules, auto memory; `/doctor prompt-audit` reviews wording for the model | A Dream checks the *facts* in that memory against test runs, commits and your words |
-| Switching chats | `/compact`, `/resume` (same chat) | A new chat that starts with the goal, your instructions and the last exchanges word for word |
-| Parallel work | Subagents, agent view, agent teams, Projects | Nothing competing: Cortex stays the per-chat layer, in every session |
-
-### Is it safe to install?
-
-Nothing changes until you press Apply, and every Apply can be undone. Hooks always exit cleanly (Stop hook p95 about 50 ms on an M4), errors go to `.vault/private/errors.log`, secrets are scrubbed before anything is saved, and `~/.claude` files are only read. See [Safety](#safety).
-
-## The panel
-
-**Overview:** how full this chat is (a segmented gauge with the point where Claude compacts), the 5-hour plan, the week and the cache; the last turn; what a new chat would get; the memory Claude loads; what Cortex saved; what every message carries.
-**Timeline:** the last 7 days as swimlanes, then every reply, commit, handoff and Dream as a tile that opens for details, 24 at a time (the button says how many older ones are left).
-**Memory:** *Memory check* (Dreams and the free quick check, with Apply and Undo) and *Memory files* (what loads into every chat, and its cost).
-**Handoff:** what a new chat gets, one-press hand off, a **fresh-eyes check**, your code right now, earlier handoffs by chat name.
-**Costs & usage:** *Costs* (what every message carries, tools you never use, what Cortex saved, Cortex's own speed) and *Usage* (token burn per day, weekday × hour, tool mix, totals).
-**Settings:** the Dream model and schedule, when to offer a fresh chat, handoff size, **Safety for long runs**, sounds, greeting.
-
-When something finishes (a handoff saved, a Dream done, a quick check) the strip shows it for a few seconds with an icon, a toast says it in a few words, and Cortex plays its own short chime (synthesized for Cortex, nothing like the system sounds; Settings → Sounds turns it off). Two mascots keep you company: an emerald robot and Blocky, its pixel sidekick.
-
-It follows Claude Code's light or dark mode and fits a half-width pane.
-
-## Lossless handoff
-
-After every reply Cortex rewrites `.vault/STATE.md` from what it already stored (no model, 0 tokens), in three parts, each with its own share of the budget so a run of small final turns can't push the session's purpose out:
-
-1. **Pinned for this session:** the request it started with, your standing instructions in your own words, the decisions `/cortex-handoff` recorded, and memory notes a check flagged but nobody fixed. A chat that starts with `/cortex-resume` **carries the chat it continues**: its goal, instructions, decisions and milestones (turns that committed or fixed a failing check, with their files), so chat 3 still knows what chat 1 decided.
-2. **Session trail:** one line per earlier turn and the session's commits.
-3. **Where we left off:** the last three exchanges word for word, the files edited, the last check, open items, and a git snapshot at handoff moments.
-
-At 80% full (70% with a cold cache) Overview offers a fresh chat. At a usage limit the handoff is stamped ready: type `/cortex-resume` in OpenCode (free models work), and the handoff comes back when that session goes idle.
-
-**Fresh-eyes check.** One press sends a helper that knows nothing of your chat to read only the handoff and the files it names, and say where it would get stuck. It's the "Goldfish" from Google's [Elephant-Goldfish model](https://github.com/google/elephant-goldfish-model); for design docs and spec drift, use that plugin.
-
-<p align="center"><img src="docs/screenshots/timeline.png" width="620" alt="The Timeline page: an activity chart, then turns, commits, handoffs (named after the chat they came from) and Dreams as tiles"></p>
-
-## Dream: memory that stays true
-
-1. **Reads** `CLAUDE.md`, `.claude/rules/*.md` and Claude's auto memory (your `~/.claude` files too, read-only).
-2. **Extracts evidence by program**, not by model, from your last 10 chats and git: each test run and whether it passed, your own words, when each note was written, recent commits.
-3. **Checks what a program can prove:** files over Claude Code's limits, broken links, files and colours that no longer exist, claims a real run contradicts, duplicates.
-4. **Optionally asks a model** (Sonnet on your plan by default, OpenCode, your own API key, or none) for what needs judgment: stale notes, contradictions, notes that only matter for some folders (moved into path-scoped rules).
-5. **Checks every model claim:** it must cite real evidence, can't carry commands, links or secrets, and must be at least 70% sure.
-6. **Proposes, never writes.** Apply, Keep or Undo per finding; before and after copies in `.vault/dreams/`.
-
-A **Quick check** runs the program-only checks in the background when files change: no model, no tokens.
+```mermaid
+flowchart LR
+    C1["Chat 1<br/>task + your rules<br/>+ a rejected approach"] -->|Stop hook, ~39 ms, 0 tokens| K["Mission contract<br/>in .vault/STATE.md"]
+    K -->|/cortex-resume| C2["Chat 2"]
+    C2 -->|adds its own rules| K
+    K -->|/clear, worktree, usage limit| C5["… chat 5 still holds<br/>chat 1's rules word for word"]
+```
 
 ## Benchmarks
 
-`node scripts/benchmark.ts` lives a dummy project through **25 turns in two chats** (the second starts with `/cortex-resume`) with the real hooks, then measures. No model, no tokens, nothing outside temp folders. Three rounds of 50 runs on an M4 MacBook Air, Node 26:
+**Measured 2026-11-25** on an Apple M4 MacBook Air, Node 26, with `node scripts/benchmark.ts` (no model, no tokens, temp folders only; you can run it yourself):
 
 | What | Result |
 |---|---|
-| Dream Quick check on 6 planted problems (a false note, a stale colour, a stale path, a duplicate, a broken link, a 207-line CLAUDE.md) among 204 valid rules | **6/6 found, 0 false positives** (precision and recall 100%), plus 1 suggestion (a rule that could be path-scoped) |
+| **5-hop telephone**: five consecutive chats on one task with adversarial noise turns ("I don't see the button", "Work done in the last chat broke the build"); does chat 5 still hold chat 1's mandatory skill, never-rule, scope rule, rejected approach and goal? | **13/13 probes** (the v4.0.0 release's handoff kept 3 of the same 7 facts) |
+| Handoff after 25 turns: does `STATE.md` answer 10 fixed questions (goal, a turn-3 decision, a turn-14 bug and its file, the next step…)? | **10/10**, about 1.1k tokens |
+| Dream Quick check: 6 planted problems among 204 valid rules | **6/6 found, 0 false positives** |
 | Apply, then Undo | every memory file back **byte for byte** |
-| Handoff after 25 turns: does `STATE.md` hold the answers to 10 fixed questions (goal, a turn-3 decision, a turn-14 bug and its file, the next step…)? | **10/10**, about 900 tokens |
-| The same 10 questions to a zero-memory agent that reads only `STATE.md` ([the Goldfish test](bench/goldfish.md)) | **10/10** |
-| Stop hook, whole process | p50 46 ms · p95 51–53 ms (limit 150) · 60 MB peak |
-| SessionStart hook | p50 28 ms · p95 30–32 ms |
-| Quick check: deciding it isn't needed · running it | 0.1 ms · p95 94–99 ms |
+| Stop hook, whole process | **p50 39 ms**, p95 56.7 ms (bar 60), 61 MB peak |
+| Panel refresh (status read) | **p50 64 ms** (was 133 ms in v4.0) |
+| Tokens Cortex adds to a normal chat | **0** (measured with `/context`) |
+| Automated tests | **223** (84 core on macOS, Linux and Windows CI; 139 panel) |
 
-On a real repo (this one, a 12 MB transcript) the Stop hook measures p50 52 ms, p95 67 ms. Inside Claude Desktop the hook's own log shows slower outliers (up to ~150 ms) when the machine is busy as a reply ends; the Costs page shows yours.
+## The panel
 
-Three independent AI design reviewers (Opus, Sonnet and Fable, shown only screenshots) scored the v3.8.2 panel about 5–6 out of 10 for ease and craft, and 4 for plain language. Versions 3.9 and 4.0 reworked the wording, layout and charts in response; they have not been re-judged yet, so take that as the last measured bar, not a claim of polish.
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/handoff.png" alt="Handoff page: what a new chat gets (1.1k tokens instead of re-reading 84k), the goal, next step, fresh-eyes check and earlier handoffs"></td>
+<td width="50%"><img src="docs/screenshots/memory.png" alt="Memory page: the memory check ring and each finding with Cortex's suggestion, Apply and Undo"></td>
+</tr>
+<tr>
+<td><b>Handoff</b>: what a new chat gets, one-press hand off, a fresh-eyes check, your code right now, earlier handoffs by chat name.</td>
+<td><b>Memory</b>: the Dream's findings, each with Cortex's suggestion beside Apply and Keep; what loads into every chat and what it costs.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/costs.png" alt="Costs page: the 5-hour plan on a pace track, split by chat, model and tools; what every message carries"></td>
+<td><img src="docs/screenshots/timeline.png" alt="Timeline page: an activity chart, then turns, commits, handoffs and Dreams as tiles that open for details"></td>
+</tr>
+<tr>
+<td><b>Costs & usage</b>: the 5-hour plan on a pace track, what every message carries, tools you never use, token burn by day.</td>
+<td><b>Timeline</b>: every reply, commit, handoff and Dream as a tile that opens for details.</td>
+</tr>
+</table>
 
-## Safety for long runs
+Screenshots show the **Kapex Obsidian** theme (true black with an emerald cast, the default Kapex look in dark mode; Mist in light mode; Settings → Look turns it off). The panel follows Claude Code's light or dark mode and fits a half-width pane. A panel button never sends a prompt by itself.
 
-Settings → **Safety for long runs** checks three things Claude Code's docs recommend for auto mode and long sessions:
+## FAQ
 
-| Check | Fix (one press, undoable) |
-|---|---|
-| Can Claude's file tools read `.env` or `~/.ssh`? | Adds `Read` deny rules to `.claude/settings.json`. Deny rules run before auto mode's classifier |
-| Is the sandbox on? | Explains only: `/sandbox` turns it on. It also limits network, so Cortex never flips it for you |
-| Does anything check the work before Claude finishes? | Adds a Stop hook that runs your check (the handoff's Verify line, or `npm run check` / `npm test`) when Claude stops after changing files, and sends Claude back if it fails, at most 3 times. A plain `npm test` hook can't: a failure exits 1, which Claude Code treats as done |
+### How do I switch chats in Claude Code without losing context?
+
+Install Kapex Cortex, then type `/cortex-resume` in the new chat (or press **Resume** on the strip). The new chat reads `.vault/STATE.md`, which Cortex rewrote after your last reply: the goal, your rules word for word, the approaches you rejected, the trail of earlier turns, and the last exchanges in full. It works across `/clear`, new chats, git worktrees and usage limits, and holds up over five chats in a row (13/13 in the telephone benchmark).
+
+### How do I see what MCP tools and skills cost per message in Claude Code?
+
+Open the panel (`/kc`) → **Costs & usage**. It lists what each MCP server and plugin skill adds to every message, flags the ones you never used in recent chats, and turns them off for new chats with one press (Claude Code's own per-project switch, undoable).
+
+### Does Kapex Cortex inject prompts or slow down Claude Code?
+
+No. It adds **0 tokens** to normal chats: its skills run only when you type them, its one panel tool (`open_panel`) is a deferred tool that `/context` counts as 0, and the handoff reaches a chat only when you run `/cortex-resume`. It never rewrites or compresses prompts, so Claude Code's prompt cache works as designed. Its Stop hook takes about 39 ms (median) after a reply ends and always exits cleanly. One thing it does change on its own: **auto-park** (on by default) turns off MCP servers you haven't used in 10 chats here, through Claude Code's own per-project `disabledMcpServers` switch in `~/.claude.json`; one press brings a server back, and `kc prefs set autoPark off` stops it. See [SECURITY.md](SECURITY.md).
+
+### How does it handle git worktrees, `/clear` and several chats at once?
+
+One repository has one vault, so a chat in any worktree (including Claude Desktop's own `.claude/worktrees/*`) hands off through the same `STATE.md`, and the packet names the worktree to work in. After `/clear` or a resume, the strip starts over for the new chat at once. Several chats in one project never overwrite each other's handoff, and a quick "hi" in a side tab never replaces the real one.
+
+### How do I know when the prompt cache is about to go cold?
+
+The strip shows a countdown ("cache warm till 6:11 PM") that drains and changes colour as the cache cools. On a big chat it suggests replying or handing off before the cache goes cold, when the next message would re-read everything at full price.
+
+### What does a Dream check, and can it break my CLAUDE.md?
+
+A Dream checks the facts in `CLAUDE.md`, `.claude/rules/` and auto memory against evidence a program extracts from your chats, test runs and git: false or stale notes, duplicates, broken links, files over Claude's limits, notes that belong in a path-scoped rule. A rule the code has drifted from is shown as drift, never deleted. Nothing changes until you press Apply, and every Apply can be undone byte for byte.
+
+### What happens when I hit the 5-hour limit?
+
+Cortex stamps the handoff **ready** and keeps your last real answer (the "You've hit your limit" notice never replaces it). Continue in OpenCode with `/cortex-resume` (free models work), or after the reset in a new chat.
 
 ## Commands
 
@@ -142,32 +146,36 @@ Settings → **Safety for long runs** checks three things Claude Code's docs rec
 | `kc park add <server>` · `kc park remove <server>` | Turn an MCP server off or on for new chats here |
 | `kc safety` · `kc safety apply secrets\|gate` · `kc safety undo` | The safety check |
 | `kc h` · `kc r` · `kc s` · `kc m` | Save a handoff · show it · status · memory files |
+| `kc prefs set startNotice on` | Opt in to a one-line "a handoff exists" note in new chats (off by default) |
 
 ## Safety
 
 | Guard | Means |
 |---|---|
 | Proposes, never writes | Nothing changes until you Apply; every Apply can be undone byte for byte |
-| Evidence by program | A Dream's proof comes from transcripts and git, not from a model's wording |
+| 0 tokens, no network | Nothing injected into chats; no network calls of its own (only a Dream judged with your own API key, if you set one) |
 | Your files stay yours | `~/.claude` is only read; settings changes keep every other key |
 | Secret scrubber | Keys, tokens and passwords are redacted before anything is saved |
-| Never breaks your tool | Every hook exits cleanly; errors are logged, not shown |
-| Claude Code's own switches | Turning off a server writes the same per-project list `/mcp` writes; the current chat's cache stays intact |
+| Never breaks your tool | Every hook exits 0; errors go to `.vault/private/errors.log` |
+| Claude Code's own switches | It never patches Claude Code or bypasses a permission prompt |
+
+See [SECURITY.md](SECURITY.md) to report a problem privately.
 
 ## Honest limits
 
-- **Dream quality is measured on planted bugs, not yet on months of real use.** The benchmark plants six kinds among 204 valid rules (above); real memory files are messier.
+- **Dream quality is measured on planted problems, not on months of real use.** Real memory files are messier.
 - **The program checks are narrow by design.** Without a model, a Dream finds only what it can prove.
-- **"Saved" means measured:** context a resumed chat didn't re-read, and context a message no longer carries because of turned-off servers. Cache reads count at about a tenth of the price, never as full savings.
-- **Claude Code keeps transcripts 30 days by default**, so a Dream sees at most that far back.
-- **Tested by hand on macOS** with Claude Code Desktop and CLI. Linux and Windows pass the test suite in CI.
+- **Rules are read by pattern, not by a model.** A rule phrased very unusually may not be pinned; the full message is still in the handoff's trail.
+- **Transcripts:** the Claude Code CLI deletes them after 30 days by default (`cleanupPeriodDays`); since v2.1.248 Claude Desktop keeps its own unless you set `desktopSessionCleanupPeriodDays`. A Dream sees only what is left, and Cortex carries on when files are gone.
+- **Tested by hand on macOS** with Claude Code Desktop and CLI. Linux and Windows pass the core tests in CI.
+- **The 5-hour plan split is an estimate.** Claude doesn't publish how it counts the plan; `/usage` is Claude's own view.
 
 ## Other tools
 
-Cortex is built for Claude Code. **OpenCode** is the one other tool it supports, as a fallback when you hit a Claude usage limit: `/cortex-resume` works there (in OpenCode's own skills folder, so Claude Code never lists the skills twice), and an OpenCode plugin writes the handoff back. The handoff itself is plain Markdown, so any agent can read `.vault/STATE.md`.
+Cortex is built for Claude Code. **OpenCode** is supported as a fallback after a Claude usage limit: `/cortex-resume` works there, and an OpenCode plugin writes the handoff back. The handoff is plain Markdown, so any agent can read `.vault/STATE.md`.
 
-## Built with
+## Contributing
 
-TypeScript run directly by Node ≥ 23.6, and a Claude Code mod for the panel and strip. **Zero runtime dependencies.** [`BUILD-LOG.md`](BUILD-LOG.md) records what broke and how it was fixed. A short machine-readable summary is in [`llms.txt`](llms.txt).
+Zero runtime dependencies, hooks that never break the harness, a 60 ms Stop-hook budget and 0 tokens in normal chats: see [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md); [BUILD-LOG.md](BUILD-LOG.md) records what broke and how it was fixed; [llms.txt](llms.txt) is a short summary for AI assistants.
 
 MIT © Mohd. Kafil Khan · [Kapex AI](https://kapex.ai)

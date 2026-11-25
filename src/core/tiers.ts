@@ -3,10 +3,12 @@ import type { Carry } from "./carry.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { askOf, noRefs } from "./brief.ts";
+import { ownWords, pinKey } from "./mission.ts";
+import { headCommit } from "./worktree.ts";
 import { readEpisodes } from "./episodes.ts";
 import type { RepoPaths } from "./paths.ts";
 import { scrub } from "./scrub.ts";
-import { readTurns } from "./turns.ts";
+import { readTurns, rewoundRanges } from "./turns.ts";
 
 /**
  * The two upper tiers of the handoff (the third is the last exchanges word for word, in state.ts). Built from what
@@ -52,17 +54,8 @@ export function writeMemoryCheck(p: RepoPaths, findings: { label: string; line: 
   try { writeFileSync(memoryCheckPath(p), JSON.stringify({ at: now.toISOString(), open } satisfies MemoryCheck)); } catch { /* best effort */ }
 }
 
-/** The commit HEAD points at, read from .git without starting git (null for anything unusual: worktrees, detached). */
-export function headSha(root: string): string | null {
-  try {
-    const head = readFileSync(join(root, ".git", "HEAD"), "utf8").trim();
-    const ref = /^ref: (refs\/heads\/.+)$/.exec(head)?.[1];
-    if (!ref) return null;
-    try { return readFileSync(join(root, ".git", ref), "utf8").trim() || null; } catch { /* packed */ }
-    const packed = readFileSync(join(root, ".git", "packed-refs"), "utf8").split("\n").find((l) => l.endsWith(` ${ref}`));
-    return packed?.split(" ")[0] ?? null;
-  } catch { return null; }
-}
+/** The commit HEAD points at, read from git's files without starting git (linked worktrees and packed refs too). */
+export const headSha = (root: string): string | null => headCommit(root);
 
 /** This session's commits. Asked of git only when HEAD moved since the last turn (most turns don't commit), which
  * keeps one process start (about 9 ms) out of most Stop hooks. */
@@ -80,21 +73,23 @@ function commitsSince(p: RepoPaths, since: string): string[] {
 export interface Tiers { pinned: string; trail: string; counts: { instructions: number; decisions: number; flagged: number; trail: number; commits: number } }
 
 /** Tier 1 and Tier 2 as markdown, each kept within its share of the packet. */
-export function buildTiers(p: RepoPaths, a: { session: string; goal?: string; handoff?: { session?: string; ts: string; decisions?: string[] } | null; recentTurns: number; room: { pinned: number; trail: number }; git: boolean; carry?: Carry | null }): Tiers {
+export function buildTiers(p: RepoPaths, a: { session: string; goal?: string; handoff?: { session?: string; ts: string; decisions?: string[] } | null; recentTurns: number; room: { pinned: number; trail: number }; git: boolean; carry?: Carry | null; /** pin keys the mission contract already carries */ pinned?: Set<string> }): Tiers {
   const turns = readTurns(p, a.session);
   const asks = turns.map((t, i) => ({ n: i + 1, ts: t.ts, text: scrub(askOf(t)).text })).filter((x) => x.text.length >= 15);
   const first = asks[0];
-  const rules = instructions(asks);
+  // standing instructions come from your own words only: text you pasted (often an earlier reply) is not yours to keep
+  const own = turns.map((t, i) => ({ n: i + 1, text: scrub(ownWords(t)).text })).filter((x) => x.text.length >= 15);
+  const inContract = a.pinned ?? new Set<string>();
+  const rules = instructions(own, 12).filter((r) => !inContract.has(pinKey(r.text))).slice(0, 8);
   // decisions from /cortex-handoff belong to the session that recorded them (or one started before they were written)
   const h = a.handoff;
-  const mine = !!h && (h.session === a.session || (!!turns[0] && h.ts >= turns[0].ts));
+  const mine = !!h && (h.session ? h.session === a.session : !!turns[0] && h.ts >= turns[0].ts);
   const c = a.carry;
   const same = (x: string, list: string[]) => list.some((y) => y.toLowerCase() === x.toLowerCase());
-  const decisions = [...(mine ? (h!.decisions ?? []).filter(Boolean) : [])];
-  for (const d of c?.decisions ?? []) if (!same(d, decisions)) decisions.push(d);
-  decisions.splice(8);
-  // instructions given in the chat this one continues still stand (yours win when they say the same thing)
-  const carriedRules = (c?.rules ?? []).filter((r) => !same(r, rules.map((x) => oneLine(x.text, 240)))).slice(0, 8);
+  // decisions and the rules of the chats this one continues live in the mission contract now (carried whole); a
+  // decision shows here only if the contract doesn't have it
+  const decisions = (mine ? (h!.decisions ?? []).filter(Boolean) : []).filter((d) => !inContract.has(pinKey(d.slice(0, 420)))).slice(0, 8);
+  const carriedRules = a.pinned ? [] : (c?.rules ?? []).filter((r) => !same(r, rules.map((x) => oneLine(x.text, 240)))).slice(0, 8);
   const mc = readMemoryCheck(p);
   const flagged = mc?.open ?? [];
 
@@ -109,7 +104,8 @@ export function buildTiers(p: RepoPaths, a: { session: string; goal?: string; ha
   if (pinned.length > a.room.pinned) pinned = `${pinned.slice(0, a.room.pinned - 20).replace(/\n[^\n]*$/, "")}\n- […]\n`;
 
   // one line per earlier turn of this session (the newest ones are in "Where we left off", word for word)
-  const eps = readEpisodes(p, 200).filter((e) => e.session === a.session).reverse();
+  const cut = rewoundRanges(p, a.session);
+  const eps = readEpisodes(p, 200).filter((e) => e.session === a.session && !cut.some((r) => e.start > r.since && e.start < r.until)).reverse();
   const older = eps.slice(0, Math.max(0, eps.length - a.recentTurns));
   const line = (e: (typeof eps)[number], i: number) => {
     const ask = noRefs(e.ask) || "(follow-up, no new message)";

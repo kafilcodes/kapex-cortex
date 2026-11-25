@@ -28,18 +28,36 @@ export function atomicWriteIfChanged(path: string, data: string, opts: { durable
   const tmp = join(dir, `.${basename(path)}.${process.pid}.${randomBytes(4).toString("hex")}.nosync`);
   const fd = openSync(tmp, "w", 0o644);
   try {
-    writeSync(fd, data);
-    if (opts.durable !== false) fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  try {
-    renameSync(tmp, path);
+    try {
+      writeSync(fd, data);
+      if (opts.durable !== false) fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameRetry(tmp, path);
+    return true;
   } catch (err) {
-    try { unlinkSync(tmp); } catch { /* ignore */ }
+    try { unlinkSync(tmp); } catch { /* ignore */ } // a full disk or a refused rename never leaves a temp file behind
     throw err;
   }
-  return true;
+}
+
+/**
+ * rename(), retried briefly on Windows: it refuses to rename over a file another process has open (a second chat
+ * reading STATE.md, Claude Code reading ~/.claude.json) with EPERM, EACCES or EBUSY for a few milliseconds.
+ * Anywhere else the first error is the answer.
+ */
+export function renameRetry(from: string, to: string): void {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      renameSync(from, to);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? "";
+      if (process.platform === "win32" && attempt < 20 && (code === "EPERM" || code === "EACCES" || code === "EBUSY")) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10); continue; }
+      throw err;
+    }
+  }
 }
 
 /**

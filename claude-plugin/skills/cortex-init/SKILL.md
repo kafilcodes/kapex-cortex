@@ -1,6 +1,7 @@
 ---
 name: cortex-init
 description: Turn on Kapex Cortex in the current project (status strip and panel, lossless handoffs between chats and to OpenCode, Dreams that check Claude's memory against real sessions). Use when the user asks to enable Cortex.
+disable-model-invocation: true
 ---
 
 1. Run, from the project root:

@@ -13,7 +13,8 @@ const cols = process.argv.slice(2).map(Number).filter(Boolean);
 const COLS = cols.length ? cols : [70, 160];
 
 // PREVIEW_PROJECT: draw another project's status instead (the README shots use the benchmark's dummy project)
-const status = spawnSync(process.execPath, [join(ROOT, "src/cli.ts"), "status", "--json"], { cwd: process.env.PREVIEW_PROJECT || ROOT, encoding: "utf8" }).stdout.trim();
+// PREVIEW_STATUS: a status JSON file to draw instead (a state that is hard to reach for real, e.g. a Dream waiting for you)
+const status = process.env.PREVIEW_STATUS ? readFileSync(process.env.PREVIEW_STATUS, "utf8").trim() : spawnSync(process.execPath, [join(ROOT, "src/cli.ts"), "status", "--json"], { cwd: process.env.PREVIEW_PROJECT || ROOT, encoding: "utf8" }).stdout.trim();
 const mod = mkdtempSync(join(tmpdir(), "cortex-preview-"));
 cpSync(join(ROOT, "claude-plugin"), mod, { recursive: true });
 rmSync(join(mod, "tests"), { recursive: true, force: true });
@@ -25,7 +26,12 @@ const shots = (run.stdout + run.stderr).split("\n").filter((l) => l.startsWith("
 if (!shots.length) { console.error(run.stdout + run.stderr); process.exit(1); }
 
 type El = { type: string; props?: Record<string, unknown>; children?: (El | string)[] } | string | null;
-const THEMES = {
+// PREVIEW_LOOK=kapex: the Kapex look's grounds (claude-plugin/hooks/look-colors.ts), as people with it on see the panel:
+// Obsidian and Mist, on surface-2 (the app frosts its side panes in surface-2). Otherwise Claude's stock grounds.
+const THEMES = process.env.PREVIEW_LOOK === "kapex" ? {
+  dark: { bg: "#101714", text: "#E8F1EC", subtle: "#B4C3BB", inactive: "#8E9D96", border: "rgba(232,241,236,0.13)", btn: "rgba(232,241,236,0.06)" },
+  light: { bg: "#FBFDFC", text: "#0B1912", subtle: "#33473D", inactive: "#52645A", border: "rgba(11,25,18,0.14)", btn: "rgba(11,25,18,0.04)" },
+} : {
   dark: { bg: "#262624", text: "#ECEBE6", subtle: "#A9A79F", inactive: "#7C7A73", border: "rgba(255,255,255,0.14)", btn: "rgba(255,255,255,0.06)" },
   light: { bg: "#FAF9F5", text: "#1F1E1D", subtle: "#62615C", inactive: "#94928B", border: "rgba(0,0,0,0.14)", btn: "rgba(0,0,0,0.04)" },
 };
@@ -70,7 +76,8 @@ function draw(e: El): string {
     }
     case "Button": {
       const cls = p.plain ? "b plain" : p.variant === "primary" ? "b primary" : "b";
-      return `<span class="${cls}">${p.label ? esc(String(p.label)) : kids}</span>`; // the app draws the label when there is one
+      // the app draws the label when there is one, and a hotkey as a small badge after it (it takes room: keep it)
+      return `<span class="${cls}">${p.label ? esc(String(p.label)) : kids}${p.hotkey && !p.plain ? `<span class="hk">${esc(String(p.hotkey).toUpperCase())}</span>` : ""}</span>`;
     }
     case "Svg": if (!p.alt) return ""; // like the app: an Svg with an empty alt is not drawn
       // inline, like Desktop's frame: the system font resolves (an <img> SVG falls back to a wider one)
@@ -91,7 +98,7 @@ function page(title: string, frames: { theme: keyof typeof THEMES; width: number
   const style = `body{margin:0;padding:16px;background:#888;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif}
   .frames{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}.f{flex:none;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.3)}
   .f>div{background:var(--bg);color:var(--text);box-sizing:border-box}.t{display:inline;overflow-wrap:anywhere}
-  .b{display:inline-flex;align-items:center;padding:3px 10px;border:1px solid var(--border);border-radius:7px;background:var(--btn);font-size:13px;white-space:nowrap;flex:none}
+  .b{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--border);border-radius:8px;background:var(--btn);font-size:14px;white-space:nowrap;flex:none}.hk{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;border-radius:4px;background:var(--btn);border:1px solid var(--border);font-size:10.5px;color:var(--subtle)}
   .b.primary{background:var(--text);color:var(--bg);border-color:transparent}.b.primary .t{color:inherit!important}.b.plain{border:none;background:none;padding:2px 4px;color:var(--text)}
   .in{display:flex;flex-direction:column;gap:2px;min-width:160px}.field{border:1px solid var(--border);border-radius:7px;padding:4px 8px}`;
   const vars = (t: keyof typeof THEMES) => Object.entries(THEMES[t]).map(([k, v]) => `--${k}:${v}`).join(";");

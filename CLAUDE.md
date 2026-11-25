@@ -5,13 +5,13 @@ Cortex adds what Claude Code doesn't have: a Desktop status strip and cost/cache
 ## Hard limits
 - Zero runtime dependencies: Node built-ins only (node:sqlite, node:crypto, node:fs).
 - Hooks never break the harness: always exit 0 and log errors to `.vault/private/errors.log`.
-- Keep the Stop hook p95 under 150 ms (`npm test` measures it).
+- Keep the Stop hook p95 under 60 ms (`npm test` and the benchmark measure it; the bar was 150 ms before v4.5).
 - Run `npm run check` (tsc + tests) before every commit.
 - Tests never read the real `~/.cortex` or `~/.claude`, and never write to the real Obsidian vault.
 - Keep every source file under 300 lines.
 - Cortex never writes to the Obsidian vault outside its `machine/` folder.
 - A Dream never changes a file until the user presses Apply, and every Apply can be undone.
-- Before a release, `node scripts/benchmark.ts` keeps Dream at 6/6 with 0 false positives and the handoff at 10/10. The plugin's own tests run with `claude plugin test claude-plugin` (not part of `npm test`).
+- Before a release, `node scripts/benchmark.ts` keeps Dream at 6/6 with 0 false positives, the handoff at 10/10 and the adversarial 5-hop telephone at 13/13. The plugin's own tests run with `claude plugin test claude-plugin` (not part of `npm test`).
 
 ## Facts
 - The plugin's hooks run `claude-plugin/cortex/hook.mjs`, one JS file `npm run bundle` builds from `src/hook.ts` (Node's TypeScript stripping cost ~30 ms per hook launch). Edit `src/`, then bundle.
@@ -19,4 +19,6 @@ Cortex adds what Claude Code doesn't have: a Desktop status strip and cost/cache
 
 ## Tried and failed (do this instead)
 - OpenCode 1.x plugin style (named exports, `experimental.session.compacting`) does not load in OpenCode 2.x: use `export default { id, setup }`.
-- `async: true` Stop hooks are killed when headless `claude -p` exits: keep Stop work synchronous and under 150 ms.
+- `async: true` Stop hooks are killed when headless `claude -p` exits: keep Stop work synchronous and under 60 ms.
+- A hook entry check that compares `import.meta.url` with `process.argv[1]` as spelled fails under any symlinked folder and silently skips every hook: compare real paths (src/hook.ts `isEntry`).
+- Each git worktree has its own tracked `.vault/`: hooks must resolve to the main checkout's vault (paths.ts `vaultRootFor`), or a chat's handoff splits between folders.

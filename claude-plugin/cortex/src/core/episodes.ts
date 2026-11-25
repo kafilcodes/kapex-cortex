@@ -1,11 +1,12 @@
 import { nextFromReply } from "./brief.ts";
-import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readJsonl } from "../util/atomic.ts";
 import { ulid } from "../util/ulid.ts";
 import { segments } from "./judge.ts";
 import type { RepoPaths } from "./paths.ts";
 import { claudeUserText } from "./transcript.ts";
+import { scrub } from "./scrub.ts";
 
 /**
  * The session journal: one episode per turn (your request → everything the AI did until it stopped), built by code
@@ -65,8 +66,9 @@ export function observe(ep: Open, entry: Record<string, unknown>): void {
     if (words && (!command || words.length >= 15)) ep.ask = (ep.ask ? `${ep.ask} · ` : "") + words.slice(0, Math.max(0, 400 - ep.ask.length));
     else if (!ep.ask) ep.ask = background(user);
   }
-  const msg = entry.message as { content?: unknown; usage?: Record<string, number> } | undefined;
-  if (entry.type === "assistant" && msg?.usage) {
+  const msg = entry.message as { content?: unknown; usage?: Record<string, number>; model?: string } | undefined;
+  // the harness's own notices ("You've hit your 5-hour limit") carry zero usage: they'd reset the turn's context size
+  if (entry.type === "assistant" && msg?.usage && msg.model !== "<synthetic>" && !entry.isApiErrorMessage) {
     const u = msg.usage;
     ep.outTokens += u.output_tokens ?? 0;
     ep.contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
@@ -126,7 +128,12 @@ export function summary(reply: string): string {
 }
 
 /** Close the turn at Stop: the episode is written once, with the AI's own Done/Next lines. Empty turns are dropped. */
+/** A reply the harness wrote, not the model: a usage limit, an API error, an abort. Never a turn's "done". */
+export const HARNESS_REPLY = /^\s*(?:you'?ve hit your (?:5-hour|weekly|session|usage|opus|daily)[\w -]*limit|claude (?:ai )?usage limit reached|(?:5-hour|weekly) limit reached|api error\b|request (?:was )?aborted|request timed out|prompt is too long|credit balance is too low|rewound\b|\[request interrupted)/i;
+export const realReply = (s: string | undefined) => (s && !HARNESS_REPLY.test(s) ? s : "");
+
 export function finalize(p: RepoPaths, session: string, lastAssistant = ""): Episode | null {
+  lastAssistant = realReply(lastAssistant);
   const f = openFile(p, session);
   if (!existsSync(f)) return null;
   let ep: Open;
@@ -135,8 +142,15 @@ export function finalize(p: RepoPaths, session: string, lastAssistant = ""): Epi
   if (!ep.ask && !Object.keys(ep.tools).length) return null;
   const { pending: _pending, ...rest } = ep;
   const done: Episode = { id: ulid(), ...rest, done: pick(lastAssistant, "Done") || summary(lastAssistant), next: pick(lastAssistant, "Next") || nextFromReply(lastAssistant) };
-  appendFileSync(file(p), JSON.stringify(done) + "\n");
+  // the journal is scrubbed like everything else Cortex stores: a key typed in a message or a command never lands raw
+  const clean: Episode = { ...done, ask: scrub(done.ask).text, done: scrub(done.done).text, next: scrub(done.next).text, commands: done.commands.map((c) => scrub(c).text) };
+  appendFileSync(file(p), JSON.stringify(clean) + "\n");
   return done;
+}
+
+/** A turn kept small for the panel: what an opened Timeline tile shows, never a crash on an odd journal line. */
+export function compactEpisode(e: EpisodeView): EpisodeView {
+  return { ...e, commands: [], files: Array.isArray(e.files) ? e.files.slice(0, 6) : [], tools: {}, skills: [], mcp: [], ask: String(e.ask ?? "").slice(0, 200), done: String(e.done ?? "").slice(0, 300), next: String(e.next ?? "").slice(0, 240), feedback: undefined };
 }
 
 /** Recent episodes, newest first, with your rating and the model's read of your reaction. */
@@ -145,10 +159,21 @@ const isEpisode = (e: unknown): e is Episode => {
   return !!x && typeof x === "object" && typeof x.id === "string" && typeof x.end === "string" && typeof x.ask === "string"
     && Array.isArray(x.files) && Array.isArray(x.commands) && !!x.tests && typeof x.tests === "object" && typeof x.tools === "object";
 };
+/** Parsed once per file version: one Stop hook reads the journal five or six times. */
+const memo = new Map<string, { key: string; items: unknown[] }>();
+function cached<T>(path: string): T[] {
+  let key = "";
+  try { const st = statSync(path); key = `${st.size}|${st.mtimeMs}`; } catch { memo.delete(path); return []; }
+  const hit = memo.get(path);
+  if (hit?.key === key) return hit.items as T[];
+  const items = readJsonl<T>(path).items;
+  memo.set(path, { key, items });
+  return items;
+}
 export function readEpisodes(p: RepoPaths, limit = 30): EpisodeView[] {
   // a line that parses but isn't a whole turn (null, {}, a hand-edited or half-written one) is skipped, never a crash
-  const eps = readJsonl<Episode>(file(p)).items.filter(isEpisode).slice(-limit).reverse();
-  const ratings = readJsonl<Rating>(ratingsFile(p)).items;
+  const eps = cached<Episode>(file(p)).filter(isEpisode).slice(-limit).reverse();
+  const ratings = cached<Rating>(ratingsFile(p));
   return eps.map((e) => ({ ...e, rating: ratings.filter((r) => r.episode === e.id && r.by === "you").at(-1), feedback: ratings.filter((r) => r.episode === e.id && r.by === "model").at(-1) }));
 }
 

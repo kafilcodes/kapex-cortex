@@ -12,11 +12,14 @@ import { settingsBody } from './settings'
 import { dataPage, handoffPage } from './tabs'
 import { costsPage } from './tabs-more'
 import { K } from './theme'
-import { timelinePage } from './timeline'
+import { readOlder, timelinePage } from './timeline'
 import { switchDue } from './switch'
 import { tipFor } from './tips'
 import { readPulse } from './pulse'
 import { beginPass, endPass, readSettle, settleSoon } from './anim'
+import { safely, withinBudget } from './guard'
+import { readLook } from './look'
+import { readAsk } from './ask'
 
 // The Cortex panel: a greeting header and six flat pages (Overview · Timeline · Memory · Handoff · Costs · Settings), so
 // nothing is crammed onto one page. Transparent, so it follows Claude Code's light or dark mode. No timers.
@@ -88,7 +91,7 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
   if (!s) {
     // loading: quiet placeholder shapes (no animation), and one refresh started by drawing
     refreshSoon($)
-    const ph1 = (key: string, w: string, rows: number) => <Box key={key} width={w} height={rows} backgroundColor={K.card} borderStyle="round" borderColor={K.hairline} />
+    const ph1 = (key: string, w: string, rows: number) => <Box key={key} width={w} height={rows} backgroundColor={K.card} borderStyle="round" borderColor={K.cardEdge} />
     return shell([
       u.big('t', 'Kapex Cortex'),
       u.muted('ld', failed ? `Couldn't load: ${failed}` : 'Loading your project…'),
@@ -109,15 +112,18 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
   // the headline below says how things stand; the header only adds what it can't (a refresh that failed, a file too long)
   const needs = [over ? `${over} memory file${over === 1 ? '' : 's'} too long` : '', failed ? 'Couldn\'t refresh' : ''].filter(Boolean)
   const intro = !(await introSeen($, s, vw))
+  const lk = await readLook($) // read while drawing, so a Look press redraws Settings
+  const asked = await readAsk($) // a panel prompt waiting for your choice (ask.tsx)
+  const older = page === 'timeline' ? await readOlder($) : null // what Show older fetched past the status's 160
   // Only what the open page and the header draw: while Claude works, the live context number changes every 4 s, and
   // the Timeline (which doesn't show it) must not be rebuilt under your scroll for it. Overview depends on all of it.
-  const head = [s.name, s.project, l?.model, s.git?.branch, dir, o?.cwd, over, failed, msg, waiting]
+  const head = [s.name, s.project, l?.model, s.git?.branch, dir, o?.cwd, over, failed, msg, waiting, asked?.id ?? '']
   const pageIn = intro ? [vw, bodyRows]
-    : page === 'timeline' ? [sig(s.timeline), sig(s.episodes), vw.expanded, vw.more?.timeline ?? 0, Math.ceil(Date.now() / 600_000), new Date().toDateString()]
-    : page === 'settings' ? [sig(s), cols >= 120]
+    : page === 'timeline' ? [sig(s.timeline), sig(s.episodes), sig(older), vw.expanded, vw.more?.timeline ?? 0, Math.ceil(Date.now() / 600_000), new Date().toDateString()]
+    : page === 'settings' ? [sig(s), cols >= 120, sig(lk)]
     : page === 'data' ? [sig(s), sig(vw)]
     : page === 'handoff' ? [sig(s), sig(vw), Math.round((l?.context.tokens ?? 0) / 1000)]
-    : [sig(s), sig(snap.l), sig(snap.cv), sig(snap.hist), sig(snap.ph), sig(vw), sig(limits), limitsAt, sig(o)]
+    : [sig(s), sig(snap.l), sig(snap.cv), sig(snap.hist), sig(snap.ph), sig(vw), sig(limits), limitsAt, sig(o), page === 'details' ? Math.floor(Date.now() / 60_000) : 0]
   const key = [e.surface, cols, page, pulse, await readSettle($), new Date().getHours(), sig(head), ...pageIn.map(x => (typeof x === 'string' ? x : sig(x)))].join('\u0001')
   // the armed render (just opened, or Refresh pressed) is drawn fresh and may animate; any other with the same inputs reuses the last tree
   const armed = beginPass()
@@ -128,20 +134,34 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
     dir && o ? u.tag('m-dir', 'file', K.silver, `chat in ${o.cwd.split('/').pop()}`) : null,
   ]
   const tip = tipFor(s, l, cv, limits, switchDue(s, l, cv, vw)) // derived from inputs already in the key: computed only on a real redraw
-  const ctx = { els, u, s, l, current: page, wip: s.git?.wip, five: limits.find(x => x.kind === 'five_hour'), px, vw }
-  const body = intro ? introPage($, els, u, vw, px, bodyRows)
-    : page === 'timeline' ? timelinePage($, els, u, s, vw, px)
+  const ctx = { els, u, s, l, current: page, wip: s.git?.wip, five: limits.find(x => x.kind === 'five_hour'), px, vw, asked }
+  // a page that throws shows why and a way back, never a blank pane (the other tabs keep working)
+  const built = safely(() => intro ? introPage($, els, u, vw, px, bodyRows)
+    : page === 'timeline' ? timelinePage($, els, u, s, vw, px, older)
     : page === 'data' ? dataPage($, ctx)
     : page === 'handoff' ? handoffPage($, ctx)
     : page === 'details' ? costsPage($, ctx)
-    : page === 'settings' ? settingsBody($, els, u, s, cols >= 120)
-    : overviewPage($, els, u, { s, l, cv, hist, ph, vw, limits, limitsAt, tip, cols, px })
+    : page === 'settings' ? settingsBody($, els, u, s, cols >= 120, lk)
+    : overviewPage($, els, u, { s, l, cv, hist, ph, vw, limits, limitsAt, tip, cols, px }))
+  const body = built.ok ? built.tree : (
+    <Box key="kc-broken" flexDirection="column" gap={1} padding={1} backgroundColor={K.card}>
+      <Text weight="semibold" color={K.amber}>This page couldn't be drawn</Text>
+      <Text size="caption" color={K.label}>{`${built.why}. The other pages still work.`}</Text>
+      <Box flexDirection="row" gap={1} flexWrap="wrap">
+        <Button key="kc-broken-home" variant="primary" onPress={() => { void setTab($, 'overview') }}>Go to Overview</Button>
+        <Button key="kc-broken-retry" variant="secondary" onPress={() => { void refreshNow($) }}>Refresh</Button>
+      </Box>
+    </Box>
+  )
+  if (!built.ok) void logPaneError($, `${page}: ${built.why}`)
 
   // six tabs on one line where they fit, else three and three (never five and a lonely one)
-  const tabBtn = ([t, label, hk]: [Tab, string, string]) => <Button key={`tab-${t}`} hotkey={hk} variant={page === t ? 'primary' : 'secondary'} onPress={() => { void setTab($, t) }}><Text color={page === t ? K.emerald : undefined} weight={page === t ? 'semibold' : undefined}>{t === 'data' && waiting ? `${label} · ${waiting}` : t === 'details' && cols >= 100 ? 'Costs & usage' : label}</Text></Button>
-  const nav = cols >= 80
+  const tabBtn = ([t, label, hk]: [Tab, string, string]) => <Button key={`tab-${t}`} hotkey={hk} variant={page === t ? 'primary' : 'secondary'} onPress={() => { void setTab($, t) }}><Text color={page === t ? K.emerald : undefined} weight={page === t ? 'semibold' : undefined}>{t === 'details' && cols >= 100 ? 'Costs & usage' : label}</Text>{t === 'data' && waiting ? <Text color={K.amber} weight="semibold">{cols >= 100 ? ` · ${waiting} to review` : ' ●'}</Text> : null}</Button>
+  // narrow panes get even rows, never a tab past the edge: one row, then three and three, then two by two
+  const per = cols >= 80 ? 6 : cols >= 58 ? 3 : 2
+  const nav = per === 6
     ? <Box key="nav" flexDirection="row" gap={1} flexWrap="wrap">{PAGES.map(tabBtn)}</Box>
-    : <Box key="nav" flexDirection="column" gap={1}><Box key="nav-a" flexDirection="row" gap={1}>{PAGES.slice(0, 3).map(tabBtn)}</Box><Box key="nav-b" flexDirection="row" gap={1}>{PAGES.slice(3).map(tabBtn)}</Box></Box>
+    : <Box key="nav" flexDirection="column" gap={1}>{Array.from({ length: Math.ceil(PAGES.length / per) }, (_, r) => <Box key={`nav-${r}`} flexDirection="row" gap={1} flexWrap="wrap">{PAGES.slice(r * per, r * per + per).map(tabBtn)}</Box>)}</Box>
   const tree = (
     <Box flexDirection="column" gap={2} padding={1}>
       <Box key="hdr" flexDirection="row" gap={1} alignItems="center" justifyContent="space-between" flexWrap="wrap">
@@ -165,7 +185,18 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
       {body}
     </Box>
   )
+  // kept under the sizes the desktop app handles (guard.ts): past them, the lowest drawings become their words
+  const safe = withinBudget(tree, (k, alt) => <Text key={k} size="caption" color={K.muted}>{alt}</Text>, undefined, (k, cols) => <Box key={k} width={cols} flexShrink={0} />) as JSX.Element
   // a tree with animated drawings is never reused, and a redraw shortly after swaps in the same charts, still
-  if (endPass()) { memo = { key: '', tree: null }; settleSoon($) } else memo = { key, tree }
-  return tree
+  if (endPass()) { memo = { key: '', tree: null }; settleSoon($) } else memo = { key, tree: safe }
+  return safe
+}
+
+/** A page that failed to draw, in .vault/private/errors.log (as the hooks log theirs), so it can be reported and fixed. */
+async function logPaneError($: Dollar, why: string): Promise<void> {
+  try {
+    const p = '.vault/private/errors.log'
+    const old = (await $.fs.exists(p)) ? String(await $.fs.read(p)).slice(-60_000) : ''
+    await $.fs.write(p, `${old}${new Date().toISOString()} panel ${why}\n`)
+  } catch { /* logging never breaks the pane */ }
 }

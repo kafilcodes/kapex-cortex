@@ -2,7 +2,8 @@
 // The hook entry point. Claude Code waits for every hook, so this file loads only what a hook needs: not the
 // CLI's status, Dream, setup or bench code (that alone cost ~50 ms of the 150 ms Stop budget per turn).
 // `node cortex/src/hook.ts claude.stop --plugin`; `kc hook …` from an older install still lands here too.
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { atomicWriteIfChanged } from "./util/atomic.ts";
 import { fileURLToPath } from "node:url";
 import { repoPaths, resolveProject } from "./core/paths.ts";
 import { pluginHooksTurn } from "./core/plugin.ts";
@@ -19,8 +20,9 @@ function recordHookTime(priv: string, ms: number): void {
   try {
     const f = `${priv}/hook-times.json`;
     let xs: number[] = [];
-    try { xs = JSON.parse(readFileSync(f, "utf8")) as number[]; } catch { /* first */ }
-    writeFileSync(f, JSON.stringify([...xs, ms].slice(-50)));
+    try { const j: unknown = JSON.parse(readFileSync(f, "utf8")); if (Array.isArray(j)) xs = j.filter((x): x is number => typeof x === "number" && Number.isFinite(x)); } catch { /* first, or a torn file */ }
+    // atomic: two chats ending a turn at once never leave half a file (the panel would read no times at all)
+    atomicWriteIfChanged(f, JSON.stringify([...xs, ms].slice(-50)), { durable: false });
   } catch { /* never break a hook */ }
 }
 
@@ -52,7 +54,17 @@ export function runHook(name: string, fromPlugin = false): void {
   }
 }
 
-if (!IS_BINARY && process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+/** Whether this file is the program being run. Compared as real paths: under a symlinked folder (macOS /var →
+ * /private/var, a vault or projects folder linked elsewhere) the two spellings differ, and before v4.5 every hook then
+ * silently did nothing, with no handoff and no error anywhere. */
+function isEntry(): boolean {
+  if (IS_BINARY || !process.argv[1]) return false;
+  const here = fileURLToPath(import.meta.url);
+  if (here === process.argv[1]) return true;
+  try { return realpathSync(here) === realpathSync(process.argv[1]); } catch { return false; }
+}
+
+if (isEntry()) {
   // the hard rule: a hook never breaks the harness, so even an error nothing caught exits 0
   process.on("uncaughtException", () => process.exit(0));
   const args = process.argv.slice(2);

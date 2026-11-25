@@ -10,7 +10,7 @@
 import { CLI } from "../test/helpers.ts"; // first: points CORTEX_HOME / CORTEX_CLAUDE_HOME at temp folders
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { applyDream, dreaming, runDream, undoDream } from "../src/core/dream.ts";
@@ -19,6 +19,7 @@ import { repoPaths } from "../src/core/paths.ts";
 import { quickDue, rememberCheck } from "../src/core/quick.ts";
 import { projectSpend } from "../src/core/spend.ts";
 import { cortexInit } from "../src/init.ts";
+import { retained, runTelephone, score, telephoneRepo } from "./telephone.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const HOOK = join(ROOT, "claude-plugin", "cortex", "hook.mjs");
@@ -158,12 +159,26 @@ for (let i = 0; i < Math.min(RUNS, 20); i++) {
 }
 projectSpend(p); // first read fills the cache
 for (let i = 0; i < RUNS; i++) spend.push(time(() => projectSpend(p)));
-for (let i = 0; i < Math.min(RUNS, 20); i++) status.push(time(() => spawnSync(process.execPath, [CLI, "status", "--json"], { cwd: root })));
+// what the panel runs after every reply (v4.5: the pre-built status file, no TypeScript stripping)
+const STATUS_MJS = join(ROOT, "claude-plugin", "cortex", "src", "status.mjs");
+for (let i = 0; i < Math.min(RUNS, 20); i++) status.push(time(() => spawnSync(process.execPath, [STATUS_MJS], { cwd: root })));
 const rss = (() => {
   const r = spawnSync("/usr/bin/time", ["-l", process.execPath, HOOK, "claude.stop", "--plugin"], { input: JSON.stringify(stopIn), encoding: "utf8" });
   const m = /(\d+)\s+maximum resident set size/.exec(r.stderr ?? "");
   return m ? Math.round(Number(m[1]) / 1024 / 1024) : null; // macOS reports bytes
 })();
+
+// ── 4. The 5-hop telephone game (scripts/telephone.ts): chat 1's rules, rejected approach and goal in chat 5 ─────
+const telRun = (hookFile: string) => { const r = mkdtempSync(join(realpathSync(parent), "tel-")); telephoneRepo(r); return runTelephone(r, hookFile); };
+const tel = telRun(HOOK);
+const telProbes = score(tel.packet), telFacts = retained(tel.packet);
+// the same five chats through the last public release's hook (tag BASELINE), the fixed "before" line: comparing with
+// main measured main against itself once a release was merged. Run from its real path: an older hook silently skips
+// itself under a symlinked folder (macOS temp is /var → /private/var)
+const BASELINE = "v4.0.0";
+const mainHook = join(realpathSync(parent), "hook-baseline.mjs");
+const mainSrc = spawnSync("git", ["-C", ROOT, "show", `${BASELINE}:claude-plugin/cortex/hook.mjs`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const telMain = mainSrc.status === 0 ? (writeFileSync(mainHook, mainSrc.stdout), retained(telRun(mainHook).packet)) : null;
 
 // ── scorecard ─────────────────────────────────────────────────────────────────────────────────────────────────
 const card = {
@@ -172,7 +187,8 @@ const card = {
   handoff: { stateTokens: Math.round(state.length / 4), answerable: answered.filter((a) => a.ok).length, of: QUESTIONS.length, missed: answered.filter((a) => !a.ok).map((a) => a.q) },
   speedMs: { stopHook: stats(stop), sessionStartHook: stats(start), quickGateUnchanged: stats(gateSame), quickGateChanged: stats(gateChanged), quickCheckRun: stats(quickRun), spendCached: stats(spend), statusRead: stats(status) },
   stopHookPeakMemoryMB: rss,
-  bars: { stopP95: 150, quickGateUnchanged: 1, quickCheckRun: 350, spendCached: 10 },
+  telephone: { hops: 5, probes: telProbes.filter((x) => x.ok).length, of: telProbes.length, missed: telProbes.filter((x) => !x.ok).map((x) => x.name), facts: telFacts.filter((x) => x.ok).length, factsOf: telFacts.length, baseline: BASELINE, mainFacts: telMain ? telMain.filter((x) => x.ok).length : null, mainMissed: telMain?.filter((x) => !x.ok).map((x) => x.name) ?? null, stopP95: stats(tel.ms).p95 },
+  bars: { stopP95: 60, quickGateUnchanged: 1, quickCheckRun: 350, spendCached: 10 },
 };
 writeFileSync(join(ROOT, "bench", "results", "scorecard.json"), JSON.stringify(card, null, 1) + "\n");
 const s = card.speedMs;
@@ -181,7 +197,9 @@ console.log(`Cortex benchmark · ${card.turns} turns in ${card.chats} chats · $
 Dream (Quick check):  precision ${(card.dream.precision * 100).toFixed(0)}%  recall ${(card.dream.recall * 100).toFixed(0)}%  (${tp}/${PLANTED.length} planted, ${fp.length} false positives${fp.length ? `: ${fp.map(key).slice(0, 8).join(", ")}` : ""}; ${advice.length} suggestion${advice.length === 1 ? "" : "s"}${advice.length ? `: ${advice.join(", ")}` : ""})
 Apply + Undo:         ${applied} · ${undone} · byte-identical: ${restored ? "yes" : "NO"}
 Handoff answerable:   ${card.handoff.answerable}/${card.handoff.of}${card.handoff.missed.length ? ` (missing: ${card.handoff.missed.join(" | ")})` : ""} · ~${card.handoff.stateTokens} tokens
-Stop hook:            p50 ${s.stopHook.p50} ms  p95 ${s.stopHook.p95} ms  (bar 150)  ${ok(s.stopHook.p95 < 150)}
+5-hop telephone:      ${card.telephone.probes}/${card.telephone.of} probes · chat 1's facts kept in chat 5: ${card.telephone.facts}/${card.telephone.factsOf}${card.telephone.missed.length ? ` (missing: ${card.telephone.missed.join(" | ")})` : ""}  ${ok(card.telephone.probes === card.telephone.of)}
+  ${BASELINE}'s hook:     ${card.telephone.mainFacts === null ? `not measured (no ${BASELINE} tag)` : `${card.telephone.mainFacts}/${card.telephone.factsOf} facts kept${card.telephone.mainMissed?.length ? ` (lost: ${card.telephone.mainMissed.join(" | ")})` : ""}`}
+Stop hook:            p50 ${s.stopHook.p50} ms  p95 ${s.stopHook.p95} ms  (bar 60)  ${ok(s.stopHook.p95 < 60)}
 SessionStart hook:    p50 ${s.sessionStartHook.p50} ms  p95 ${s.sessionStartHook.p95} ms
 Quick gate unchanged: p50 ${s.quickGateUnchanged.p50} ms  p95 ${s.quickGateUnchanged.p95} ms  (bar ~1)  ${ok(s.quickGateUnchanged.p95 < 1.5)}
 Quick gate changed:   p50 ${s.quickGateChanged.p50} ms  p95 ${s.quickGateChanged.p95} ms

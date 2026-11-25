@@ -25,6 +25,18 @@ export interface NativeFile {
   /** a Dream may propose edits (project files and auto memory; your own ~/.claude files are only reported) */
   editable: boolean;
   over?: string;
+  /** this project's own file in another checkout of the same repository (a git worktree inside the main checkout):
+   * Claude Code loads it as a folder above, but it is the same file, so its lines are never "repeats" of this one */
+  twin?: true;
+}
+
+/** The main checkout's folder when `root` is a linked git worktree (its .git is a file pointing into
+ * <main>/.git/worktrees/<name>); null for a plain checkout or no git at all. */
+export function mainCheckout(root: string): string | null {
+  try {
+    const m = /^gitdir:\s*(.+?)[\\/]\.git[\\/]worktrees[\\/][^\\/\r\n]+\s*$/m.exec(readFileSync(join(root, ".git"), "utf8"));
+    return m ? resolve(root, m[1]!) : null;
+  } catch { return null; } // .git is a folder (a plain checkout) or missing
 }
 
 export const MEMORY_LINES = 200;
@@ -80,7 +92,11 @@ export function nativeFiles(root: string): NativeFile[] {
   const home = resolve(homedir());
   const parents: string[] = [];
   for (let d = dirname(resolve(root)); d !== dirname(d) && (d + "/").startsWith(home + "/"); d = dirname(d)) parents.unshift(d);
-  for (const d of parents) for (const n of ["CLAUDE.md", "CLAUDE.local.md"]) out.push(file(join(d, n), `${relative(home, d) || "~"}/${n}`.replace(/\\/g, "/"), "parent", false));
+  const main = mainCheckout(root);
+  for (const d of parents) for (const n of ["CLAUDE.md", "CLAUDE.local.md"]) {
+    const f = file(join(d, n), `${relative(home, d) || "~"}/${n}`.replace(/\\/g, "/"), "parent", false);
+    out.push(f && main && resolve(d) === main ? { ...f, twin: true } : f);
+  }
   out.push(file(join(root, "CLAUDE.md"), "CLAUDE.md", "project", true));
   out.push(file(join(root, ".claude", "CLAUDE.md"), ".claude/CLAUDE.md", "project", true));
   out.push(file(join(root, "CLAUDE.local.md"), "CLAUDE.local.md", "project", true));

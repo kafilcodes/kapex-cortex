@@ -1,4 +1,5 @@
 import type { Finding, FindingKind } from "./dream-checks.ts";
+import { pinKind } from "./mission.ts";
 import type { Evidence } from "./evidence.ts";
 import type { Entry, NativeFile } from "./native.ts";
 import { scrub } from "./scrub.ts";
@@ -53,6 +54,16 @@ export const UNSAFE = /https?:\/\/|(?:^|\s)(?:sudo|rm -rf?|curl|wget|chmod|ssh|s
 const SURE = 0.7;
 const GLOB = /^(?!\/)(?!.*\.\.)[\w.\-/*{},]+$/;
 
+const KINDS = new Set<string>(["false", "stale", "contradiction", "visible", "scope", "replace"]);
+/** A memory line that states a rule, not a fact: list markers, bold and code ticks stripped, then a directive
+ *  ("Never push to main", "Only edit src/"), or a terse "label: directive" line ("Hooks: always exit 0"). A fact that
+ *  merely contains such a word ("The API only accepts JSON", "CI always runs on Ubuntu") is not one. */
+export function isRule(text: string): boolean {
+  const t = text.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").replace(/\*\*|__|`/g, "").trim();
+  return !!pinKind(t) || /^(?:[^:.]{1,40}:\s*)?(?:never|always|must|only|do not|don'?t)\b/i.test(t)
+    || /^(?:run|use|update|check|test|lint|bump|rebuild|bundle|commit|push|tag|read|write|add)\b[^.]*\b(?:before|after) (?:every|each|any)\b/i.test(t); // "Run `npm test` before every commit"
+}
+
 export function dreamPrompt(files: NativeFile[], ents: Entry[], evidence: string, found: Finding[], hints: { entry: Entry; dir: string }[]): string {
   const loads = new Map(files.map((f) => [f.path, `${f.loads === "on-demand" ? "when needed" : "every session"}${f.editable ? "" : " · read-only"}`]));
   const id = new Map(ents.map((e, i) => [e, `N${i + 1}`]));
@@ -71,8 +82,18 @@ export function dreamPrompt(files: NativeFile[], ents: Entry[], evidence: string
   ].join("\n");
 }
 
-interface RawFinding { entry?: string; kind?: string; why?: string; evidence?: string[]; with?: string; action?: string; text?: string; paths?: string[]; topic?: string; confidence?: number }
-interface RawLesson { text?: string; how?: string; evidence?: string[]; confidence?: number }
+/** An id as other models write it ("e5", "E 5", "#5", "[E5]", 5) in Cortex's own form ("E5"); "" when it isn't one. */
+export function normId(x: unknown, letter: "E" | "N"): string {
+  const m = /^\[?\s*(?:([A-Za-z])\s*[-#:]?\s*|#\s*)?(\d{1,4})\s*\]?$/.exec(String(x ?? "").trim());
+  if (!m || (m[1] && m[1].toUpperCase() !== letter)) return "";
+  return `${letter}${Number(m[2])}`;
+}
+/** A confidence as models write it (0.8, "0.8", 85 meaning 85%) on 0 to 1; 0 when it isn't a number. */
+export const normConf = (x: unknown) => { const n = Number(x); return !Number.isFinite(n) || n < 0 ? 0 : n > 1 && n <= 100 ? n / 100 : Math.min(1, n); };
+const ids = (xs: unknown, letter: "E" | "N") => (Array.isArray(xs) ? xs : typeof xs === "string" ? xs.split(/[,\s]+/) : []).map((x) => normId(x, letter)).filter(Boolean);
+
+interface RawFinding { entry?: unknown; kind?: string; why?: string; evidence?: unknown; with?: unknown; action?: string; text?: string; paths?: string[]; topic?: string; confidence?: unknown }
+interface RawLesson { text?: string; how?: string; evidence?: unknown; confidence?: unknown }
 
 /** Turn the model's JSON into findings, keeping only what passes every check. */
 export function parseJudgment(raw: string, files: NativeFile[], ents: Entry[], ev: Evidence[], found: Finding[]): { findings: Omit<Finding, "id">[]; dropped: number; rejected: string[] } {
@@ -88,20 +109,27 @@ export function parseJudgment(raw: string, files: NativeFile[], ents: Entry[], e
   let claim = "";
   const reject = (reason?: string) => { dropped++; rejected.push(`${claim}: ${reason ?? "failed a check"}`.slice(0, 240)); };
   for (const f of (Array.isArray(j.findings) ? j.findings : []).slice(0, 40)) {
-    const e = byId.get(String(f.entry));
+    const e = byId.get(normId(f.entry, "N"));
     const kind = String(f.kind) as FindingKind;
-    claim = `${f.kind} ${f.entry} (${String(f.why ?? "").slice(0, 80)})`;
+    claim = `${f.kind} ${String(f.entry)} (${String(f.why ?? "").slice(0, 80)})`;
+    if (!KINDS.has(kind)) { reject(`kind "${String(f.kind).slice(0, 20)}" isn't one the schema allows`); continue; }
     if (!e) { reject("no such entry"); continue; }
     if (!editable.has(e.file)) { reject("your own file outside this project: report only"); continue; }
     if (taken.has(`${e.file}:${e.line}`)) { reject("Cortex's own checks already cover this note"); continue; }
-    if ((f.confidence ?? 0) < SURE) { reject(`confidence ${f.confidence} below ${SURE}`); continue; }
+    if (normConf(f.confidence) < SURE) { reject(`confidence ${f.confidence} below ${SURE}`); continue; }
     if (f.action === "keep") { reject("the model said keep"); continue; }
-    const cites = (f.evidence ?? []).filter((x) => evById.has(x));
+    const cites = ids(f.evidence, "E").filter((x) => evById.has(x));
     // a false or stale claim needs evidence about the same thing, not just any id
     const about = cites.filter((x) => { const w = new Set(contentWords(evById.get(x)!.text)); return contentWords(e.text).some((t) => w.has(t)); });
     if ((kind === "false" || kind === "stale") && !about.length) { reject("no cited evidence about the same thing"); continue; }
     const why = scrub(String(f.why ?? "")).text.replace(/\s+/g, " ").slice(0, 280);
     const base = { kind, by: "model" as const, file: e.file, label: e.label, line: e.line, end: e.end, entry: e.text, why, evidence: about.length ? about : cites };
+    // a rule ("keep files under 300 lines", "never merge before review") is a spec, not a fact: code that drifted from
+    // it makes the code wrong, not the rule stale. It's shown, never offered for deletion, whatever the evidence (a run included)
+    if ((kind === "false" || kind === "stale") && isRule(e.text)) {
+      out.push({ ...base, severity: "medium", why: `A rule, not a fact: the code may have drifted from it. ${why}`.slice(0, 300) + " Fix the code, or change the rule on purpose.", action: { op: "none" } });
+      continue;
+    }
     if (kind === "scope") {
       const paths = (f.paths ?? []).map((p) => p.trim()).filter((p) => GLOB.test(p) && !/^\*+\/?\**$/.test(p)).slice(0, 5);
       const topic = String(f.topic ?? "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -112,15 +140,15 @@ export function parseJudgment(raw: string, files: NativeFile[], ents: Entry[], e
       if (text.length < 10 || text.length > 300 || UNSAFE.test(text)) { reject("the rewrite is too short, too long or unsafe"); continue; }
       out.push({ ...base, severity: kind === "false" ? "high" : "low", action: { op: "replace", text } });
     } else if (f.action === "delete") {
-      if (kind === "contradiction" && !byId.has(String(f.with))) { reject("contradiction without the other entry"); continue; }
+      if (kind === "contradiction" && !byId.has(normId(f.with, "N"))) { reject("contradiction without the other entry"); continue; }
       out.push({ ...base, severity: kind === "false" ? "high" : kind === "visible" ? "low" : "medium", action: { op: "delete" } });
     } else reject(`action "${f.action}" doesn't fit kind "${f.kind}"`);
   }
   for (const l of (Array.isArray(j.lessons) ? j.lessons : []).slice(0, 5)) {
     const text = scrub(String(l.text ?? "")).text.replace(/\s+/g, " ").trim(), how = scrub(String(l.how ?? "")).text.replace(/\s+/g, " ").trim();
-    const cites = (l.evidence ?? []).filter((x) => evById.has(x));
+    const cites = ids(l.evidence, "E").filter((x) => evById.has(x));
     claim = `lesson "${text.slice(0, 80)}"`;
-    if ((l.confidence ?? 0) < SURE || text.length < 10 || text.length > 240 || how.length < 5 || how.length > 200 || !cites.length || UNSAFE.test(text) || UNSAFE.test(how) || ents.some((e) => overlap(e.text, text) >= 0.8)) { reject(!cites.length ? "no valid evidence" : UNSAFE.test(text) || UNSAFE.test(how) ? "unsafe text" : (l.confidence ?? 0) < SURE ? "low confidence" : "already in memory, or the wrong length"); continue; }
+    if (normConf(l.confidence) < SURE || text.length < 10 || text.length > 240 || how.length < 5 || how.length > 200 || !cites.length || UNSAFE.test(text) || UNSAFE.test(how) || ents.some((e) => overlap(e.text, text) >= 0.8)) { reject(!cites.length ? `no valid evidence (cited: ${JSON.stringify(l.evidence ?? null).slice(0, 40)})` : UNSAFE.test(text) || UNSAFE.test(how) ? "unsafe text" : normConf(l.confidence) < SURE ? "low confidence" : "already in memory, or the wrong length"); continue; }
     out.push({ kind: "lesson", severity: "low", by: "model", file: "", label: "memory/verified-lessons.md", line: 0, end: 0, entry: "", why: how, evidence: cites, action: { op: "add-lesson", text } });
   }
   return { findings: out, dropped, rejected };

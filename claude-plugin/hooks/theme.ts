@@ -6,7 +6,10 @@ export const K = {
   canvas: 'transparent',
   card: 'rgba(127,127,127,0.07)', // a bento card: one step up from the app's canvas
   pill: 'rgba(127,127,127,0.11)', // inner pills, tracks, cells
-  hairline: 'rgba(127,127,127,0.20)', // 1px card borders
+  hairline: 'rgba(127,127,127,0.20)', // 1px lines inside drawings (guides, ticks, tracks)
+  // a card's edge: half the old hairline, so depth comes from the card's lighter surface and the edge only keeps its
+  // rounded corner (Desktop rounds a Box only when it has a border). Craft: elevation by lightness, not borders.
+  cardEdge: 'rgba(127,127,127,0.10)',
   edge: 'rgba(127,127,127,0.13)', // softer 1px edge on inner tiles, so their rounded corners match the cards
   emerald: '#10B981', // brand, healthy, primary fills, headings, the active tab
   sage: '#34D399', // secondary accent, cache warmth, positive deltas
@@ -30,6 +33,15 @@ export const TYPE_LABEL: Record<string, string> = {
 
 /** Emerald when fine, amber when getting full, rose when (nearly) out. */
 export const levelColor = (share: number, warn = 0.6, danger = 0.85) => (share >= danger ? K.rose : share >= warn ? K.amber : K.emerald)
+
+/** Four steps for anything that fills up (the chat's context, a plan): healthy, warning, high, critical. Yellow and orange
+ * sit between emerald and rose so the colour turns as the number climbs, not only at the end. */
+export const HEAT = { ok: '#10B981', warn: '#EAB308', high: '#F97316', bad: '#F43F5E' } as const
+/** The step for a share of 0–1 that fills: under 60% healthy, 60–80% warning, 80–90% high, 90% and up critical. */
+export const heat = (share: number) => (share >= 0.9 ? HEAT.bad : share >= 0.8 ? HEAT.high : share >= 0.6 ? HEAT.warn : HEAT.ok)
+/** The same for what drains (the cache's time left, as a share of its life): over half left healthy, then warning,
+ * then high under a quarter, critical under a tenth and when it is gone. */
+export const drainHeat = (left: number) => (left <= 0.1 ? HEAT.bad : left <= 0.25 ? HEAT.high : left <= 0.5 ? HEAT.warn : HEAT.ok)
 
 /** Escape text for use inside SVG markup. */
 export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')

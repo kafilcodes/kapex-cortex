@@ -1,0 +1,25 @@
+name: Bug report
+description: Something in Kapex Cortex doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: The steps to see it, if you know them.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Kapex Cortex, Claude Code (CLI or Desktop), Node.js and your OS
+      placeholder: "Cortex 4.5.0 · Claude Code Desktop 2.1 · Node 26 · macOS 26"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Lines from .vault/private/errors.log
+      description: Check them for anything private first. Security problems go through SECURITY.md, not issues.
+      render: text

@@ -37,7 +37,7 @@ export function switchParts($: Dollar, els: ElementTable, u: Kit, s: StatusView,
   const row = (key: string, kids: (JSX.Element | null)[]) => <Box key={key} flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">{kids}</Box>
   const body = vw.flow === 'copied'
     ? [
-        u.tag('sw-ok', 'check', K.emerald, `Handoff saved and ${RESUME_COMMAND} copied. Open a new chat (+ New), paste it and send. This chat stays as it is.`, K.text),
+        u.tag('sw-ok', 'check', K.emerald, `${RESUME_COMMAND} is on your clipboard. In a new chat (+ New), paste it and send; this chat stays as it is.`, K.text),
         row('sw-b', [<Button key="sw-again" onPress={() => { void copyResume($) }}>Copy again</Button>, <Button key="sw-done" onPress={() => { void snoozeSwitch($, sw.pct) }}>Done</Button>]),
       ]
     : vw.flow === 'confirm' && flagged
@@ -56,6 +56,6 @@ export function switchParts($: Dollar, els: ElementTable, u: Kit, s: StatusView,
             flagged ? <Text key="sw-f" size="caption" color={K.amber}>{`${flagged} memory note${flagged === 1 ? '' : 's'} to check first`}</Text> : null,
           ]),
         ]
-  const title = vw.flow === 'copied' ? 'Handoff saved. Next: open a new chat and paste' : vw.flow === 'confirm' && flagged ? `Before you hand off: ${flagged} memory note${flagged === 1 ? ' looks' : 's look'} wrong` : `Context ${sw.pct}% full${sw.cold ? ' and the cache is cold' : ''}: continue in a fresh chat?`
+  const title = vw.flow === 'copied' ? 'Handoff saved: open a new chat and paste' : vw.flow === 'confirm' && flagged ? `Before you hand off: ${flagged} memory note${flagged === 1 ? ' looks' : 's look'} wrong` : `Context ${sw.pct}% full${sw.cold ? ' and the cache is cold' : ''}: continue in a fresh chat?`
   return { title, body }
 }

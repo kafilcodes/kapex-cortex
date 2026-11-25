@@ -1,4 +1,5 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { atomicWriteIfChanged } from "../util/atomic.ts";
 import { join } from "node:path";
 import { segments } from "./judge.ts";
 import type { RepoPaths } from "./paths.ts";
@@ -19,7 +20,9 @@ const file = (p: RepoPaths, session: string) => join(p.priv, `exchanges-${sessio
 export function readExchanges(p: RepoPaths, session: string): Exchange[] {
   const f = file(p, session);
   if (!existsSync(f)) return [];
-  return readFileSync(f, "utf8").split("\n").filter(Boolean).flatMap((l) => { try { return [JSON.parse(l) as Exchange]; } catch { return []; } });
+  let raw = "";
+  try { raw = readFileSync(f, "utf8"); } catch { return []; }
+  return raw.split("\n").filter(Boolean).flatMap((l) => { try { const x = JSON.parse(l) as Exchange; return x && typeof x.user === "string" && typeof x.assistant === "string" && typeof x.ts === "string" ? [x] : []; } catch { return []; } });
 }
 
 /** Record one turn at Stop: your own words (no pasted blocks, no harness notices) and the reply, both scrubbed. */
@@ -29,9 +32,8 @@ export function saveExchange(p: RepoPaths, session: string, userText: string, re
   if (!user && !assistant) return;
   const ex: Exchange = { ts: now.toISOString(), user: scrub(user).text.slice(0, MAX_USER), assistant: scrub(assistant).text.slice(0, MAX_REPLY) };
   const all = [...readExchanges(p, session), ex].slice(-KEEP);
-  const f = file(p, session);
-  if (all.length === 1) appendFileSync(f, JSON.stringify(ex) + "\n");
-  else writeFileSync(f, all.map((x) => JSON.stringify(x)).join("\n") + "\n");
+  // atomic: a Stop and a StopFailure for one chat can overlap; a reader never sees half a file
+  atomicWriteIfChanged(file(p, session), all.map((x) => JSON.stringify(x)).join("\n") + "\n", { durable: false });
 }
 
 /** Unchecked checklist items and "Next:" lines in a reply: what is still open. */

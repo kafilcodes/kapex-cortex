@@ -8,10 +8,11 @@ import { tipFor } from './tips'
 import { iconPaths } from './icons'
 import { kit } from './kit'
 import { LOGO_SVG } from './logo'
-import { esc, FONT, K, levelColor, RESUME, textWidth } from './theme'
+import { drainHeat, esc, FONT, HEAT, heat, K, RESUME, textWidth } from './theme'
 import { flaggedNotes } from './switch'
 import { readPulse } from './pulse'
 import { readFlash, type FlashKind } from './notify'
+import { putInBox } from './ask'
 import { icon } from './icons'
 
 /** How each kind of notification looks in the strip. */
@@ -38,17 +39,29 @@ function pill(parts: Part[]): string {
     x += w
   })
   const W = Math.ceil(x + 9)
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="${H / 2 - 0.5}" fill="${K.pill}" stroke="${K.hairline}"/>${out.join('')}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${glass(W)}${out.join('')}</svg>`
+}
+/** A flat pill: one quiet fill, no gloss or rim. The strip itself is the translucent band (renderBand), so the pills
+ * only group their parts. */
+function glass(W: number): string {
+  return `<rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="${H / 2 - 0.5}" fill="${K.pill}"/>`
 }
 const label = (t: string, color: string = K.ink, weight = 400): Part => (x) => [`<text x="${x}" y="15" ${FONT} font-size="11" font-weight="${weight}" fill="${color}">${esc(t)}</text>`, textWidth(t, 11, weight)]
 const ring = (share: number, color: string): Part => (x) => {
   const r = 6, len = 2 * Math.PI * r
   return [`<circle cx="${x + r}" cy="11" r="${r}" fill="none" stroke="${K.hairline}" stroke-width="2.6"/><circle cx="${x + r}" cy="11" r="${r}" fill="none" stroke="${color}" stroke-width="2.6" stroke-dasharray="${(Math.max(0, Math.min(1, share)) * len).toFixed(1)} ${len.toFixed(1)}" transform="rotate(-90 ${x + r} 11)" stroke-linecap="round"/>`, 2 * r + 5]
 }
-const bar = (share: number, color: string, drainSec = 0, w = 28): Part => (x) => {
-  const f = Math.max(0, Math.min(1, share)) * w
-  const anim = f > 0 && drainSec > 0 ? `<animate attributeName="width" from="${f.toFixed(1)}" to="0" dur="${Math.round(drainSec)}s" fill="freeze"/>` : ''
-  return [`<rect x="${x}" y="8" width="${w}" height="6" rx="3" fill="${K.hairline}"/><rect x="${x}" y="8" width="${f.toFixed(1)}" height="6" rx="3" fill="${color}">${anim}</rect>`, w + 5]
+const bar = (share: number, color: string, drainSec = 0, w = 28, steps = false): Part => (x) => {
+  const s0 = Math.max(0, Math.min(1, share)), f = s0 * w
+  const anim = f > 0 && drainSec > 0 ? `<animate attributeName="width" from="${f.toFixed(1)}" to="0" dur="${Math.round(drainSec)}s" fill="freeze"/>${steps ? drainSteps(s0, drainSec) : ''}` : ''
+  return [`<rect x="${x}" y="8" width="${w}" height="6" rx="3" fill="${K.hairline}"/><rect x="${x}" y="8" width="${f.toFixed(1)}" height="6" rx="3" fill="${steps ? drainHeat(s0) : color}">${anim}</rect>`, w + 5]
+}
+/** While the cache bar empties by itself, its colour steps with it (healthy, warning, high, critical), in the drawing:
+ * no timer and no redraw. Each step starts when the share left crosses 50%, 25% and 10%. */
+export function drainSteps(s0: number, sec: number): string {
+  const times = [0], values = [drainHeat(s0)]
+  for (const L of [0.5, 0.25, 0.1]) if (s0 > L) { times.push(1 - L / s0); values.push(drainHeat(L - 1e-6)) }
+  return times.length < 2 ? '' : `<animate attributeName="fill" calcMode="discrete" values="${values.join(';')}" keyTimes="${times.map(t => t.toFixed(4)).join(';')}" dur="${Math.round(sec)}s" fill="freeze"/>`
 }
 const glyph = (name: string, color: string): Part => (x) => [`<g transform="translate(${x} 4) scale(0.58)" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${iconPaths(name)}</g>`, 18]
 /** An icon on its own: its drawn width, without the gap kept for words after it (so it sits centred in its pill). */
@@ -56,9 +69,12 @@ const alone = (part: Part): Part => (x) => [part(x)[0], 14]
 /** Two parts drawn as one (an indicator and its words). */
 const both = (a: Part, b: Part): Part => (x) => { const [s1, w1] = a(x); const [s2, w2] = b(x + w1); return [s1 + s2, w1 + w2] }
 
-/** The tip as a pill: its icon and words; the full reason shows on hover (an SVG title). */
-export function tipPill(t: Tip, compact = false): string {
-  const svg = pill([compact ? alone(glyph(t.icon, t.color)) : both(glyph(t.icon, t.color), label(t.text, t.color === K.rose ? K.rose : K.ink, 600))])
+/** The tip as a pill: Cortex's suggestion mark in the tip's colour (how much it matters), then its words; the full
+ * reason shows on hover (an SVG title). `short` takes its shorter words, `icon` the mark alone. */
+export function tipPill(t: Tip, mode: 'full' | 'short' | 'icon' | boolean = 'full'): string {
+  const m = mode === true ? 'icon' : mode === false ? 'full' : mode
+  const words = m === 'short' ? (t.short ?? t.text) : t.text
+  const svg = pill([m === 'icon' ? alone(glyph('suggest', t.color)) : both(glyph('suggest', t.color), label(words, t.level === 'act' ? t.color : K.ink, 600))])
   return svg.replace(/(<svg[^>]*>)/, `$1<title>${esc(t.detail)}</title>`)
 }
 
@@ -68,13 +84,21 @@ export type Strip = { ctx: number | null; compactAt?: number; cacheShare: number
  * out of the main pill (the tip says when the plan matters), so the line keeps its width. */
 export function stripParts(o: Strip, tip: Tip | null = null, room = Infinity, reserve = 0): { main: string; side: string; words: string } {
   const near = (gap: number) => o.compactAt !== undefined && o.ctx !== null && o.ctx / 100 >= o.compactAt - gap
-  const ctxColor = near(0.05) ? K.rose : near(0.15) ? K.amber : K.emerald
+  // the ring turns as the chat fills (under 60% healthy, 60–80% warning, 80–90% high, 90%+ critical), and earlier when
+  // Claude's own summarizing point is near: whichever says more
+  const RANK = [HEAT.ok, HEAT.warn, HEAT.high, HEAT.bad]
+  const byFill = heat((o.ctx ?? 0) / 100), byCompact = near(0.05) ? HEAT.bad : near(0.15) ? HEAT.high : HEAT.ok
+  const ctxColor = RANK[Math.max(RANK.indexOf(byFill), RANK.indexOf(byCompact))]!
   // words a first-time reader gets in one pass: "Chat 42% full · cache warm till 9:03 PM · 5h plan 0%"
-  const mainOf = (withPlan: boolean) => {
+  // `tight`: the same facts in fewer words ("85% · cache till 2:48 PM"), so a suggestion keeps its words on a narrow strip
+  // `bare` (the narrowest strip): the cache keeps its draining bar and drops its words (they show on hover), so no
+  // words are ever cut mid-phrase ("cache till" with no time)
+  const mainOf = (withPlan: boolean, tight = false, bare = false) => {
     const parts: Part[] = []
-    if (o.ctx !== null) parts.push(both(ring(o.ctx / 100, ctxColor), label(`Chat ${Math.round(o.ctx)}% full`)))
-    parts.push(both(bar(o.cacheShare, o.cacheColor, o.cacheSec, 22), label(o.cacheText, o.cacheColor === K.rose ? K.rose : K.ink)))
-    if (o.plan !== null && withPlan) parts.push(both(bar(o.plan / 100, levelColor(o.plan / 100, 0.7, 0.9), 0, 22), label(`5h plan ${o.plan}%`)))
+    if (o.ctx !== null) parts.push(both(ring(o.ctx / 100, ctxColor), label(tight ? `${Math.round(o.ctx)}%` : `Chat ${Math.round(o.ctx)}% full`)))
+    const cacheBar = bar(o.cacheShare, o.cacheColor, o.cacheSec, 22, o.cacheColor !== K.ink)
+    parts.push(bare ? cacheBar : both(cacheBar, label(tight ? o.cacheText.replace(/^cache warm till /, 'cache till ').replace(/^cache starts on reply$/, 'cache') : o.cacheText, o.cacheShare <= 0 && o.cacheColor !== K.ink ? HEAT.bad : K.ink)))
+    if (o.plan !== null && withPlan) parts.push(both(bar(o.plan / 100, heat(o.plan / 100), 0, 22), label(`5h plan ${o.plan}%`)))
     return pill(parts)
   }
   const words = [o.ctx !== null ? `chat ${o.ctx}% full` : '', o.cacheText, o.plan !== null ? `5h plan ${o.plan}%` : '', o.week !== null ? `week ${o.week}%` : '', o.handoff === 'ready' ? 'handoff ready' : '', o.waiting ? `${o.waiting} to review` : ''].filter(Boolean).join(' · ')
@@ -85,12 +109,17 @@ export function stripParts(o: Strip, tip: Tip | null = null, room = Infinity, re
   // narrower and narrower: the full side pill; then "All good" without the handoff words; then the plan leaves the main
   // pill (it shows on hover); last, a tip keeps only its icon. All is well always says "All good", never a lone tick.
   const w = (svg: string) => Number(/width="(\d+)"/.exec(svg)?.[1] ?? 0)
-  const short = tip ? tipPill(tip, true).replace(/(<svg[^>]*>)(?!<title>)/, `$1<title>${esc(tip.text)}</title>`) : pill([both(glyph(o.handoff === 'ready' ? 'link' : 'check', K.emerald), label(o.handoff === 'ready' ? 'handoff ready' : 'All good', K.ink, 600))])
-  const withPlan = mainOf(!tip), noPlan = mainOf(false)
+  const short = tip ? tipPill(tip, 'icon') : pill([both(glyph(o.handoff === 'ready' ? 'link' : 'check', K.emerald), label(o.handoff === 'ready' ? 'handoff ready' : 'All good', K.ink, 600))])
+  const mid = tip ? tipPill(tip, 'short') : short // the tip's shorter words, before it drops to its mark alone
+  const withPlan = mainOf(!tip), noPlan = mainOf(false), tight = mainOf(false, true)
   const fits = (a: string, b: string) => w(a) + w(b) + 8 <= room
   // a notification chip takes the side pill's place for a few seconds: the main pill makes room for it the same way
   if (reserve > 0) return { main: titled(w(withPlan) + reserve + 8 <= room ? withPlan : noPlan), side: full, words }
-  const [main, side] = fits(withPlan, full) ? [withPlan, full] : fits(withPlan, short) ? [withPlan, short] : fits(noPlan, short) ? [noPlan, short] : [noPlan, short]
+  // narrower and narrower, the suggestion keeps its words longest: the plan leaves first, then the left pill's words
+  // shorten, then the suggestion's; last of all it keeps only its mark (its words show on hover)
+  const bareMain = mainOf(false, true, true)
+  const order: [string, string][] = [[withPlan, full], [noPlan, full], [tight, full], [noPlan, mid], [tight, mid], [bareMain, mid], [tight, short]]
+  const [main, side] = order.find(([a, b]) => fits(a, b)) ?? [bareMain, short]
   return { main: titled(main), side, words }
 }
 
@@ -99,7 +128,7 @@ function room(e: BandEvent, tip: Tip | null, waiting: number): number {
   const cols = (e as { props?: { bodyColumns?: number } }).props?.bodyColumns
   if (!cols) return Infinity
   const buttons = 44 + textWidth(`Open Cortex${waiting ? ` · ${waiting}` : ''}`, 13) + 28 + (tip?.action ? textWidth(ACTION_LABEL[tip.action] ?? '', 13) + 28 : 0)
-  return cols * 7.2 - 16 - buttons - 5 * 8
+  return cols * 7.2 - 22 - buttons - 5 * 8 - 24 // 22: the logo; 24: the band's own padding and edge
 }
 
 const ACTION_LABEL: Record<string, string> = { handoff: 'Hand off', dream: 'Dream', review: 'Review', costs: 'Costs', resume: 'Resume' }
@@ -107,7 +136,7 @@ const ACTION_LABEL: Record<string, string> = { handoff: 'Hand off', dream: 'Drea
 /** One press from the strip. Hand off saves the handoff and copies /cortex-resume (memory flagged by a check is shown
  * first); Dream starts one in the background (it only proposes); the others open the panel where the decision is. */
 async function doTip($: Dollar, action: string, s: NonNullable<Awaited<ReturnType<typeof statusOrSaved>>>): Promise<void> {
-  if (action === 'resume') { await $.prompt.submit({ text: RESUME }); return }
+  if (action === 'resume') { await putInBox($, RESUME); return } // into the message box, never sent by itself
   if (action === 'handoff') {
     await setTab($, 'overview')
     if (flaggedNotes(s)) await setFlow($, 'confirm'); else await handOff($)
@@ -163,7 +192,7 @@ export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) =
     ctx: l?.context.percent ?? null, compactAt: buffer ? (win - buffer) / win : undefined,
     cacheShare: cs.leftMin / (ttlMs / 60_000), cacheSec: cs.leftMin * 60,
     cacheText: cs.state === 'unknown' ? 'cache starts on reply' : cs.state === 'cold' ? 'cache cold' : `cache warm till ${clock(cs.until!)}`,
-    cacheColor: { warm: K.sage, cooling: K.amber, cold: K.rose, unknown: K.ink }[cs.state],
+    cacheColor: cs.state === 'unknown' ? K.ink : drainHeat(cs.leftMin / (ttlMs / 60_000)),
     plan: limits.find(x => x.kind === 'five_hour')?.percentUsed ?? null, week: limits.find(x => x.kind === 'seven_day')?.percentUsed ?? null,
     handoff: s.handoff.ready ? 'ready' : s.handoff.exists ? 'saved' : 'none', waiting,
   }
@@ -184,9 +213,11 @@ export async function renderBand($: Dollar, e: BandEvent, next: (e: BandEvent) =
   const Svg = u.Svg
   const draw = (key: string, svg: string, alt: string) => <Svg key={key} source={svg} alt={alt} width={Number(/width="(\d+)"/.exec(svg)?.[1] ?? 100)} height={H} isInteractive />
   return (
-    <Box flexDirection="row" gap={1} alignItems="center" justifyContent="space-between" flexWrap="nowrap" width="100%">
+    // no band of its own: the app already frames the area above the prompt in its own rounded container, and a second
+    // outlined band inside it read as a thick double edge (v4.8). The pills sit straight on the app's container.
+    <Box key="kc-band" flexDirection="row" gap={1} alignItems="center" justifyContent="space-between" flexWrap="nowrap" width="100%">
       <Box flexDirection="row" gap={1} alignItems="center" flexShrink={1} overflow="hidden">
-        <Svg key="kc-mark" source={LOGO_SVG} alt="Kapex Cortex" width={16} height={16} />
+        <Svg key="kc-mark" source={LOGO_SVG} alt="Kapex Cortex" width={22} height={22} />
         {showMain ? draw('kc-main', parts.main, parts.words) : null}
         {/* a notification takes the tip's place for a few seconds: an icon and a few words on a tinted chip */}
         {fl ? (

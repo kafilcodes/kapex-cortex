@@ -1,5 +1,5 @@
 import type { ElementTable } from 'claude-code'
-import { sceneSvg } from './mascot'
+import { pageScene } from './mascot'
 
 import type { NativeFileView, StatusView, ViewState } from '../types'
 import { k } from './charts'
@@ -33,6 +33,7 @@ export function filesBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
     const cap = f.loads === 'first-200' ? 200 : f.loads === 'always' ? 200 : 0
     // one line per file: its name, when it loads (and a too-long warning, the only status), its size; the rest on Show more
     return t.tile({
+      flat: true,
       id: `nf-${f.label}`, icon: sc.icon, color: f.over ? K.amber : f.loads === 'on-demand' ? K.silver : K.emerald, title: f.label, compact: true,
       lead: { kind: sc.lead, alt: f.loads === 'on-demand' ? `${sc.alt}, loaded only when needed` : sc.alt, tint: f.over ? K.amber : undefined, muted: f.loads === 'on-demand' },
       time: f.tokens ? `${k(f.tokens)} tokens` : `${f.lines} lines`,
@@ -52,7 +53,7 @@ export function filesBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
   const found = mh ? mh.checks - mh.clean : 0
   return (
     <Box flexDirection="column" gap={1}>
-      {u.intro('nf-in', sceneSvg('memory', 100), 'Cortex with your memory files', 'Memory files: the notes Claude Code loads by itself', 'Most load into every chat and cost tokens each time, so shorter is better.', companion('happy', px))}
+      {u.intro('nf-in', pageScene('memory', 100), 'Cortex with your memory files', 'Memory files: the notes Claude Code loads by itself', 'Most load into every chat and cost tokens each time, so shorter is better.', companion('happy', px))}
       {u.card('nf-sum', '100%', [
         u.head('nf-h', 'What every chat pays for', n.autoMemory.enabled ? 'Claude\'s auto memory is on' : 'Claude\'s auto memory is off', n.autoMemory.enabled ? K.emerald : K.amber),
         <Box key="nf-m" flexDirection="row" alignItems="center" columnGap={1} rowGap={0} flexWrap="wrap">
@@ -68,9 +69,9 @@ export function filesBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
         </Box> : null,
       ])}
       {t.groupHead('nf-ah', 'spark', K.emerald, 'Loaded in every chat', String(always.length))}
-      {t.stack('nf-al', always.map(f => tile(f)))}
+      {t.rows('nf-al', always.map(f => tile(f)))}
       {later.length ? t.groupHead('nf-lh', 'pending', K.silver, 'Loaded only when needed', String(later.length)) : null}
-      {later.length ? t.stack('nf-ll', later.map(f => tile(f))) : null}
+      {later.length ? t.rows('nf-ll', later.map(f => tile(f))) : null}
       {s.migrated ? u.tag('nf-mig', 'save', K.silver, `Your Cortex v2 memories are kept in ${s.migrated}: copy what you still want into CLAUDE.md, or let a Dream sort it.`, K.muted) : null}
     </Box>
   )

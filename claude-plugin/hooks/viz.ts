@@ -38,7 +38,8 @@ export function arcGauge(o: { pct: number; threshold?: number; size: number; lab
   return svg(W, H, track + fill + tick + num + cap)
 }
 
-/** Vertical capsules: one pill per category, filled to its share of the largest, value above, label below. */
+/** Vertical capsules: one pill per category, filled to its share of the largest, every value on one row above the
+ * tracks (never on a track's empty top), label below. */
 export function capsules(o: { items: { label: string; value: number; color: string; note?: string }[]; width: number; height: number; animate: boolean }): string {
   const items = o.items.filter((i) => i.value > 0).slice(0, 8)
   if (!items.length) return svg(Math.round(o.width), 20, `<text x="0" y="14" ${FONT} font-size="11" fill="${K.ink}">Nothing yet</text>`)
@@ -56,7 +57,7 @@ export function capsules(o: { items: { label: string; value: number; color: stri
     if (short !== it.label) short = `${short.replace(/\s+$/, '')}…`
     return `<rect x="${x.toFixed(1)}" y="${top}" width="${pw.toFixed(1)}" height="${span}" rx="${(pw / 2).toFixed(1)}" fill="${K.pill}"/>`
       + `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${pw.toFixed(1)}" height="${h.toFixed(1)}" rx="${(pw / 2).toFixed(1)}" fill="${it.color}">${grow(o.animate, 'height', h.toFixed(1))}${o.animate ? `<animate attributeName="y" from="${bottom}" to="${y.toFixed(1)}" dur="0.7s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.2 0.8 0.2 1"/>` : ''}</rect>`
-      + `<text x="${(x + pw / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" ${FONT} font-size="10.5" font-weight="600" fill="${K.ink}">${esc(it.note ?? String(it.value))}</text>`
+      + `<text x="${(x + pw / 2).toFixed(1)}" y="${top - 6}" text-anchor="middle" ${FONT} font-size="10.5" font-weight="600" fill="${K.ink}">${esc(it.note ?? String(it.value))}</text>`
       + `<text x="${(x + pw / 2).toFixed(1)}" y="${H - 5}" text-anchor="middle" ${FONT} font-size="10" fill="${K.ink}">${esc(short)}</text>`
   }).join('')
   return svg(W, H, body)

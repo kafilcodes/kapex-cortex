@@ -1,8 +1,10 @@
 import type { ElementTable } from 'claude-code'
 
 import type { StatusView, ViewState } from '../types'
+import { settleSoon } from './anim'
 import { setIntro, type Dollar } from './data'
 import { illoHandoff } from './illos'
+import { pointArt, SHIELD, type PointArt } from './intro-art'
 import type { Kit } from './kit'
 import { K } from './theme'
 
@@ -32,17 +34,47 @@ export function illoDreamCheck(width = 260): string {
   return svg(width, 128, `${note(14, true)}${note(50, false)}${note(86, true)}${links}${evidence}`)
 }
 
-/** Progress as three dots, the current one a wider emerald pill. */
-const dots = (at: number) => `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="8" viewBox="0 0 44 8">${[0, 1, 2].map(i => i === at ? `<rect x="${i * 14}" width="18" height="8" rx="4" fill="${K.emerald}"/>` : `<circle cx="${i * 14 + (i > at ? 8 : 4)}" cy="4" r="4" fill="${G}" fill-opacity="0.45"/>`).join('')}</svg>`
+/** Progress: one dot per step, the current one a wider emerald pill, steps already seen a quiet emerald. Every dot
+ * keeps a full gap from its neighbours at every step (the pill used to touch the next dot, and was cut off on the
+ * last step). Moving between steps, the pill slides and stretches from where it was to where it is, once. */
+const DOT = 8, PILL = 22, GAP = 6
+const DOTS_W = PILL + (DOT + GAP) * 2
+const EASE = 'calcMode="spline" keyTimes="0;1" keySplines="0.45 0 0.1 1"'
+function dotsLayout(at: number): { x: number; w: number; fill: string; op: number }[] {
+  let x = 0
+  return [0, 1, 2].map(i => { const w = i === at ? PILL : DOT, d = { x, w, fill: i <= at ? K.emerald : G, op: i === at ? 1 : i < at ? 0.45 : 0.4 }; x += w + GAP; return d })
+}
+export function introDots(at: number, from = at): string {
+  const now = dotsLayout(at), was = dotsLayout(from), moved = from !== at
+  const anim = (attr: string, a: string | number, b: string | number) => moved && a !== b ? `<animate attributeName="${attr}" from="${a}" to="${b}" dur="0.42s" fill="freeze" ${EASE}/>` : ''
+  const body = now.map((d, i) => `<rect x="${d.x}" width="${d.w}" height="${DOT}" rx="${DOT / 2}" fill="${d.fill}" fill-opacity="${d.op}">${anim('x', was[i]!.x, d.x)}${anim('width', was[i]!.w, d.w)}${anim('fill-opacity', was[i]!.op, d.op)}${anim('fill', was[i]!.fill, d.fill)}</rect>`).join('')
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${DOTS_W}" height="${DOT}" viewBox="0 0 ${DOTS_W} ${DOT}">${body}</svg>`
+}
+// A step's motion plays once: in the renders within 1.2 s of the step changing (the pill slides, the art rises in),
+// then one settle redraw draws the step still, so scrolling, resizing or reopening never replays it. Kept per step,
+// so two panels on the same step draw the same picture.
+let shown = { at: -1, from: -1, until: 0 }
+function stepMotion($: Dollar, at: number): { from: number; live: boolean } {
+  const now = Date.now()
+  if (shown.at !== at) { shown = { at, from: shown.at < 0 ? at : shown.at, until: now + 1_200 }; settleSoon($) }
+  return { from: shown.from, live: now <= shown.until }
+}
+/** Starting over (replay from Settings) or leaving the intro: no slide from a step left behind. */
+const forgetMotion = () => { shown = { at: -1, from: -1, until: 0 } }
 
-type Point = [icon: string, title: string, text: string]
+/** A step's drawing rises 6 px into place as it fades up from 40% (a soft landing). It starts at 40%, not 0, so a
+ * surface that shows only the first frame still shows the drawing. */
+const arrive = (art: string) => art.replace(/(<svg[^>]*>)([\s\S]*)(<\/svg>)$/, (_m, a: string, body: string, z: string) =>
+  `${a}<g><animate attributeName="opacity" from="0.4" to="1" dur="0.5s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.25 0.8 0.25 1"/><animateTransform attributeName="transform" type="translate" from="0 6" to="0 0" dur="0.6s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.25 0.8 0.25 1"/>${body}</g>${z}`)
+
+type Point = [art: PointArt, title: string, text: string]
 const STEPS: { kicker: string; title: string; text: string; art: (w: number) => string; alt: string; points: Point[] }[] = [
   { kicker: 'Live strip and costs', title: 'See what every message costs', text: 'A strip above your prompt shows the chat, the cache and your plan at a glance. Costs shows what each tool adds to every message.', art: illoStrip, alt: 'A chat with the Cortex strip above the prompt and a small costs chart',
-    points: [['turn', 'Context', 'How full this chat is, and turns left'], ['pending', 'Cache', 'How long until the next reply re-reads everything'], ['spark', 'Unused tools', 'Turn off tools you never use, in one press']] },
+    points: [['context', 'Context', 'How full this chat is, and turns left'], ['cache', 'Cache', 'How long until the next reply re-reads everything'], ['tools', 'Unused tools', 'Turn off tools you never use, in one press']] },
   { kicker: 'Lossless handoff', title: 'Switch chats without losing your place', text: 'After every reply Cortex saves where you are. In a new chat, type /cortex-resume and Claude carries on.', art: (w) => illoHandoff(w), alt: 'A full chat handing a small packet to a fresh one',
-    points: [['star', 'Pinned', 'The goal and your instructions, word for word'], ['commit', 'Trail', 'One line per turn, and the commits'], ['link', 'Last exchanges', 'Word for word, so a plan survives whole']] },
+    points: [['pinned', 'Pinned', 'The goal and your instructions, word for word'], ['trail', 'Trail', 'One line per turn, and the commits'], ['exchanges', 'Last exchanges', 'Word for word, so a plan survives whole']] },
   { kicker: 'Dream', title: 'Keep Claude\'s memory true', text: 'A Dream checks what Claude remembers against what really happened, and proposes fixes.', art: illoDreamCheck, alt: 'Memory notes checked against test runs and commits',
-    points: [['test', 'Evidence', 'Test runs, commits and your own words'], ['check', 'You decide', 'Apply or Keep, one finding at a time'], ['merge', 'Undo', 'Every Apply can be undone, byte for byte']] },
+    points: [['evidence', 'Evidence', 'Test runs, commits and your own words'], ['decide', 'You decide', 'Apply or Keep, one finding at a time'], ['undo', 'Undo', 'Every Apply can be undone, byte for byte']] },
 ]
 
 /** True once the intro was finished or skipped on this computer, or when this project already has history. */
@@ -56,9 +88,9 @@ export async function introSeen($: Dollar, s: StatusView, vw: ViewState): Promis
 let seenStored = false
 
 async function go($: Dollar, step: number): Promise<void> { await setIntro($, step) }
-async function done($: Dollar): Promise<void> { seenStored = true; await $.store.set(STORE_INTRO, true).catch(() => undefined); await setIntro($, -1) }
+async function done($: Dollar): Promise<void> { seenStored = true; forgetMotion(); await $.store.set(STORE_INTRO, true).catch(() => undefined); await setIntro($, -1) }
 /** Settings: show the intro again from its first step. */
-export async function replayIntro($: Dollar): Promise<void> { await setIntro($, 0) }
+export async function replayIntro($: Dollar): Promise<void> { forgetMotion(); await setIntro($, 0) }
 
 /** The intro fills the pane: centered on its height (rows) and width; art beside the words when there's room. */
 export function introPage($: Dollar, els: ElementTable, u: Kit, vw: ViewState, px: number, rows = 40): JSX.Element {
@@ -66,28 +98,40 @@ export function introPage($: Dollar, els: ElementTable, u: Kit, vw: ViewState, p
   const at = Math.max(0, Math.min(STEPS.length - 1, vw.intro ?? 0))
   const step = STEPS[at]!
   const last = at === STEPS.length - 1
+  const { from, live } = stepMotion($, at)
   const wide = px >= 820
   const artW = Math.round(wide ? Math.min(560, px * 0.42) : Math.max(220, Math.min(440, px - 100)))
-  const point = ([icon, title, text]: Point, i: number) => (
-    <Box key={`intro-p${i}`} width={wide ? '100%' : '30%'} flexGrow={1} minWidth={18} flexDirection="row" gap={1} alignItems="flex-start" backgroundColor={K.pill} {...u.inset()} paddingX={1} paddingY={1}>
-      {u.node(`intro-pn${i}`, icon, K.emerald, 22)}
+  // the three points as rows on one surface with hairlines between them (lists are rows, not a box per row)
+  // each point leads with a small drawing of the thing itself (intro-art.ts), played once as the step opens
+  const point = ([art, title, text]: Point, i: number) => (
+    <Box key={`intro-p${i}`} flexDirection="row" gap={2} alignItems="center" paddingY={1}>
+      <Box key={`intro-pa${i}`} flexShrink={0}>{u.graphic(`intro-pa${i}-${at}`, pointArt(art, live, i), title)}</Box>
       <Box flexDirection="column" gap={0} flexShrink={1} minWidth={8}>
         <Text weight="semibold" color={K.text}>{title}</Text>
         <Text size="caption" color={K.label}>{text}</Text>
       </Box>
     </Box>
   )
+  const rule = (i: number) => u.Svg ? <Box key={`intro-r${i}`} overflow="hidden" flexDirection="row"><u.Svg key={`intro-rs${i}`} source={`<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1"><rect width="2400" height="1" fill="${K.hairline}"/></svg>`} alt="divider" width={2400} height={1} /></Box> : null
   const words = (
     <Box key="intro-words" flexDirection="column" gap={2} flexGrow={1} flexShrink={1} minWidth={30} width={wide ? '46%' : '100%'}>
       <Box flexDirection="column" gap={1}>
-        <Text size="caption" weight="semibold" color={K.emerald}>{`${at + 1} of ${STEPS.length} · ${step.kicker}`}</Text>
+        <Text size="caption" weight="semibold" color={K.emerald}>{step.kicker}</Text>
         <Text size="title" weight="semibold" color={K.text}>{step.title}</Text>
         <Text color={K.label}>{step.text}</Text>
       </Box>
-      <Box key="intro-points" flexDirection={wide ? 'column' : 'row'} flexWrap="wrap" gap={1}>{step.points.map(point)}</Box>
+      <Box key="intro-points" flexDirection="column" backgroundColor={K.pill} {...u.inset()} paddingX={2}>{step.points.flatMap((p, i) => i ? [rule(i), point(p, i)] : [point(p, i)])}</Box>
+      {/* what Cortex is, said once and plainly: beside Claude, never inside it, and what it costs */}
+      <Box key="intro-trust" flexDirection="row" gap={1} alignItems="flex-start" flexWrap="nowrap">
+        <Box key="intro-shield-b" flexShrink={0} paddingTop={0}>{u.graphic('intro-shield', SHIELD, 'Shield')}</Box>
+        <Box flexShrink={1} minWidth={10}><Text size="caption" color={K.label}><Text weight="semibold" color={K.text}>Beside Claude, never inside it.</Text>{' Your model, prompts and answers stay as they are; Cortex adds about 250 tokens a message.'}</Text></Box>
+      </Box>
       <Box key="intro-nav" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2} rowGap={1} flexWrap="wrap">
-        {u.graphic(`intro-dots-${at}`, dots(at), `Step ${at + 1} of ${STEPS.length}`)}
-        <Box flexDirection="row" gap={1} alignItems="center">
+        <Box key="intro-prog" flexDirection="row" alignItems="center" gap={1} flexShrink={0}>
+          {u.graphic(`intro-dots-${at}`, live ? introDots(at, from) : introDots(at), `Step ${at + 1} of ${STEPS.length}`)}
+          <Text size="caption" tabular color={K.muted}>{`${at + 1} of ${STEPS.length}`}</Text>
+        </Box>
+        <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
           {!last ? <Button key="intro-skip" plain onPress={() => { void done($) }}><Text size="caption" color={K.label}>Skip</Text></Button> : null}
           {at > 0 ? <Button key="intro-back" variant="secondary" onPress={() => { void go($, at - 1) }}>Back</Button> : null}
           <Button key="intro-next" variant="primary" autoFocus onPress={() => { void (last ? done($) : go($, at + 1)) }}>{last ? 'Start using Cortex' : 'Next'}</Button>
@@ -96,9 +140,9 @@ export function introPage($: Dollar, els: ElementTable, u: Kit, vw: ViewState, p
     </Box>
   )
   return (
-    <Box key="intro" flexDirection="column" justifyContent="center" minHeight={Math.max(16, rows - 8)} backgroundColor={K.card} borderStyle="round" borderColor={K.hairline} paddingX={3} paddingY={2}>
+    <Box key="intro" flexDirection="column" justifyContent="center" minHeight={Math.max(16, rows - 8)} backgroundColor={K.card} borderStyle="round" borderColor={K.cardEdge} paddingX={3} paddingY={2}>
       <Box key="intro-row" flexDirection={wide ? 'row' : 'column'} alignItems="center" justifyContent="center" gap={4}>
-        <Box key="intro-art" flexDirection="column" alignItems="center" flexShrink={0}>{u.graphic(`intro-art-${at}`, step.art(artW), step.alt)}</Box>
+        <Box key="intro-art" flexDirection="column" alignItems="center" flexShrink={0}>{u.graphic(`intro-art-${at}`, live ? arrive(step.art(artW)) : step.art(artW), step.alt)}</Box>
         {words}
       </Box>
     </Box>

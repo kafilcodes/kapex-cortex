@@ -18,17 +18,18 @@ const f1 = (n: number) => n.toFixed(1)
 function segBar(o: { n: number; share: number; width: number; now?: number; today?: number; labels?: string[]; animate: boolean; step: number }): string {
   const W = Math.round(o.width), n = o.n, gap = 4, bw = (W - gap * (n - 1)) / n
   const lab = o.labels?.length === n, mark = o.now !== undefined
-  const top = mark ? 8 : 0, BH = 10, H = top + BH + (lab ? 16 : 0)
+  // air above the marker (it never touches the value row) and under the labels (they never touch the caption)
+  const top = mark ? 11 : 0, BH = 10, H = top + BH + (lab ? 21 : 4)
   const s = Math.max(0, Math.min(1, o.share)), col = levelColor(s, 0.7, 0.9)
   const segs = Array.from({ length: n }, (_, i) => {
     const x = i * (bw + gap), part = Math.max(0, Math.min(1, s * n - i)), w = part * bw
     const fill = part > 0 ? `<rect x="${f1(x)}" y="${top}" width="${f1(Math.max(3, w))}" height="${BH}" rx="3" fill="${col}">${o.animate ? `<animate attributeName="width" from="0" to="${f1(Math.max(3, w))}" begin="${(i * o.step).toFixed(2)}s" dur="0.32s" ${ease}/>` : ''}</rect>` : ''
     const on = o.today === i
-    const t = lab ? `<text x="${f1(x + bw / 2)}" y="${top + BH + 13}" text-anchor="middle" ${FONT} font-size="10" font-weight="${on ? 650 : 450}" fill="${on ? K.emerald : K.ink}">${esc(o.labels![i]!)}</text>` : ''
+    const t = lab ? `<text x="${f1(x + bw / 2)}" y="${top + BH + 14}" text-anchor="middle" ${FONT} font-size="10" font-weight="${on ? 650 : 450}" fill="${on ? K.emerald : K.ink}">${esc(o.labels![i]!)}</text>` : ''
     return `<rect x="${f1(x)}" y="${top}" width="${f1(bw)}" height="${BH}" rx="3" fill="${K.pill}"/>${fill}${t}`
   }).join('')
   const mx = mark ? Math.max(4, Math.min(W - 4, o.now! * W)) : 0
-  const marker = mark ? `<path d="M${f1(mx - 4)} 1.5H${f1(mx + 4)}L${f1(mx)} 6.5Z" fill="${K.emerald}" stroke="${K.emerald}" stroke-width="1" stroke-linejoin="round"/>` : ''
+  const marker = mark ? `<path d="M${f1(mx - 4)} 2.5H${f1(mx + 4)}L${f1(mx)} 7.5Z" fill="${K.emerald}" stroke="${K.emerald}" stroke-width="1" stroke-linejoin="round"/>` : ''
   return svg(W, H, segs + marker)
 }
 
