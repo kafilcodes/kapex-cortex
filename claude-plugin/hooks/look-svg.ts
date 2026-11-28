@@ -28,6 +28,8 @@ export const SPEEDS: Record<Exclude<Motion, 'off'>, { drift: number; fps: number
 }
 // the speed being drawn: set by frame() for the length of one synchronous build
 let cur = SPEEDS.slow
+/** How much shorter a beat's cycle is at the speed being drawn (1 at slow). */
+export const beatScale = () => cur.beat
 /** A time in a beat's cycle (a phase or a gap) at the speed being drawn. */
 export const tk = (s: number) => s * cur.beat
 const GRID = 1 / BEAT_FPS

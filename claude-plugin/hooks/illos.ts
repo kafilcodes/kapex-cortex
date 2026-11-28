@@ -13,11 +13,11 @@ export function illoHandoff(width = 220): string {
   const full = [0, 1, 2, 3, 4, 5, 6, 7].map(i => bar(14, 26 + i * 9, [52, 40, 58, 34, 50, 44, 56, 38][i]!, i > 5 ? K.amber : G, i > 5 ? 0.7 : 0.4)).join('')
   const doc = `<g transform="translate(96 30)"><rect width="30" height="38" rx="5" fill="${K.emerald}" fill-opacity="0.16" stroke="${K.emerald}" stroke-width="2"/>${bar(6, 9, 18, K.emerald, 0.8)}${bar(6, 18, 13, K.emerald, 0.6)}${bar(6, 27, 16, K.emerald, 0.6)}</g>`
   const arrow = `<path d="M76 84 C 100 104, 130 104, 150 84" stroke="${K.emerald}" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="1 6"/><path d="M143 80 L151 83 L147 91" stroke="${K.emerald}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`
-  const fresh = `${win(150, 12, 62, 92, 0.55)}${bar(158, 30, 30, K.emerald, 0.75)}${bar(158, 39, 40, G, 0.4)}<circle cx="181" cy="78" r="11" fill="${K.emerald}" fill-opacity="0.18"/><path d="M175.5 78l4 4 7-8" stroke="${K.emerald}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`
+  const fresh = `${win(150, 12, 62, 92, 0.55)}${bar(158, 30, 30, K.emerald, 0.75)}${bar(158, 39, 40, G, 0.4)}<path d="M174 78l5 5 9-10" stroke="${K.emerald}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`
   return svg(width, width * 0.5, 220, 110, `${win(6, 6, 72, 100)}${full}${arrow}${doc}${fresh}${spark(140, 22, 5)}${spark(206, 6, 3.5, K.emerald)}`)
 }
 
-/** Notes being sorted: Dream not run yet, or a Dream running. */
+/** Notes being sorted: Dream not run yet, or a full check running. */
 export function illoDreamStart(width = 180): string {
   const moon = `<path d="M40 20a18 18 0 1 0 20 24A14 14 0 0 1 40 20z" fill="${K.emerald}" fill-opacity="0.5"/>`
   const lens = `<circle cx="128" cy="52" r="20" fill="${K.emerald}" fill-opacity="0.12" stroke="${K.emerald}" stroke-width="2.6"/><path d="M142 66l14 14" stroke="${K.emerald}" stroke-width="3" stroke-linecap="round"/>`

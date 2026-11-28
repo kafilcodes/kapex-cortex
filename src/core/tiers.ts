@@ -1,9 +1,10 @@
+import { turnScoped } from "./mission-signals.ts";
 import { spawnSync } from "node:child_process";
 import type { Carry } from "./carry.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { askOf, noRefs } from "./brief.ts";
-import { ownWords, pinKey } from "./mission.ts";
+import { noiseRule, ownWords, pinKey } from "./mission.ts";
 import { headCommit } from "./worktree.ts";
 import { readEpisodes } from "./episodes.ts";
 import type { RepoPaths } from "./paths.ts";
@@ -32,7 +33,7 @@ export function instructions(asks: { n: number; text: string }[], max = 8): { n:
   for (const a of asks) {
     for (const raw of a.text.split(/(?<=[.!?])\s+|\n+|\s+-\s+|\s*;\s+/)) {
       const s = raw.replace(/^[-*\d.)\s]+/, "").trim();
-      if (s.length < 20 || s.length > 260 || !RULE.test(s) || /\?$/.test(s)) continue;
+      if (s.length < 20 || s.length > 260 || !RULE.test(s) || /\?$/.test(s) || noiseRule(s) || turnScoped(s)) continue; // "Don't edit anything." was for one turn
       const key = s.toLowerCase().replace(/[^a-z0-9 ]/g, "").slice(0, 60);
       if (seen.includes(key)) continue;
       seen.push(key);

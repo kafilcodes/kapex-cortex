@@ -9,7 +9,7 @@ import type { RepoPaths } from "./paths.ts";
 import { writeMemoryCheck } from "./tiers.ts";
 
 /**
- * Your decision on each finding of a Dream, one at a time or all at once:
+ * Your decision on each finding of a full check, one at a time or all at once:
  *   apply   write this change (or every change still open, with "all")
  *   remove  for a note that's yours to decide: delete those lines
  *   keep    the note is right: leave it, and don't flag the same text again
@@ -40,13 +40,13 @@ const expected = (r: DreamReport, i: number) => r.applied?.files[i]?.hash ?? r.f
 
 export function decide(p: RepoPaths, id: string, fid: string, what: Decision, now = new Date()): string {
   const r = readDream(p, id);
-  if (!r) return "No such Dream.";
-  if (r.status !== "proposed" && r.status !== "applied") return `This Dream is ${r.status}: run a new one.`;
+  if (!r) return "No such check.";
+  if (r.status !== "proposed" && r.status !== "applied") return `This check is ${r.status}: run a new one.`;
   const all = fid === "all";
   const f = all ? null : r.findings.find((x) => x.id === fid);
   if (!all && !f) return "No such finding.";
   const changed = r.files.filter((x, i) => hash(read(x.path)) !== expected(r, i));
-  if (changed.length && what !== "keep") return `Not ${what === "undo" ? "undone" : "applied"}: ${changed.map((x) => x.label).join(", ")} changed since this Dream${r.applied ? " was applied" : ""}. Run a new Dream (Quick check is free).`;
+  if (changed.length && what !== "keep") return `Not ${what === "undo" ? "undone" : "applied"}: ${changed.map((x) => x.label).join(", ")} changed since this check${r.applied ? " was applied" : ""}. Run a new full check (Quick check is free).`;
 
   let msg = "";
   if (what === "apply") {
@@ -73,7 +73,7 @@ export function decide(p: RepoPaths, id: string, fid: string, what: Decision, no
       if (x.was) { x.action = { op: x.was }; delete x.was; }
       delete x.done;
     }
-    msg = all ? "Undone: every file is back as it was at the Dream." : "Undone.";
+    msg = all ? "Undone: every file is back as it was at the check." : "Undone.";
   }
 
   // rebuild every touched file from the Dream-time copy plus all applied findings

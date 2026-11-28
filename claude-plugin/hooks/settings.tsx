@@ -1,9 +1,9 @@
-import type { ElementTable, InputProps, SelectProps } from 'claude-code'
+import type { ElementTable, InputProps } from 'claude-code'
 import { miniSvg, pageScene, type Mini } from './mascot'
 
 import type { LookView, StatusView } from '../types'
-import { setLook } from './look'
-import { act, type Dollar } from './data'
+import { LOOK_DEFAULT, setLook } from './look'
+import { act, say, type Dollar } from './data'
 import { replayIntro } from './intro'
 import type { Kit } from './kit'
 import { K } from './theme'
@@ -20,46 +20,42 @@ const MODE_HELP: Record<string, string> = {
   balanced: 'The last three exchanges in full: a new chat starts at 2,000 to 7,500 tokens.',
   rich: 'Extra room for long plans and replies: a new chat starts at up to 12,000 tokens.',
 }
-// OpenAI-compatible providers people use for a Dream; the address field below takes any other
+// OpenAI-compatible providers people use for a full check; the address field below takes any other
 const ENDPOINTS: [string, string][] = [['https://openrouter.ai/api/v1', 'OpenRouter'], ['https://integrate.api.nvidia.com/v1', 'NVIDIA NIM'], ['https://api.groq.com/openai/v1', 'Groq']]
-const BACKENDS: [string, string][] = [['claude', 'Claude, on your plan (recommended)'], ['opencode', 'An OpenCode model (free models cost nothing)'], ['api', 'Your own API key'], ['off', 'No model: only what Cortex can prove']]
+// who judges: Claude on your plan (the default), your own key (falls back to Claude when it fails), or no model
+const BACKENDS: [string, string][] = [['claude', 'Claude'], ['api', 'Your own key'], ['off', 'No model']]
 const BACKEND_HELP: Record<string, [string, string]> = {
-  claude: ['A Claude model judges what the checks can\'t: what is out of date, repeated, or only needed for some files.', 'Runs claude -p in the background with no tools, no plugins and no settings, on your Claude plan: about 10k to 25k tokens per Dream. It only reads your memory files and the evidence Cortex extracted (test runs, your words, commits), and every claim it makes must point at that evidence.'],
-  opencode: ['A model from your OpenCode setup judges in the background.', 'OpenCode\'s free models cost nothing; your memory files and the extracted evidence go to that model\'s provider.'],
-  api: ['A model on your own API key judges (you pay the provider).', 'The key is read from CORTEX_CLASSIFIER_KEY or your macOS keychain (pbpaste | kc key), never from a file. Your memory files and the extracted evidence go to that provider.'],
-  off: ['Only what a program can verify: lines over the limit, broken links, files and colours that are gone, claims that test runs contradict, duplicates.', 'No tokens at all. A Dream finds less without a model, but everything it finds is certain.'],
+  claude: ['Claude on your plan judges what the checks can\'t: what is out of date, repeated, or only needed for some files.', 'Runs claude -p in the background with no tools, no plugins and no settings, on your Claude plan: about 10k to 25k tokens per full check. It only reads your memory files and the evidence Cortex extracted (test runs, your words, commits), and every claim it makes must point at that evidence.'],
+  api: ['A model on your own API key judges (you pay the provider). If it fails, Claude on your plan judges instead, and the check says so.', 'The key is read from CORTEX_CLASSIFIER_KEY or your macOS keychain (pbpaste | kc key), never from a file. Your memory files and the extracted evidence go to that provider.'],
+  off: ['No model: only what a program can verify: lines over the limit, broken links, files and colours that are gone, claims that test runs contradict, duplicates.', 'No tokens at all. A full check finds less without a model, but everything it finds is certain.'],
 }
 
-const MOTION_SAYS: Record<LookView['motion'], string> = { off: 'Off: the pattern never moves.', slow: 'Slow: a drift you notice over a minute. Lightest on the battery.', medium: 'Medium: a gentle drift and a pulse every few seconds.', fast: 'Fast: lively, easy to see. Uses a little more CPU.' }
+const MOTION_SAYS: Record<LookView['motion'], string> = { off: 'Off: the pattern never moves.', slow: 'Slow: a drift you notice over a minute. Lightest on the battery.', medium: 'Medium: a gentle drift and a wave of light every few seconds.', fast: 'Fast: lively, easy to see. Uses a little more CPU.' }
 
+/** What "Test the model" proves, by who judges (kc dream test asks the chosen judge only, never the fallback) */
+export const testSays = (be: string, claude: string) => be === 'api'
+  ? 'One small question to your own key\'s model: proves the key, the address and the model before a full check.'
+  : `One small question to ${claude} on your plan: proves Claude Code can run it and answers the way a full check needs.`
 export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, wide = false, lk?: LookView): JSX.Element {
   const { Box, Text, Button } = els
-  const Select = (els as unknown as { Select?: (p: SelectProps) => JSX.Element }).Select
   const Input = (els as unknown as { Input?: (p: InputProps) => JSX.Element }).Input
   const desktop = !!u.Svg
   const pr = s.prefs
   if (!pr) return <Text key="st-old" color={K.label}>Settings need a newer Cortex. Press Refresh.</Text>
-  const save = (key: string, value: string) => { void act($, 'Saved', ['prefs', 'set', key, value]) }
+  // the header chip says what changed ("Dark mode: AMOLED black", "Your name saved"), never a bare "Saved"
+  const save = (key: string, value: string, said: string) => { void act($, said, ['prefs', 'set', key, value], false, 'Saving…') }
   // the summary always shows; the full text on hover (desktop), or always (terminal, which has no hover)
   const help = (key: string, short: string, full = '', warn = false) => (
     <Box key={`h-${key}`} flexDirection="column">
-      <Text size="caption" color={warn ? K.amber : K.label}>{short}</Text>
+      <Text size="caption" color={warn ? 'warning' : K.label}>{short}</Text>
       {full ? (desktop
         ? <Box display="none" hover={{ scope: `hs-${key}`, display: 'flex' }}><Text size="caption" color={K.muted}>{full}</Text></Box>
         : <Text size="caption" color={K.muted}>{full}</Text>) : null}
     </Box>
   )
-  // "Who checks" has four long options, so it stays a menu; every other choice is one press: its options sit side
-  // by side with the current one marked (the engine has no switch element, and a Button can't hold a drawing).
-  const field = (key: string, label: string, options: [string, string][], value: string, short: string, full = '', warn = false) => (
-    <Box key={`st-${key}`} flexDirection="column" gap={0} paddingY={1} hover={{ scope: `hs-${key}` }}>
-      {Select
-        ? <Select key={`sel-${key}`} label={label} value={value} options={options.map(([v, l]) => ({ value: v, label: l }))} onSelect={v => save(key, v)} />
-        : <Box flexDirection="row" gap={1} flexWrap="wrap"><Text color={K.text}>{label}</Text>{options.map(([v, l]) => <Button key={`opt-${key}-${v}`} variant={v === value ? 'primary' : 'secondary'} onPress={() => save(key, v)}>{l}</Button>)}</Box>}
-      {help(key, short, full, warn)}
-    </Box>
-  )
-  const pick = (key: string, label: string, options: [string, string][], value: string, short: string, full = '', warn = false, onSave?: (v: string) => void) => (
+  // every choice is one press: its options sit side by side with the current one marked (the engine has no switch
+  // element, and a Button can't hold a drawing)
+  const pick = (key: string, label: string, options: [string, string][], value: string, short: string, full = '', warn = false, onSave?: (v: string) => unknown) => (
     <Box key={`st-${key}`} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2} rowGap={1} flexWrap="wrap" paddingY={1} hover={{ scope: `hs-${key}` }}>
       <Box flexDirection="column" gap={0} width="50%" flexGrow={1} flexShrink={1} minWidth={22}>
         <Text weight="medium" color={K.text}>{label}</Text>
@@ -70,8 +66,8 @@ export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView
       <Box key={`trk-${key}`} flexDirection="row" alignItems="center" backgroundColor={K.pill} {...(options.length > 4 ? { flexWrap: 'wrap', flexShrink: 1 } : { flexShrink: 0 })}>
         {options.map(([v, l]) => (
           <Box key={`optb-${key}-${v}`} paddingX={1} alignItems="center" {...(v === value ? { backgroundColor: `${K.emerald}38` } : {})}>
-            <Button key={`opt-${key}-${v}`} plain onPress={() => { if (v !== value) (onSave ?? (x => save(key, x)))(v) }}>
-              <Text size="caption" weight={v === value ? 'semibold' : 'medium'} color={v === value ? K.emerald : K.label}>{l}</Text>
+            <Button key={`opt-${key}-${v}`} plain onPress={() => { if (v === value) return; const said = `${label}: ${l}`; if (onSave) void Promise.resolve(onSave(v)).then(() => say($, said), () => say($, `Couldn't change ${label.toLowerCase()}`)); else save(key, v, said) }}>
+              <Text size="caption" weight={v === value ? 'semibold' : 'medium'} color={v === value ? K.text : K.label}>{l}</Text>
             </Button>
           </Box>
         ))}
@@ -79,7 +75,7 @@ export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView
     </Box>
   )
   const text = (key: string, label: string, value: string, placeholder: string) => Input
-    ? <Input key={`in-${key}`} label={label} value={value} placeholder={placeholder} submitLabel="Save" onSubmit={v => save(key, v.trim())} />
+    ? <Input key={`in-${key}`} label={label} value={value} placeholder={placeholder} submitLabel="Save" onSubmit={v => save(key, v.trim(), `${label.replace(/ \(optional\)$/, '')} ${v.trim() ? 'saved' : 'cleared'}`)} />
     : <Text key={`in-${key}`} size="caption" color={K.label}>{`${label}: ${value || 'not set'} (set with: kc prefs set ${key} <value>)`}</Text>
   const w = '100%' // each card fills its column
   // each card's header carries a small mascot doing that card's job (the icon disc where drawings can't show)
@@ -92,9 +88,12 @@ export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView
   ])
   const be = pr.dreamBackend ?? 'claude'
   const [short, full] = BACKEND_HELP[be] ?? BACKEND_HELP.claude!
-  // what would make a Dream's model step fail before it starts, said in Settings instead of after a minute's wait
-  const apiIssue = be !== 'api' ? '' : !pr.dreamModel || /^(sonnet|haiku|opus)$/i.test(pr.dreamModel) ? `"${pr.dreamModel || 'no model'}" is Claude Code's short name: type the provider's full model name (e.g. ${pr.dreamApi === 'openai' ? 'nvidia/nemotron-3-ultra-550b-a55b' : 'claude-sonnet-5-5'}).`
-    : pr.dreamApi === 'openai' && !pr.dreamUrl ? 'Pick an endpoint, or type its address, before a Dream can use this key.' : ''
+  // what would make a full check's model step fail before it starts, said in Settings instead of after a minute's wait
+  const apiModel = pr.dreamApiModel ?? ''
+  const claudeName = ({ haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' } as Record<string, string>)[pr.dreamModel || 'sonnet'] ?? (pr.dreamModel || 'Sonnet')
+  const apiIssue = be !== 'api' ? '' : !apiModel || /^(sonnet|haiku|opus)$/i.test(apiModel) ? `${apiModel ? `"${apiModel}" is Claude Code's short name: type` : 'Type'} the provider's full model name (e.g. ${pr.dreamApi === 'openai' ? 'nvidia/nemotron-3-ultra-550b-a55b' : 'claude-sonnet-5-5'}). Until then, ${claudeName} on your plan judges.`
+    : pr.dreamApi === 'openai' && !pr.dreamUrl ? `Pick an endpoint, or type its address. Until then, ${claudeName} on your plan judges.` : ''
+  const EFFORT_SAYS: Record<string, string> = { low: 'Low: quickest, finds the plain mistakes.', medium: 'Medium: careful, the default for a full check.', high: 'High: the most careful; slower, and uses more of your plan.' }
   const at = pr.handoffAt ?? 80
   const warns = s.safety?.findings.filter(x => x.level === 'warn').length ?? 0
   const safety = s.safety ? sec('sec-safe', 'rule', 'Safety for long runs', warns ? `${warns} of these need${warns === 1 ? 's' : ''} a fix before you let Claude run on its own` : 'For auto mode and long background sessions', [
@@ -126,46 +125,47 @@ export function settingsBody($: Dollar, els: ElementTable, u: Kit, s: StatusView
           <Button key="st-unpark" variant="secondary" onPress={() => { void act($, 'Back on', ['park', 'remove', ...s.parked!.servers.map(x => x.name)]) }}>Turn back on</Button>
         </Box>] : []),
       ], undefined, 'tools')
-  const dream = sec('sec-dream', 'dream', 'Dream', 'A deep check that Claude\'s notes still match what really happened', [
-        pick('quickCheck', 'Quick check after every turn', ONOFF, pr.quickCheck === false ? 'off' : 'on', pr.quickCheck === false ? 'Off: it runs only when you press Quick check.' : 'On: a free, instant check for broken links, missing files and repeats.', 'It runs in the background when your memory files change, then shows what it found on the Dream page with Apply and Keep buttons. Your turns stay as fast as before.'),
-        pick('autoDream', 'Run a full Dream by itself', ONOFF, pr.autoDream ? 'on' : 'off', pr.autoDream ? 'On: at most once a day, after 3 new chats.' : 'Off: a Dream runs only when you press Dream now.', 'It only suggests: nothing changes until you press Apply. An automatic Dream never changes a file. It saves what it found, and the strip shows how many notes wait for you.'),
-        field('dreamBackend', 'Who judges a Dream', BACKENDS, be, short, full),
-        be === 'claude' ? pick('dreamModel', 'Model', [['haiku', 'Haiku'], ['sonnet', 'Sonnet'], ['opus', 'Opus']], pr.dreamModel || 'sonnet', 'Sonnet is the best balance of care and cost.', 'Haiku is faster and finds less; Opus is the most careful and uses the most of your plan.') : null,
-        be === 'opencode' ? text('dreamModel', 'OpenCode model (provider/model)', pr.dreamModel ?? '', 'opencode/deepseek-v4.1-flash-free') : null,
-        be === 'api' ? pick('dreamApi', 'Provider', [['anthropic', 'Anthropic'], ['openai', 'OpenAI-compatible']], pr.dreamApi ?? 'anthropic', 'Where your key is from. OpenAI-compatible covers OpenRouter, Groq and others.') : null,
-        be === 'api' ? text('dreamModel', 'Model name', pr.dreamModel ?? '', 'e.g. claude-sonnet-5-5') : null,
-        be === 'api' && pr.dreamApi === 'openai' ? pick('dreamUrl', 'Endpoint', ENDPOINTS, pr.dreamUrl ?? '', ENDPOINTS.find(([u]) => u === pr.dreamUrl)?.[1] ? `${ENDPOINTS.find(([u]) => u === pr.dreamUrl)![1]}: ${pr.dreamUrl}` : 'Pick a provider, or type its address below.', 'Any OpenAI-compatible endpoint works. Free tiers are slower and rate limited: a Dream reads a lot, so it can take 1 to 4 minutes, and Cortex retries when a provider says it is busy.') : null,
+  const dream = sec('sec-dream', 'dream', 'Memory check', 'A deep check that Claude\'s notes still match what really happened', [
+        pick('quickCheck', 'Quick check after every turn', ONOFF, pr.quickCheck === false ? 'off' : 'on', pr.quickCheck === false ? 'Off: it runs only when you press Quick check.' : 'On: a free, instant check for broken links, missing files and repeats.', 'It runs in the background when your memory files change, then shows what it found on the Memory check page with Apply and Keep buttons. Your turns stay as fast as before.'),
+        pick('autoDream', 'Run a full check by itself', ONOFF, pr.autoDream ? 'on' : 'off', pr.autoDream ? 'On: at most once a day, after 3 new chats.' : 'Off: a full check runs only when you press Run full check.', 'It only suggests: nothing changes until you press Apply. An automatic full check never changes a file. It saves what it found, and the strip shows how many notes wait for you.'),
+        pick('dreamBackend', 'Who judges a full check', BACKENDS, be, short, full),
+        // Claude's model: the judge on your plan, and the one that steps in when your own key fails
+        be !== 'off' ? pick('dreamModel', be === 'api' ? 'If your key fails' : 'Model', [['haiku', 'Haiku'], ['sonnet', 'Sonnet'], ['opus', 'Opus']], pr.dreamModel || 'sonnet', be === 'api' ? `${claudeName} on your plan judges instead, and the check says so.` : 'Sonnet is the best balance of care and cost.', 'Haiku is faster and finds less; Opus is the most careful and uses the most of your plan.') : null,
+        be === 'claude' ? pick('dreamEffort', 'Thinking', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], pr.dreamEffort ?? 'medium', EFFORT_SAYS[pr.dreamEffort ?? 'medium'] ?? '', 'How hard Claude thinks before it answers (claude -p --effort). A full check reads about 10k to 25k tokens either way; more thinking adds to what it writes.') : null,
+        be === 'api' ? pick('dreamApi', 'Provider', [['anthropic', 'Anthropic'], ['openai', 'OpenAI-compatible']], pr.dreamApi ?? 'anthropic', 'Where your key is from. OpenAI-compatible covers OpenRouter, Groq, NVIDIA NIM and others.') : null,
+        be === 'api' ? text('dreamApiModel', 'Model name', apiModel, pr.dreamApi === 'openai' ? 'e.g. nvidia/nemotron-3-ultra-550b-a55b' : 'e.g. claude-sonnet-5-5') : null,
+        be === 'api' && pr.dreamApi === 'openai' ? pick('dreamUrl', 'Endpoint', ENDPOINTS, pr.dreamUrl ?? '', ENDPOINTS.find(([u]) => u === pr.dreamUrl)?.[1] ? `${ENDPOINTS.find(([u]) => u === pr.dreamUrl)![1]}: ${pr.dreamUrl}` : 'Pick a provider, or type its address below.', 'Any OpenAI-compatible endpoint works. Free tiers are slower and rate limited: a full check reads a lot, so it can take 1 to 4 minutes, and Cortex retries when a provider says it is busy.') : null,
         be === 'api' && pr.dreamApi === 'openai' ? text('dreamUrl', 'Or another address', pr.dreamUrl ?? '', 'https://openrouter.ai/api/v1') : null,
-        apiIssue ? <Text key="st-dwarn" size="caption" color={K.amber}>{apiIssue}</Text> : null,
+        apiIssue ? <Text key="st-dwarn" size="caption" color="warning">{apiIssue}</Text> : null,
         be !== 'off' ? <Box key="st-dtest" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2} rowGap={1} flexWrap="wrap" paddingY={1}>
-          <Box flexDirection="column" gap={0} flexShrink={1} minWidth={20}><Text weight="medium" color={K.text}>Check the model</Text><Text size="caption" color={K.label}>One small question to it: proves the key, the address and the model before a Dream.</Text></Box>
+          <Box flexDirection="column" gap={0} flexShrink={1} minWidth={20}><Text weight="medium" color={K.text}>Check the model</Text><Text size="caption" color={K.label}>{testSays(be, claudeName)}</Text></Box>
           <Button key="st-dtest-b" variant="secondary" onPress={() => { void act($, 'Tested', ['dream', 'test'], true) }}>Test the model</Button>
         </Box> : null,
-        pick('dreamTranscripts', 'Recent chats a Dream reads', [['5', '5'], ['10', '10'], ['20', '20']], String(pr.dreamTranscripts ?? 10), 'More chats find more, and use a little more of your plan.'),
+        pick('dreamTranscripts', 'Recent chats a full check reads', [['5', '5'], ['10', '10'], ['20', '20']], String(pr.dreamTranscripts ?? 10), 'More chats find more, and use a little more of your plan.'),
       ], undefined, 'dream')
   const you = sec('sec-you', 'star', 'You', 'How Cortex greets you', [
         pick('greeting', 'Greet me by name', ONOFF, pr.greeting === false ? 'off' : 'on', pr.greeting === false ? 'Off: the panel shows the project name instead.' : `On: ${s.name ? `"${(h => (h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'))(new Date().getHours())}, ${s.name}"` : 'no name found yet; set one below'}.`, 'The name comes from the box below, or else your computer account\'s first name. It stays on this computer and never goes into your project.'),
-        pick('sound', 'Sounds', ONOFF, pr.sound === false ? 'off' : 'on', pr.sound === false ? 'Off: notifications show without a sound.' : 'On: a soft chime when a handoff is saved or a Dream finishes.', 'Cortex\'s own two short sounds (a rising chime for done, two low notes when something needs you). Settings changes never chime.'),
+        pick('sound', 'Sounds', ONOFF, pr.sound === false ? 'off' : 'on', pr.sound === false ? 'Off: notifications show without a sound.' : 'On: a soft chime when a handoff is saved or a full check finishes.', 'Cortex\'s own two short sounds (a rising chime for done, two low notes when something needs you). Settings changes never chime.'),
         text('name', 'Your name (optional)', pr.name ?? '', s.name || 'e.g. Kafil'),
         <Text key="st-scope" size="caption" color={K.muted}>{pr.overridden.length ? `Settings are saved on this computer. This project has its own: ${pr.overridden.join(', ')}.` : 'Settings are saved on this computer and used in every project.'}</Text>,
         <Box key="st-intro" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap"><Text size="caption" color={K.label}>New here? The three-step intro shows what Cortex does.</Text><Button key="st-intro-b" variant="secondary" onPress={() => { void replayIntro($) }}>Show the intro again</Button></Box>,
       ], undefined, 'you')
   // the Kapex look for the desktop app (look.tsx): saved in the plugin's store, applied at once
-  const L = lk ?? { on: false, ground: 'obsidian', backdrop: 'prism', motion: 'medium', chosen: false }
+  const L = lk ?? { ...LOOK_DEFAULT, on: false }
   const lookSec = desktop ? sec('sec-look', 'star', 'Look', 'The Kapex theme for the Claude desktop app', [
-        pick('lookOn', 'Kapex theme', ONOFF, L.on ? 'on' : 'off', L.on ? 'On: Kapex colours and a backdrop behind the chat.' : 'Off: the app\'s own look, or another theme you use.', 'Dark mode is Obsidian (true black with an emerald cast); light mode is Mist (cool paper, pine green). Off puts back the app\'s own look at once; your choice holds in every project. The terminal keeps its own colours.', false, v => { void setLook($, { on: v === 'on' }) }),
-        L.on ? pick('lookGround', 'Dark mode', [['obsidian', 'Obsidian'], ['amoled', 'AMOLED black']], L.ground, L.ground === 'amoled' ? 'AMOLED black: the chat, this panel and the strip on pure black, one ground.' : 'Obsidian: near-black with an emerald cast; side panes one step lighter than the chat.', 'Only dark mode changes: light mode stays Mist. On an OLED screen, pure black pixels are off.', false, v => { void setLook($, { ground: v as LookView['ground'] }) }) : null,
-        L.on ? pick('lookDrop', 'Backdrop', [['prism', 'Prism'], ['facets', 'Facets'], ['contour', 'Contour'], ['mesh', 'Mesh'], ['aurora', 'Aurora'], ['none', 'None']], L.backdrop, ({ prism: 'Prism lattice: the Cortex prism over a fine grid, at the corners.', facets: 'Crystal facets: a low-poly field glowing out of two corners.', contour: 'Contour field: slow contour lines, like a map of the work.', mesh: 'Signal mesh: a dot grid with a few linked nodes.', aurora: 'Aurora glow: a soft emerald glow along the top.', none: 'None: just the colours.' } as Record<string, string>)[L.backdrop] ?? '', 'Patterns stay at the edges, away from the words and the message box, under the app\'s frosted panels.', false, v => { void setLook($, { backdrop: v as LookView['backdrop'] }) }) : null,
-        L.on && L.backdrop !== 'none' ? pick('lookMotion', 'Motion', [['off', 'Off'], ['slow', 'Slow'], ['medium', 'Medium'], ['fast', 'Fast']], L.motion, MOTION_SAYS[L.motion], 'Cortex\'s own setting: it moves even when your Mac\'s Reduce Motion is on, and only Off here stops it. The motion steps a few times a second instead of every frame, so it stays light: faster steps more often, so it costs a little more.', false, v => { void setLook($, { motion: v as LookView['motion'] }) }) : null,
+        pick('lookOn', 'Kapex theme', ONOFF, L.on ? 'on' : 'off', L.on ? 'On: Kapex colours and a backdrop behind the chat.' : 'Off: the app\'s own look, or another theme you use.', 'Dark mode is AMOLED black (or Obsidian, near-black with an emerald cast); light mode is Mist (cool paper, pine green). Light or dark follows the app\'s own setting. Off puts back the app\'s own look at once; your choice holds in every project. The terminal keeps its own colours.', false, v => setLook($, { on: v === 'on' })),
+        L.on ? pick('lookGround', 'Dark mode', [['amoled', 'AMOLED black'], ['obsidian', 'Obsidian']], L.ground, L.ground === 'amoled' ? 'AMOLED black: the chat, this panel and the strip on pure black, one ground.' : 'Obsidian: near-black with an emerald cast; side panes one step lighter than the chat.', 'Only dark mode changes: light mode stays Mist. On an OLED screen, pure black pixels are off.', false, v => setLook($, { ground: v as LookView['ground'] })) : null,
+        L.on ? pick('lookDrop', 'Backdrop', [['contour', 'Contour'], ['prism', 'Prism'], ['facets', 'Facets'], ['mesh', 'Mesh'], ['aurora', 'Aurora'], ['none', 'None']], L.backdrop, ({ prism: 'Prism lattice: the Cortex prism over a fine grid, at the corners.', facets: 'Crystal facets: a low-poly field glowing out of two corners.', contour: 'Contour field: contour lines like a map of the work, a wave of light rolling out from the corner.', mesh: 'Signal mesh: a dot grid with a few linked nodes.', aurora: 'Aurora glow: a soft emerald glow along the top.', none: 'None: just the colours.' } as Record<string, string>)[L.backdrop] ?? '', 'Patterns stay at the edges, away from the words and the message box, under the app\'s frosted panels.', false, v => setLook($, { backdrop: v as LookView['backdrop'] })) : null,
+        L.on && L.backdrop !== 'none' ? pick('lookMotion', 'Motion', [['off', 'Off'], ['slow', 'Slow'], ['medium', 'Medium'], ['fast', 'Fast']], L.motion, MOTION_SAYS[L.motion], 'Cortex\'s own setting: it moves even when your Mac\'s Reduce Motion is on, and only Off here stops it. The motion steps a few times a second instead of every frame, so it stays light: faster steps more often, so it costs a little more.', false, v => setLook($, { motion: v as LookView['motion'] })) : null,
       ], undefined, 'look') : null
-  // wide: two columns of cards, so a short card never stretches to its neighbour's height; Tools sits under Dream so
-  // the two columns end near each other (no empty corner under the shorter one)
+  // wide: two columns of cards, so a short card never stretches to its neighbour's height. The Memory check card is the
+  // tallest, so Tools sits under You: the two columns end near each other (no empty corner under the shorter one)
   const col = (key: string, kids: (JSX.Element | null)[]) => <Box key={key} width="45%" flexGrow={1} minWidth={24} flexDirection="column" gap={1}>{kids}</Box>
   return (
     <Box flexDirection="column" gap={1}>
     {u.intro('st-in', pageScene('settings', 100), 'Cortex adjusting its preferences', 'Settings', 'Every change is saved the moment you press it.', companion('cool', 800))}
     {wide
-      ? <Box key="st" flexDirection="row" gap={1} alignItems="flex-start">{col('st-a', [warns ? safety : hand, dream, tools])}{col('st-b', [warns ? hand : safety, lookSec, you])}</Box>
+      ? <Box key="st" flexDirection="row" gap={1} alignItems="flex-start">{col('st-a', [warns ? safety : hand, dream])}{col('st-b', [warns ? hand : safety, lookSec, you, tools])}</Box>
       : <Box key="st" flexDirection="column" gap={1}>{warns ? safety : null}{hand}{lookSec}{tools}{dream}{warns ? null : safety}{you}</Box>}
     </Box>
   )

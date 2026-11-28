@@ -118,14 +118,15 @@ test('charts animate once, on opening: the next render, a heartbeat, a turn and 
   await ui.unmount()
 })
 
-test('heartbeat signal changes only when what is drawn would: the cache minutes in 5-minute steps, warm → cooling → cold, a plan reset, a new day', () => {
+test('heartbeat signal changes only when what is drawn would: the cache minutes in 5-minute steps, warm → cooling → cold, a plan reset, a new day, a 10-minute step', () => {
   const t0 = Date.parse('2026-11-13T10:00:00Z')
   const at = (min: number) => signal({ lastAt: t0, ttlMs: HOUR, resets: [new Date(t0 + 2 * HOUR).toISOString()] }, t0 + min * 60_000)
   expect(at(1)).toBe(at(4)) // within one 5-minute step: no redraw
   expect(at(1)).not.toBe(at(40)) // "Cache 59 min" became "20 min": one redraw per step, never per beat
   expect(at(52)).not.toBe(at(40)) // cooling
   expect(at(61)).not.toBe(at(52)) // cold
-  expect(at(61)).toBe(at(100))
+  expect(at(61)).toBe(at(69)) // cold, within one 10-minute step: no redraw
+  expect(at(61), 'a 10-minute step, so the plan\'s now marker keeps up while idle (v4.6)').not.toBe(at(100))
   expect(at(121)).not.toBe(at(100)) // the plan window reset
 })
 

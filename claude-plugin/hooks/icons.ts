@@ -10,7 +10,7 @@ const P: Record<string, string> = {
   decision: '<path d="M6 21V4M6 4h11l-2.5 4L17 12H6"/>',
   preference: '<path d="M4 7h9M17 7h3M4 17h4M12 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
   lesson: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 1 3.8 10.6c-.6.5-.8 1.2-.8 2V16H9v-.4c0-.8-.3-1.5-.8-2A6 6 0 0 1 12 3z"/>',
-  failed: '<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>',
+  failed: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   promoted: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 14h6M10 17h4"/>',
   pending: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
@@ -30,8 +30,13 @@ const P: Record<string, string> = {
   save: '<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 14h8v7H8z"/>',
   dream: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/><path d="M16 3.5v3M14.5 5h3"/>',
   move: '<path d="M4 12h13M13 7l5 5-5 5"/><path d="M20 4v16"/>',
-  minus: '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
-  plus: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+  minus: '<path d="M5 12h14"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  // what comes next: an arrow into a stop, so a "Next:" line never borrows the clock
+  next: '<path d="M4 12h14M13 7l5 5-5 5"/>',
+  // a turn you stopped: two bars, the universal pause
+  pause: '<path d="M9 6v12M15 6v12"/>',
+  calendar: '<rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
   pen: '<path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/>',
   // Cortex suggests: the prism mark as a line icon (a hexagon, three facet edges and the core), tinted by how much it matters
   suggest: '<path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M12 2.8v6.6M20 16.6l-5.7-3.3M4 16.6l5.7-3.3"/><circle cx="12" cy="12" r="2.4"/>',
@@ -47,15 +52,9 @@ export function icon(name: IconName | string, color: string, size = 14): string 
 /** The icon's inner shapes, for drawing inside a bigger SVG (place it with a transform). */
 export const iconPaths = (name: IconName | string) => P[name] ?? P.spark!
 
-/** Health as a small ring: a full emerald ring with a check, or an amber arc with a mark when something needs you. */
-export function healthRing(ok: boolean, size = 18): string {
-  const c = ok ? '#10B981' : '#F59E0B'
-  const arc = ok ? '<circle cx="12" cy="12" r="9" stroke-width="2.4"/>' : '<path d="M12 3a9 9 0 1 1-8.5 6" stroke-width="2.4"/>'
-  const mark = ok ? '<path d="M8 12.3l2.8 2.8L16.2 9.6" stroke-width="2.2"/>' : '<path d="M12 8v4.5M12 15.8v.4" stroke-width="2.4"/>'
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-linecap="round" stroke-linejoin="round">${arc}${mark}</svg>`
-}
-
-/** A timeline node: the event's icon in a soft disc of its colour (replaces plain dots). */
+/** A row's leading icon at `size` px: the plain outlined glyph, no disc or ring behind it (an icon in a tinted circle
+ * read as generated UI). The glyph sits in a 28-unit box so a 20 px slot draws it at about 14 px with a ~1.4 px
+ * stroke: one size and one weight beside the 13 px tags. */
 export function nodeSvg(name: string, color: string, size = 22): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="${color}" fill-opacity="0.16" stroke="${color}" stroke-opacity="0.55"/><g transform="translate(5.5 5.5) scale(0.54)" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${P[name] ?? P.spark}</g></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="-2 -2 28 28" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${P[name] ?? P.spark}</svg>`
 }

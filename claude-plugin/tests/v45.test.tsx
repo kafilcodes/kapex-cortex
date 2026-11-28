@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { stripParts } from '../hooks/band'
+import { stripLevels, stripWidth, type StripModel } from '../hooks/strip'
+import { tipMessage } from '../hooks/band'
 import { measure, withinBudget } from '../hooks/guard'
 import { textWidth } from '../hooks/theme'
 import { paceTrack } from '../hooks/viz-plan'
@@ -31,12 +32,24 @@ test('pace track: the axis labels never come within 8 px of each other, at any w
   }
 })
 
-test('strip: on the narrowest band the cache keeps its bar and drops its words, never "cache till" cut short', () => {
-  const o = { ctx: 85, compactAt: 0.84, cacheShare: 0.6, cacheSec: 1800, cacheText: 'cache warm till 10:28 PM', cacheColor: '#34D399', plan: 41, week: 41, handoff: 'saved' as const, waiting: 0 }
-  const roomy = stripParts(o, null, 2000)
-  expect(roomy.main).toContain('cache warm till 10:28 PM')
-  const narrow = stripParts(o, null, 120)
-  expect(narrow.main).not.toContain('cache till')
-  expect(narrow.main).toContain('85%')
-  expect(narrow.words).toContain('cache warm till 10:28 PM') // still said, for hover and screen readers
+test('strip: narrower, words leave before facts; the chat number is never cut, and every fact stays in the hover words', () => {
+  const m: StripModel = { ctx: 85, ctxColor: '#F43F5E', waiting: 0, failed: false,
+    cache: { share: 0.6, sec: 1800, until: '10:28 PM', state: 'warm', color: '#34D399', stepped: true },
+    msg: { icon: 'check', mark: '#10B981', ink: 'text', text: 'All good · handoff saved', short: 'All good', alt: 'All good', keep: true } }
+  const roomy = stripLevels(m, 2000), mid = stripLevels(m, 560), narrow = stripLevels(m, 300)
+  expect(roomy).toEqual({ vitals: 0, msg: 0, narrow: false, refresh: true }) // "85% full · cache till 10:28 PM | All good · handoff saved"
+  expect(mid.vitals).toBeGreaterThan(0) // shorter words first ("till 10:28 PM")
+  expect(narrow.vitals).toBeGreaterThanOrEqual(3) // the cache leaves before the chat's number does
+  for (const l of [roomy, mid, narrow]) expect(stripWidth(m, l) <= 2000).toBe(true)
+  expect(stripWidth(m, mid)).toBeLessThanOrEqual(560)
+})
+
+test('strip message: with a button the words are the reason, never the verb again, and never a bare number', () => {
+  const t = (o: any) => tipMessage({ level: 'act', icon: 'link', color: '#F43F5E', detail: 'd', action: 'handoff', ...o })
+  expect(t({ text: 'Handoff suggested · saves ~162k a message', short: 'Handoff suggested · ~162k' })).toMatchObject({ text: 'Saves ~162k a message', short: 'Saves ~162k', ink: 'error', action: { label: 'Hand off', primary: true } })
+  expect(t({ text: '5h plan 95% used · Handoff suggested', short: 'Handoff suggested' })).toMatchObject({ text: '5h plan 95% used', short: '5h plan 95% used' })
+  const review = tipMessage({ level: 'warn', icon: 'dream', color: '#F59E0B', detail: 'd', action: 'review', text: '1 memory fix to review' })
+  expect(review).toMatchObject({ text: '1 memory fix', ink: 'warning', mark: '#D97706', keep: true, action: { label: 'Review', primary: false } })
+  const mem = tipMessage({ level: 'warn', icon: 'alert', color: '#F59E0B', detail: 'd', action: 'memory', text: "MEMORY.md too long · Claude can't see the rest", short: 'MEMORY.md too long' })
+  expect(mem).toMatchObject({ icon: 'alert', short: 'MEMORY.md too long', action: { label: 'Fix' }, keep: true })
 })

@@ -6,16 +6,17 @@ import { join } from "node:path";
 import { apiBase, callHttpModel } from "./api-call.ts";
 
 /**
- * The models a Dream can call. Each takes a system prompt and one message and returns the model's text, or
+ * The models a full check can call. Each takes a system prompt and one message and returns the model's text, or
  * throws with a plain-English reason. All have a hard timeout; none ever runs inside a hook.
  *
  *   claude   → `claude -p` on the user's own Claude subscription (counts toward their usage limits)
- *   opencode → `opencode run` with a model from the user's OpenCode setup (its free models cost nothing)
- *   api      → the user's own API key: Anthropic, or any OpenAI-compatible endpoint (OpenRouter, Groq, …)
+ *   api      → the user's own API key: Anthropic, or any OpenAI-compatible endpoint (OpenRouter, Groq, NVIDIA NIM, …).
+ *              When it fails for any reason, judge() asks Claude on the user's plan instead and says so.
+ * OpenCode judged Dreams until v4.9 (`opencode run`); it was dropped for launch (docs/drafts.md keeps the design).
  *
  * The key never lives in a file: env var CORTEX_CLASSIFIER_KEY, or the macOS keychain item "kapex-cortex-classifier".
  */
-export type Backend = "claude" | "opencode" | "api";
+export type Backend = "claude" | "api";
 export interface ModelConfig { backend: string; model: string; api: "anthropic" | "openai"; url: string }
 export interface CallOptions { timeoutMs?: number; effort?: "low" | "medium" | "high"; maxTokens?: number }
 export const TIMEOUT_MS = 45_000;
@@ -25,7 +26,6 @@ export function modelProblem(backend: Backend, model: string): string | null {
   if (backend === "claude" && !model) return null; // defaults to Sonnet
   if (!model) return "pick a model first";
   if (!/^[\w.:/@+-]{1,120}$/.test(model)) return "the model name has characters a model name can't have";
-  if (backend === "opencode" && !model.includes("/")) return 'OpenCode models are written provider/model, e.g. "opencode/deepseek-v4.1-flash-free"';
   return null;
 }
 
@@ -92,17 +92,6 @@ async function viaClaude(system: string, message: string, model: string, schema:
   return j.result;
 }
 
-async function viaOpencode(system: string, message: string, model: string, o: CallOptions): Promise<string> {
-  const oc = findProgram("opencode");
-  if (!oc) throw new Error("the opencode command wasn't found");
-  const out = await runProgram(oc, ["run", "-m", model, "--format", "json", `${system}\n\n${message}`], null, o.timeoutMs);
-  // one JSON event per line; the answer is in the "text" events
-  const text = out.split("\n").map((l) => { try { return JSON.parse(l) as { type?: string; part?: { text?: string } }; } catch { return null; } })
-    .filter((e) => e?.type === "text").map((e) => e!.part?.text ?? "").join("");
-  if (!text) throw new Error("opencode gave no text answer");
-  return text;
-}
-
 async function viaApi(system: string, message: string, cfg: ModelConfig, o: CallOptions, json: boolean): Promise<string> {
   const key = apiKey();
   if (!key) throw new Error("no API key: set CORTEX_CLASSIFIER_KEY, or save it with `kc key` (macOS keychain)");
@@ -118,10 +107,36 @@ export async function askModel(cfg: ModelConfig, system: string, message: string
   const bad = modelProblem(backend, cfg.model);
   if (bad) throw new Error(bad);
   if (backend === "claude") return viaClaude(system, message, cfg.model, schema, o);
-  if (backend === "opencode") return viaOpencode(system, message, cfg.model, o);
   if (backend === "api") {
-    if (cfg.api === "openai") { const u = urlProblem(apiBase(cfg.url)); if (u) throw new Error(u); }
+    if (cfg.api === "openai") { if (!cfg.url.trim()) throw new Error("no endpoint address is set (Settings → Memory check)"); const u = urlProblem(apiBase(cfg.url)); if (u) throw new Error(u); }
     return viaApi(system, message, cfg, o, !!schema);
   }
   throw new Error(`"${cfg.backend}" can't run a model`);
+}
+
+/** What a judge needs from the preferences (prefs.ts). */
+export interface JudgePrefs { dreamBackend: string; dreamModel: string; dreamEffort: "low" | "medium" | "high"; dreamApiModel: string; dreamApi: "anthropic" | "openai"; dreamUrl: string }
+/** Who answered, as the report and the panel say it ("claude · sonnet", "api · nvidia/nemotron…"). */
+export const judgeName = (backend: string, model: string) => `${backend}${model ? ` · ${model}` : ""}`;
+
+/**
+ * Ask the judge the preferences name. With your own key (api), any failure (no key, a bad address or model, a
+ * timeout, an answer that isn't JSON when a shape was asked for) falls back to Claude on your plan with your Claude
+ * model, and `fallback` says what failed, so the report can say "your key failed: …; judged by Sonnet instead".
+ * Throws only when nothing could answer (both failed, with both reasons).
+ */
+export async function judge(pr: JudgePrefs, system: string, message: string, schema: object | undefined, o: CallOptions = {}): Promise<{ raw: string; by: string; fallback?: { from: string; why: string } }> {
+  const claude: ModelConfig = { backend: "claude", model: pr.dreamModel || "sonnet", api: "anthropic", url: "" }
+  const opts = { ...o, effort: pr.dreamEffort ?? o.effort }
+  if (pr.dreamBackend !== "api") return { raw: await askModel(claude, system, message, schema, opts), by: judgeName("claude", claude.model) }
+  const mine: ModelConfig = { backend: "api", model: pr.dreamApiModel, api: pr.dreamApi, url: pr.dreamUrl }
+  let why: string
+  try {
+    const raw = await askModel(mine, system, message, schema, { ...o, timeoutMs: Math.min(o.timeoutMs ?? TIMEOUT_MS, 180_000) })
+    if (!schema || /\{[\s\S]*\}/.test(raw)) return { raw, by: judgeName("api", mine.model) }
+    why = "its answer had no JSON in it"
+  } catch (err) { why = String((err as Error).message ?? err).slice(0, 200) }
+  const from = judgeName("api", mine.model || "no model chosen")
+  try { return { raw: await askModel(claude, system, message, schema, opts), by: judgeName("claude", claude.model), fallback: { from, why } } }
+  catch (err) { throw new Error(`your own key's model failed (${why}), and Claude on your plan failed too: ${String((err as Error).message ?? err).slice(0, 160)}`) }
 }

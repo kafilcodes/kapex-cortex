@@ -42,7 +42,7 @@ test("v3.6 installSkills writes ~/.claude/skills only without the plugin; with i
   assert.ok(oc.length === 3 && oc.every(f => f.startsWith(join(opencode(), "skills"))));
 });
 
-test("v3.6 the panel's 'Cortex adds to each message' is measured from the skill descriptions, duplicates counted", () => {
+test("v3.6/v4.6 the panel's 'Cortex adds to each message': the panel tool's listing, plus only the skills the model can see, duplicates counted", () => {
   const dir = mkdtempSync(join(tmpdir(), "cortex-skills-"));
   const user = mkdtempSync(join(tmpdir(), "cortex-user-skills-"));
   for (const n of ["cortex-handoff", "cortex-init", "cortex-resume"]) put(dir, n, `---\nname: ${n}\ndescription: ${"x".repeat(210)}\n---\nbody\n`);
@@ -50,7 +50,12 @@ test("v3.6 the panel's 'Cortex adds to each message' is measured from the skill 
   const one = cortexFootprint(dir, user);
   assert.equal(one.skills, 4);
   assert.equal(one.duplicates, 0);
-  assert.ok(one.tokens > 220 && one.tokens < 340, `about 280 tokens, like claude plugin details (got ${one.tokens})`);
+  assert.ok(one.tokens > 300 && one.tokens < 430, `85 for the tool + about 280 for four listed skills (got ${one.tokens})`);
+  // v4.6: Cortex's real skills are disable-model-invocation, so only the tool's listing is left (the measured 85)
+  const quiet = mkdtempSync(join(tmpdir(), "cortex-skills-q-"));
+  for (const n of ["cortex-handoff", "cortex-init", "cortex-resume", "kc"]) put(quiet, n, `---\nname: ${n}\ndescription: ${"x".repeat(210)}\ndisable-model-invocation: true\n---\nbody\n`);
+  assert.equal(cortexFootprint(quiet, user).tokens, 85);
+  assert.equal(cortexFootprint(join(import.meta.dirname, "..", "claude-plugin", "skills"), user).tokens, 85, "the shipped skills all load only when typed");
   put(user, "cortex-resume", `---\nname: cortex-resume\ndescription: ${"x".repeat(210)}\n---\n`);
   const two = cortexFootprint(dir, user);
   assert.equal(two.duplicates, 1);

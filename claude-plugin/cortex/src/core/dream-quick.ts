@@ -9,7 +9,7 @@ import { gitInfo } from "./gitinfo.ts";
 /**
  * The Quick check the Stop hook starts in the background when a memory file or the code changed: Cortex's own checks
  * (no model, no tokens), saved as a checks-only Dream so its findings get the same Apply / Keep / Undo buttons.
- * It never replaces a Dream you're in the middle of (a model's findings waiting, or some already decided), and a
+ * It never replaces a full check you're in the middle of (a model's findings waiting, or some already decided), and a
  * checks-only Dream that found exactly what the previous one did replaces it quietly instead of piling up.
  */
 const keys = (r: DreamReport) => r.findings.map((f) => `${f.kind}|${f.label}|${f.line}|${f.entry}`).sort().join("\n");
@@ -21,7 +21,7 @@ export async function quickCheck(p: RepoPaths): Promise<string> {
   const latest = listDreams(p, 1)[0];
   const open = latest && (latest.status === "proposed" || latest.status === "applied") ? latest.findings.filter((f) => !f.done) : [];
   const waiting = open.some((f) => f.by === "model") || (open.length > 0 && !!latest?.findings.some((f) => f.done));
-  if (dreaming(p) || waiting) { rememberCheck(p, files, tree); return "A Dream is running or waiting for your decisions: left as it is."; }
+  if (dreaming(p) || waiting) { rememberCheck(p, files, tree); return "A full check is running or waiting for your decisions: left as it is."; }
   const r = await runDream(p, { model: false });
   if (latest && latest.status === "proposed" && !latest.model && !latest.findings.some((f) => f.done) && keys(latest) === keys(r)) {
     rmSync(join(p.vault, "dreams", latest.id), { recursive: true, force: true });

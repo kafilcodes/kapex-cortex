@@ -6,6 +6,8 @@ const ALIASES: Record<string, string[]> = {
   r: ["state"], // what to resume from
   m: ["memory"], // Claude Code's memory files and what they cost
   d: ["dream"],
+  c: ["dream"], // v4.6: the Memory check (kc d and kc dream keep working)
+  check: ["dream"],
   b: ["bench"],
 };
 
@@ -17,13 +19,15 @@ export function expandAlias(argv: string[]): string[] {
 export const KC_HELP = `kc — Kapex Cortex
 
   kc i            turn Cortex on in this project (sets up this computer the first time)
-  kc s            status: handoff, memory loaded every session, last Dream
+  kc s            status: handoff, memory loaded every session, last memory check
   kc h            save a handoff now        kc r     show the handoff a new chat resumes from
   kc m            Claude Code's memory files: what loads every session, and what it costs
-  kc d            Dream in the background: check memory against real sessions, tests and git
-  kc d run        Dream now and wait (add --no-model for the checks a program can do alone)
-  kc d show [id]  what a Dream found        kc d apply <id> / discard <id> / undo <id>
-  kc d skip <id> <finding> [off]           leave one finding out of Apply (off = put it back)
+  kc c            Memory check in the background: test what Claude remembers against your code, tests and git
+  kc c run        run a full check and wait (add --no-model for the checks a program can do alone)
+  kc c show [id]  what a check found        kc c apply <id> / discard <id> / undo <id>
+  kc c skip <id> <finding> [off]           leave one finding out of Apply (off = put it back)
+                  (kc d and kc dream are the same command, as before v4.6)
+  kc mission      the mission's steps and ticks  ·  kc mission done <n>  ·  add "…"  ·  drop <n>  ·  close
   kc safety       secrets, sandbox and a check before Claude finishes  ·  kc safety apply secrets|gate  ·  kc safety undo
   kc prefs set <key> <value>               settings: dreamModel, dreamBackend, dreamTranscripts, autoDream, tokenMode
 

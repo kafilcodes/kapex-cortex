@@ -80,7 +80,7 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
   expect(await ui.find({ type: 'Text', text: /^Cortex itself adds$/ })).toBeDefined()
   // anti-slop: words, not glyph icons, in labels and buttons
   expect(await ui.find({ text: /[≡⇪◷◔⚙⇅◫↻◆⎇✓]/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /At 84% Claude shortens the chat into a summary/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /At 84% Claude summarizes the chat/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /starts with Claude's next reply/ })).toBeDefined()
   await ui.unmount()
 
@@ -108,7 +108,7 @@ test('dashboard: four key cards from real data, cache clock, tabs and 0-token bu
     expect(await ui.find({ type: 'Text', text: /^snapshot abc1234$/ })).toBeDefined()
     await ui.press({ key: 'tab-settings' })
     expect(await ui.find({ type: 'Text', text: /The current handoff is about 1,800 tokens/ })).toBeDefined()
-    expect(await ui.find({ key: 'sel-dreamBackend' })).toBeDefined()
+    expect(await ui.find({ key: 'opt-dreamBackend-api' })).toBeDefined() // who judges: three options, one press each (v4.10)
     expect(await ui.find({ key: 'opt-dreamModel-sonnet' })).toBeDefined() // a choice of a few is one press, not a menu
     expect(await ui.find({ key: 'opt-tokenMode-lean' })).toBeDefined()
     expect(await ui.find({ key: 'opt-quickCheck-off' })).toBeDefined() // on/off settings: two buttons, the current one marked
@@ -255,8 +255,11 @@ test('status strip: context ring, cache countdown, plan, handoff and waiting cou
   const band = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: {} } as any)
   const strip: any = ((await band.findAll({ type: 'Svg' })) as any[]).find(x => /cache/.test(String(x.props?.alt)))
   expect(strip).toBeDefined()
-  expect(String(strip.props.alt)).toMatch(/^chat 42% full · cache warm till .* · 5h plan 23% · week 41% · 2 to review$/)
-  expect(String(strip.props.source)).toMatch(/<animate attributeName="width"/)
+  expect(String(strip.props.alt)).toMatch(/^chat 42% full · cache warm till .* · 2 to review$/) // v4.6: no plan or week (Claude Code's prompt box shows them)
+  expect(((await band.findAll({ type: 'Svg' })) as any[]).some(x => /5-hour plan/.test(String(x.props?.alt))), 'no plan mark in the strip').toBe(false)
+  // v4.6: the cache is its own mark, and it still empties by itself (no timer, no redraw)
+  const cacheMark: any = ((await band.findAll({ type: 'Svg' })) as any[]).find(x => /^Prompt cache warm till/.test(String(x.props?.alt)))
+  expect(String(cacheMark?.props?.source)).toMatch(/<animate attributeName="width"/)
   await band.unmount()
   const term = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'terminal', props: {} } as any)
   expect(await term.find({ type: 'Text', text: /^Cortex · 2 memory fixes to review · chat 42% full/ })).toBeDefined()
@@ -287,7 +290,7 @@ test('timeline tiles and the Dream page: leave a finding out, apply, undo, dream
   expect(await ui.find({ type: 'Text', text: /^Did thing 1$/ })).toBeDefined()
   await ui.press({ key: 'tab-timeline' })
   expect(await ui.find({ type: 'Text', text: 'Dream: 2 findings to review' })).toBeDefined()
-  expect(((await ui.findAll({ type: 'Svg' })) as any[]).some(x => /1 dreams/.test(String(x.props?.alt)))).toBe(true)
+  expect(((await ui.findAll({ type: 'Svg' })) as any[]).some(x => /1 memory checks/.test(String(x.props?.alt)))).toBe(true)
   await ui.press({ key: 'tab-data' }); await ui.press({ key: 'sub-dream' })
   await ui.press({ key: 'fa-C1' })
   expect(calls).toContain(`dream decide ${DREAM.id} C1 apply`)
@@ -328,7 +331,8 @@ test('stress: every button on every page and sub-page presses without breaking t
   await $.command.run({ command: 'kc' } as any)
   const ui: any = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 160 } })
   const pages: [string, string?][] = [['tab-overview'], ['tab-timeline'], ['tab-data', 'sub-dream'], ['tab-data', 'sub-files'], ['tab-handoff'], ['tab-details'], ['tab-settings']]
-  const go = async (pg: [string, string?]) => { await ui.press({ key: pg[0] }); if (pg[1]) await ui.press({ key: pg[1] }) }
+  // "Show the intro again" covers the tabs by design: leave it with Skip before going back to the page
+  const go = async (pg: [string, string?]) => { if (await ui.find({ key: 'intro-skip' })) await ui.press({ key: 'intro-skip' }); await ui.press({ key: pg[0] }); if (pg[1]) await ui.press({ key: pg[1] }) }
   let pressed = 0
   for (const pg of pages) {
     await go(pg)
@@ -459,7 +463,8 @@ test('strip tips are a traffic light: red says the move and what it saves, amber
   // amber: filling up, fine to continue, no button
   const mid = tipFor(s, live(700_000, 70) as any, warm, [])
   expect([mid?.level, mid?.text, mid?.action]).toEqual(['warn', '70% full · fine to continue', undefined])
-  expect(tipFor(s, live(200_000, 20) as any, warm, [{ kind: 'five_hour', percentUsed: 75 }] as any)?.text).toBe('5h plan 75% · fine to continue')
+  // v4.6: no amber plan tip at 75%; Claude Code's own prompt box shows the plan
+  expect(tipFor(s, live(200_000, 20) as any, warm, [{ kind: 'five_hour', percentUsed: 75 }] as any)).toBeNull()
   // red: at the hand-off threshold, the move and what it saves per message
   const full = tipFor(s, live(820_000, 82) as any, warm, [])
   expect([full?.level, full?.action]).toEqual(['act', 'handoff'])
@@ -473,7 +478,7 @@ test('strip tips are a traffic light: red says the move and what it saves, amber
   const old = new Date(Date.now() - 5 * 86_400_000).toISOString()
   const eps = Array.from({ length: 12 }, (_, i) => ({ id: `e${i}`, session: `c${i % 4}`, start: old, end: new Date(Date.now() - i * 3_600_000).toISOString(), ask: '', tools: {}, files: [], commands: [], tests: { ran: 0, failed: 0 }, commits: 0, errors: 0, interrupted: false, skills: [], mcp: [], outTokens: 0, contextTokens: 0, done: '', next: '' }))
   const due = tipFor({ ...s, episodes: eps, dream: { running: null, recent: [{ ...DREAM, status: 'applied', ts: old, findings: [] }] } }, live(200_000, 20) as any, warm, [])
-  expect([due?.action, due?.text]).toEqual(['dream', 'Dream due · last 5 d ago'])
+  expect([due?.action, due?.text]).toEqual(['dream', 'Memory check due · last 5 d ago'])
 })
 
 test('strip: All good when nothing needs you; one press Hand off saves the handoff and copies /cortex-resume', async ($, on) => {

@@ -55,7 +55,7 @@ export function kit(els: ElementTable, surface: string) {
         <Text size="caption" color={textColor}>{text}</Text>
       </Box>
     ),
-    /** a timeline node: an icon in a soft disc (a plain dot in the terminal) */
+    /** a row's leading icon, plain and outlined (no disc behind it); a plain dot in the terminal */
     // alt is required: the desktop draws nothing for an Svg with an empty alt
     node: (key: string, name: string, color: string, size = 22) => Svg ? <Svg key={key} source={nodeSvg(name, color, size)} alt={`${name} icon`} width={size} height={size} /> : <Text key={key} color={color}>●</Text>,
     /** one line, cut with … unless expanded */

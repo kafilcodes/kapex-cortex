@@ -71,24 +71,24 @@ const MOODS: Record<Mood, () => string> = {
   // a new chat: waving, with a hello
   hi: () => `<rect x="18" y="14" width="46" height="26" rx="12" fill="${E}" fill-opacity="0.14" stroke="${E}" stroke-width="2"/><path d="M50 40l-2 8 10-8" fill="${E}" fill-opacity="0.14" stroke="${E}" stroke-width="2"/><text x="41" y="32" text-anchor="middle" ${FONT} font-size="13" font-weight="700" fill="${E}">Hi!</text>${bot({ eyes: 'open', mouth: 'grin', arms: 'wave' })}${star(176, 30, 4)}`,
   // all good: hands behind the head, a plant, a tick
-  calm: () => `<circle cx="38" cy="40" r="13" fill="${E}" fill-opacity="0.16"/><path d="M32 40l4.5 4.5 8-9" stroke="${E}" stroke-width="2.8"/>${bot({ eyes: 'happy', mouth: 'smile', arms: 'rest' })}<rect x="150" y="112" width="20" height="16" rx="3" fill="${G}" fill-opacity="0.35"/><path d="M160 112c0-12 4-18 12-20M160 112c-1-9-5-14-12-15M160 112v-16" stroke="${E}" stroke-width="2.4"/>${star(176, 36, 3.5)}`,
+  calm: () => `<path d="M29 40l6.5 6.5 12-13" stroke="${E}" stroke-width="4"/>${bot({ eyes: 'happy', mouth: 'smile', arms: 'rest' })}<rect x="150" y="112" width="20" height="16" rx="3" fill="${G}" fill-opacity="0.35"/><path d="M160 112c0-12 4-18 12-20M160 112c-1-9-5-14-12-15M160 112v-16" stroke="${E}" stroke-width="2.4"/>${star(176, 36, 3.5)}`,
   // something needs watching: at the laptop, a gear turning (drawn still)
   working: () => `${bot({ eyes: 'focus', mouth: 'flat', arms: 'front' })}<rect x="78" y="88" width="44" height="27" rx="3" fill="${SCREEN}" stroke="${G}" stroke-opacity="0.6" stroke-width="2"/><path d="M85 96H101M85 102H109M85 108H97" stroke="${GLOW}" stroke-width="2.2"/><path d="M112 107h2" stroke="${A}" stroke-width="2.6"/><rect x="70" y="114" width="60" height="5" rx="2.5" fill="${G}" fill-opacity="0.6"/>${gear(158, 36, 11, A)}${gear(176, 54, 6.5, G)}`,
   // red: time to hand off. Arms up, a drop of sweat, a warning
   stressed: () => `<path d="M38 22L54 50H22Z" fill="${R}" fill-opacity="0.16" stroke="${R}" stroke-width="2.4"/><path d="M38 32v8" stroke="${R}" stroke-width="2.6"/><circle cx="38" cy="45" r="1.6" fill="${R}"/>${bot({ eyes: 'stress', mouth: 'wavy', arms: 'up', antenna: R })}<path d="M150 34c4 6 6 9 6 12a6 6 0 0 1-12 0c0-3 2-6 6-12z" fill="#93C5FD" fill-opacity="0.85"/>`,
-  // time for a Dream: asleep, auditing notes under the moon
+  // time for a full check: asleep, auditing notes under the moon
   dream: () => `${moon(40, 34)}${star(64, 22, 3.5)}${star(22, 60, 2.6, E)}${note(26, 86, 28, 34)}${bot({ eyes: 'sleep', mouth: 'o', arms: 'down' })}${lens(152, 98)}<text x="146" y="34" ${FONT} font-size="14" font-weight="700" fill="${S}">z</text><text x="157" y="24" ${FONT} font-size="11" font-weight="700" fill="${S}" fill-opacity="0.7">z</text>`,
 }
 
 const SCENES: Record<Scene, () => string> = {
   timeline: () => `<g transform="translate(-30 0)">${bot({ eyes: 'open', mouth: 'smile', arms: 'wave' })}</g><path d="M164 20V124" stroke="${G}" stroke-opacity="0.5" stroke-width="2.4"/>${[[34, E], [64, S], [94, A], [118, G]].map(([y, c]) => `<circle cx="164" cy="${y}" r="5.5" fill="${c}"/><rect x="174" y="${Number(y) - 5}" width="20" height="10" rx="4" fill="${G}" fill-opacity="0.3"/>`).join('')}`,
   dream: () => MOODS.dream(),
-  memory: () => `<g transform="translate(-26 0)">${bot({ eyes: 'happy', mouth: 'smile', arms: 'down' })}</g>${note(140, 40, 36, 44)}${note(150, 54, 36, 44)}<circle cx="182" cy="104" r="11" fill="${E}"/><path d="M176.5 104l4 4 7-8" stroke="#fff" stroke-width="2.6"/>${star(140, 26, 3.5)}`,
+  memory: () => `<g transform="translate(-26 0)">${bot({ eyes: 'happy', mouth: 'smile', arms: 'down' })}</g>${note(140, 40, 36, 44)}${note(150, 54, 36, 44)}<path d="M174 106l5.5 5.5 10-11" stroke="${E}" stroke-width="3.6"/>${star(140, 26, 3.5)}`,
   costs: () => `<g transform="translate(-28 0)">${bot({ eyes: 'focus', mouth: 'smile', arms: 'down' })}</g>${[0, 1, 2, 3].map(i => `<ellipse cx="150" cy="${120 - i * 8}" rx="13" ry="4.5" fill="${A}" fill-opacity="${0.35 + i * 0.12}" stroke="${A}" stroke-width="1.6"/>`).join('')}<path d="M172 120V92M182 120V74M192 120V100" stroke="${E}" stroke-width="7"/>${star(176, 54, 3.5)}`,
   // fresh eyes: a wide-eyed bot reading one note through a lens, nothing else in sight
   fresh: () => `<g transform="translate(-30 0)">${bot({ eyes: 'open', mouth: 'o', arms: 'front' })}</g>${note(138, 52, 40, 50)}${lens(166, 70)}${star(150, 30, 4)}${star(186, 40, 2.6, E)}`,
   // what Cortex saved: a happy bot beside a growing stack of tokens and a tick
-  saved: () => `<g transform="translate(-28 0)">${bot({ eyes: 'happy', mouth: 'grin', arms: 'up' })}</g>${[0, 1, 2, 3, 4].map(i => `<ellipse cx="164" cy="${122 - i * 9}" rx="16" ry="5" fill="${E}" fill-opacity="${0.3 + i * 0.13}" stroke="${E}" stroke-width="1.6"/>`).join('')}<circle cx="164" cy="52" r="12" fill="${E}"/><path d="M158 52l4 4 7-8" stroke="#fff" stroke-width="2.6"/>${star(186, 30, 3.5)}${star(140, 34, 2.6, E)}`,
+  saved: () => `<g transform="translate(-28 0)">${bot({ eyes: 'happy', mouth: 'grin', arms: 'up' })}</g>${[0, 1, 2, 3, 4].map(i => `<ellipse cx="164" cy="${122 - i * 9}" rx="16" ry="5" fill="${E}" fill-opacity="${0.3 + i * 0.13}" stroke="${E}" stroke-width="1.6"/>`).join('')}<path d="M155 52l6 6 11-12" stroke="${E}" stroke-width="3.8"/>${star(186, 30, 3.5)}${star(140, 34, 2.6, E)}`,
   // a handoff: the bot holds out its note, which travels along a dotted arc to whoever picks the work up next
   handoff: () => `<g transform="translate(-36 0)">${bot({ eyes: 'happy', mouth: 'smile', arms: 'front' })}</g>`
     + `<path d="M112 70Q150 22 190 52" stroke="${E}" stroke-width="2.4" stroke-dasharray="1 7"/><path d="M183 44l8 8-11 3" stroke="${E}" stroke-width="2.4"/>`
@@ -111,10 +111,10 @@ const MINI: Record<Mini, () => string> = {
   // the Tools card: a switch turned off, what the card does for unused tools
   tools: () => `${bot({ eyes: 'focus', mouth: 'smile', arms: 'down' })}<rect x="124" y="78" width="34" height="19" rx="9.5" fill="${G}" fill-opacity="0.4"/><circle cx="133.5" cy="87.5" r="6.5" fill="#fff" fill-opacity="0.95" stroke="${G}" stroke-opacity="0.55" stroke-width="1.2"/>`,
 }
-/** "Nothing to fix" (a Dream or check that found nothing, or every finding decided): the robot cheering, arms up, a
+/** "Nothing to fix" (a full or quick check that found nothing, or every finding decided): the robot cheering, arms up, a
  * big tick beside it and a few sparkles. No ground line or shadow under it, so it floats cleanly at any width. */
 export const clearSvg = (width = 120) => memo(`c-${Math.round(width)}`, () => wrap(width, `${bot({ eyes: 'happy', mouth: 'grin', arms: 'up', shadow: false })}`
-  + `<circle cx="170" cy="30" r="15" fill="${E}"/><path d="M162.5 30.5l5 5 9.5-10" stroke="#fff" stroke-width="3.2"/>${star(30, 36, 5)}${star(178, 76, 3.6, E)}${star(20, 92, 3)}`))
+  + `<path d="M158 31l7.5 7.5 14-15" stroke="${E}" stroke-width="5"/>${star(30, 36, 5)}${star(178, 76, 3.6, E)}${star(20, 92, 3)}`))
 /** A Settings card's header drawing at `size` px square. */
 export const miniSvg = (kind: Mini, size = 32) => memo(`n-${kind}-${Math.round(size)}`, () => `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(size)}" height="${Math.round(size)}" viewBox="50 6 116 116" fill="none" stroke-linecap="round" stroke-linejoin="round">${MINI[kind]()}</svg>`)
 // The one-time greeting: the drawing rises 4 px into place as it fades up from 40% (a soft landing, no bounce), then

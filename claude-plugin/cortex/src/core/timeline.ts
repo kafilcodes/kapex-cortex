@@ -16,7 +16,7 @@ export interface TimelineEvent {
 }
 const MAX = 160; // the status carries the newest 160; the panel loads older ones on demand (olderTimeline)
 /** The tool a handoff came from, as people say it. */
-const TOOL: Record<string, string> = { "claude-code": "Claude Code", opencode: "OpenCode", hermes: "Hermes" };
+const TOOL: Record<string, string> = { "claude-code": "Claude Code", opencode: "OpenCode", hermes: "Hermes", manual: "kc handoff" }; // manual: saved by hand from a terminal
 
 function git(root: string, args: string[]): string {
   const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8", timeout: 1_500 });
@@ -78,7 +78,7 @@ export function buildTimeline(p: RepoPaths, history: History, dreams: DreamRepor
   }
   for (const d of dreams.filter((x) => x.status !== "replaced")) { // a replaced Dream is noise: the newer one says it all
     const n = d.findings.filter((f) => f.action.op !== "none").length;
-    const title = d.status === "failed" ? "Dream failed" : d.status === "applied" ? `Dream applied: ${n} change${n === 1 ? "" : "s"}` : d.status === "undone" ? "Dream undone" : d.status === "discarded" ? "Dream discarded" : d.status === "replaced" ? "Dream (replaced by a newer one)" : n ? `Dream: ${n} change${n === 1 ? "" : "s"} to review` : d.findings.length ? `Dream: ${d.findings.length} note${d.findings.length === 1 ? "" : "s"} for you to check` : "Dream: memory matches what happened";
+    const title = d.status === "failed" ? "Full check failed" : d.status === "applied" ? `Memory check applied: ${n} change${n === 1 ? "" : "s"}` : d.status === "undone" ? "Memory check undone" : d.status === "discarded" ? "Memory check discarded" : d.status === "replaced" ? "Memory check (replaced by a newer one)" : n ? `Memory check: ${n} change${n === 1 ? "" : "s"} to review` : d.findings.length ? `Memory check: ${d.findings.length} note${d.findings.length === 1 ? "" : "s"} for you to check` : "Memory check: memory matches what happened";
     ev.push({ id: `dream-${d.id}`, ts: d.ts, kind: "dream", title, detail: d.error ?? d.modelError, tags: [d.model ? `judged by ${d.model.replace(/^claude · /, "")}` : "Quick check", `${d.transcripts} chat${d.transcripts === 1 ? "" : "s"} read`], tone: d.status === "failed" ? "bad" : d.status === "proposed" && d.findings.some((f) => !f.done && !f.skip) ? "warn" : "ok" });
   }
   // newest first by real time: every source is turned into UTC ISO first, so "+05:30" git dates sort right

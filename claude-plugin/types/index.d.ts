@@ -11,7 +11,7 @@ export type FindingView = {
 export type EvidenceView = { id: string; kind: 'run' | 'you' | 'note' | 'commit'; ts: string; session: string; text: string; cmd?: string; ok?: boolean }
 export type DreamView = {
   id: string; ts: string; status: 'proposed' | 'applied' | 'discarded' | 'undone' | 'failed' | 'replaced'; ms: number
-  model: string | null; modelError?: string; dropped?: number; rejected?: string[]; transcripts: number; evidenceCount: number; entryCount: number
+  model: string | null; modelError?: string; fallback?: { from: string; why: string }; dropped?: number; rejected?: string[]; transcripts: number; evidenceCount: number; entryCount: number
   findings: FindingView[]; evidence: EvidenceView[]; files: { path: string; label: string; hash: string | null }[]
   applied?: { at: string }; undone?: string; error?: string; kept?: number
 }
@@ -25,12 +25,13 @@ export type StatusView = {
   timelineMore?: boolean
   /** the folder that holds .vault/ (the main checkout, for a linked worktree) and this checkout's git folder */
   vaultRoot?: string; gitDir?: string
-  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; chat?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal?: string; next?: string; instructions?: number; decisions?: number; trail?: number; commits?: number; flagged?: number } }
+  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; chat?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal?: string; next?: string; instructions?: number; decisions?: number; trail?: number; commits?: number; flagged?: number; contract?: ContractView | null } }
   native: { files: NativeFileView[]; alwaysTokens: number; alwaysLines: number; autoMemory: { dir: string; enabled: boolean } }
   dream: { running: { since: string } | null; recent: DreamView[] }
   git: { branch: string; dirty: number; untracked: number; wip: { ref: string; sha: string; at: string } | null } | null
   hooks: { p95: number | null; samples: number; cap: number; recent?: number[] }
-  opencode: { installed: boolean; plugin: boolean }
+  /** OpenCode, where you carry on when Claude's limit is reached: installed, its version, and this project set up for it */
+  opencode: { installed: boolean; plugin: boolean; version?: string | null; major?: number | null; command?: boolean }
   /** what Cortex adds to every message: its skill names and descriptions (duplicates: old copies in ~/.claude/skills) */
   footprint?: { tokens: number; skills: number; duplicates: number }
   /** the safety check for autonomous runs: secrets, sandbox, a check before Claude finishes */
@@ -64,7 +65,7 @@ export type LookView = { on: boolean; ground: 'obsidian' | 'amoled'; backdrop: '
 /** What used the 5-hour plan (src/core/window.ts): 10-minute slots by chat, model and main chat vs subagent. */
 export type UsageWindowView = { since: string; slotMs: number; rows: { slot: number; chat: string; model: string; sub: boolean; tokens: number; weight: number; replies: number }[]; tools: { slot: number; tool: string; n: number }[]; chats: { id: string; title: string; project: string; path?: string }[] }
 export type TokensView = { input: number; output: number; cacheRead: number; cacheWrite: number; replies: number }
-export type PrefsView = { tokenMode: string; greeting?: boolean; name?: string; dreamBackend: string; dreamModel: string; dreamApi: string; dreamUrl: string; dreamTranscripts: number; autoDream: boolean; quickCheck?: boolean; handoffAt?: number; sound?: boolean; autoPark?: boolean; overridden: string[]; tokens: { handoff: number } }
+export type PrefsView = { tokenMode: string; greeting?: boolean; name?: string; dreamBackend: string; dreamModel: string; dreamEffort?: string; dreamApiModel?: string; dreamApi: string; dreamUrl: string; dreamTranscripts: number; autoDream: boolean; quickCheck?: boolean; handoffAt?: number; sound?: boolean; autoPark?: boolean; overridden: string[]; tokens: { handoff: number } }
 /** `kc status --json` in a folder without Cortex: which child folders have it. */
 export type OffView = { cwd: string; nearby: string[]; error?: string }
 /** What Claude Code itself reports (no estimates). */
@@ -83,7 +84,7 @@ export type LiveView = {
 export type Tab = 'overview' | 'timeline' | 'data' | 'settings' | 'waiting' | 'rules' | 'failed' | 'handoff' | 'compactions' | 'details'
 export type TimelineEventView = { id: string; ts: string; kind: string; title: string; detail?: string; tags: string[]; tone: 'ok' | 'warn' | 'bad' | 'info' }
 /** The Memory and Timeline tabs' list state. */
-export type ViewState = { collapsed: string[]; more: Record<string, number>; editing: string; expanded: string[]; sub: string; /** the Costs page's view: 'costs' (each message now) or 'usage' (over time) */ csub?: string; flow?: '' | 'confirm' | 'copied'; snooze?: { until: number; pct: number }; /** first-run intro: the step shown, -1 once finished or skipped */ intro?: number }
+export type ViewState = { collapsed: string[]; more: Record<string, number>; editing: string; expanded: string[]; sub: string; /** the Costs page's view: 'costs' (each message now) or 'usage' (over time) */ csub?: string; flow?: '' | 'confirm' | 'copied'; /** the chat's turns when the handoff was saved and copied: a later reply here ends "handed off" */ flowTurns?: number; snooze?: { until: number; pct: number }; /** first-run intro: the step shown, -1 once finished or skipped */ intro?: number }
 /** One turn of the session journal. */
 export type EpisodeView = {
   id: string; session: string; start: string; end: string; ask: string
@@ -102,6 +103,8 @@ declare module 'claude-code' {
       status: Shaped<StatusView | null>
       live: Shaped<LiveView | null>
       note: Shaped<string>
+      /** when the note was written (note.ts): a note past its few seconds stops showing even if its timer died */
+      noteAt: Shaped<number>
       tab: Shaped<Tab | ''>
       cache: Shaped<CacheView>
       history: Shaped<number[]>
@@ -126,3 +129,7 @@ declare module 'claude-code' {
     }
   }
 }
+/** the mission contract a new chat gets, read back from STATE.md (newest rules with their why, superseded, turned down) */
+export type StepProof = { level: 'verified' | 'failing' | 'unverified' | 'you'; text: string }
+export type StepView = { n: number; text: string; state: 'open' | 'done' | 'dropped'; by?: 'claude' | 'you'; proof?: StepProof | null }
+export type ContractView = { rules: { kind: string; text: string; why?: string }[]; ruleCount: number; superseded: { text: string; by: string }[]; rejected: { what: string; why: string }[]; conflicts: number; /** v4.6 */ goal?: string; steps?: StepView[]; closed?: boolean; mission?: string }

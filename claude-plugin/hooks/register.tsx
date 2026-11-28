@@ -75,7 +75,7 @@ export const register: Register = on => {
     return { result: 'Opened the Kapex Cortex panel beside the chat.' }
  }).catch(($, e, next) => (next.called ? next(e) : { result: 'Could not open the Kapex Cortex panel; type /kc instead.' }))
 
-  // the status strip above the prompt: context, cache, plan, handoff, waiting memories, and an Open Cortex button (0 tokens)
+  // the status strip above the prompt: context, cache, one message (a tip, handoff, waiting memories), and Open Cortex (0 tokens)
   on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => renderBand($, e as never, next as never) as Promise<JSX.Element>)
 
   // the Kapex backdrop behind the conversation (desktop and mobile); other plugins' scenes pass through

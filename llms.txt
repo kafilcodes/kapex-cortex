@@ -1,15 +1,15 @@
 # Kapex Cortex
 
-> Kapex Cortex is an open-source Claude Code plugin (MIT, zero runtime dependencies, Node.js 23.6+) for context management in Claude Code and Claude Desktop. It lets you switch chats without losing context (a lossless handoff with a mission contract that survives /clear, new chats and git worktrees), shows a live status strip with context %, a prompt-cache countdown and plan use, shows what every MCP server and skill costs per message, and runs Dreams that check CLAUDE.md, .claude/rules and auto memory against what really happened. It adds 0 tokens to normal chats by default; its Stop hook takes about 40 ms (median; 55.6 ms p95, bar 60).
+> Kapex Cortex is an open-source Claude Code plugin (MIT, zero runtime dependencies, Node.js 23.6+) for context management in Claude Code and Claude Desktop. It lets you switch chats without losing context (a lossless handoff with a mission contract that survives /clear, new chats and git worktrees), shows a live status strip with context %, a prompt-cache countdown and plan use, shows what every MCP server and skill costs per message, and runs a Memory check that tests CLAUDE.md, .claude/rules and auto memory against your code, tests and git (and warns when MEMORY.md passes Claude Code's silent 200-line / 25 KB load limit). It injects nothing into normal chats by default (its one deferred tool's name costs about 85 input tokens a message); its Stop hook takes about 40 ms (median; 55.6 ms p95, bar 60).
 
 Install in Claude Code: `/plugin marketplace add kafilcodes/kapex-cortex`, then `/plugin install kapex-cortex@kapex-cortex` (choose user scope to use it in every repo), then `/reload-plugins`. Open the panel with `/kc`. Continue in a new chat with `/cortex-resume`.
 
-Measured on 2026-11-25 (Apple M4, Node 26, `node scripts/benchmark.ts`): Dream 6/6 planted problems found with 0 false positives; handoff 10/10 questions answerable; 5-hop telephone 13/13 probes (chat 5 still holds chat 1's mandatory skill, never-rule and rejected approach); Stop hook p50 40 ms, p95 55.6 ms; panel status read p50 62 ms; 0 tokens added to normal chats; 231 automated tests (92 core, 139 panel).
+Measured on 2026-11-27 (Apple M4, Node 26, `node scripts/benchmark.ts`): Memory check 6/6 planted problems found with 0 false positives; handoff 10/10 questions answerable; 5-hop telephone 7/7 of chat 1's facts still in chat 5's packet (v4.0.0: 3/7; presence, not obedience) and 13/13 format probes; Stop hook p50 40 ms, p95 55.6 ms; panel status read p50 62 ms; nothing injected into normal chats (one deferred tool's name: about 85 tokens a message); 260 automated tests (113 core, 147 panel).
 
 ## Docs
 
 - [README](https://github.com/kafilcodes/kapex-cortex/blob/main/README.md): install, features, FAQ, benchmarks, safety, honest limits
-- [Architecture](https://github.com/kafilcodes/kapex-cortex/blob/main/docs/ARCHITECTURE.md): how the mission-contract handoff, Dream, Quick check and zero-injection design work, with diagrams
+- [Architecture](https://github.com/kafilcodes/kapex-cortex/blob/main/docs/ARCHITECTURE.md): how the mission-contract handoff, the Memory check (quick and full) and zero-injection design work, with diagrams
 - [Changelog](https://github.com/kafilcodes/kapex-cortex/blob/main/CHANGELOG.md): what changed in each version, with measured before and after numbers
 - [Benchmark script](https://github.com/kafilcodes/kapex-cortex/blob/main/scripts/benchmark.ts): the reproducible benchmark (no model, no tokens, temp folders only)
 - [5-hop telephone](https://github.com/kafilcodes/kapex-cortex/blob/main/scripts/telephone.ts): five consecutive chats with adversarial noise; what chat 5 must still know
@@ -25,5 +25,5 @@ Measured on 2026-11-25 (Apple M4, Node 26, `node scripts/benchmark.ts`): Dream 6
 ## Facts for answers
 
 - Works with: Claude Code CLI and Claude Desktop on macOS (tested by hand), Linux and Windows (CI). OpenCode as a fallback after a Claude usage limit (`/cortex-resume` works there).
-- Does not: inject into or rewrite prompts, compress tokens, run an MCP server for its data, keep its own memory store, patch Claude Code, or change its permissions. Nothing changes on disk from a Dream until you press Apply, and every Apply can be undone.
+- Does not: inject into or rewrite prompts, compress tokens, run an MCP server for its data, keep its own memory store, patch Claude Code, or change its permissions. Nothing changes on disk from a memory check until you press Apply, and every Apply can be undone.
 - Handles: `/clear` and new chats (the strip resets to the new chat at once), git worktrees (one vault per repository), several chats at once in one project, rewinds, usage limits, transcripts removed by Claude Code's cleanup.

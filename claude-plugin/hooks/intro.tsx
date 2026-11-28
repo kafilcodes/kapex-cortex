@@ -73,7 +73,7 @@ const STEPS: { kicker: string; title: string; text: string; art: (w: number) => 
     points: [['context', 'Context', 'How full this chat is, and turns left'], ['cache', 'Cache', 'How long until the next reply re-reads everything'], ['tools', 'Unused tools', 'Turn off tools you never use, in one press']] },
   { kicker: 'Lossless handoff', title: 'Switch chats without losing your place', text: 'After every reply Cortex saves where you are. In a new chat, type /cortex-resume and Claude carries on.', art: (w) => illoHandoff(w), alt: 'A full chat handing a small packet to a fresh one',
     points: [['pinned', 'Pinned', 'The goal and your instructions, word for word'], ['trail', 'Trail', 'One line per turn, and the commits'], ['exchanges', 'Last exchanges', 'Word for word, so a plan survives whole']] },
-  { kicker: 'Dream', title: 'Keep Claude\'s memory true', text: 'A Dream checks what Claude remembers against what really happened, and proposes fixes.', art: illoDreamCheck, alt: 'Memory notes checked against test runs and commits',
+  { kicker: 'Memory check', title: 'Keep Claude\'s memory true', text: 'A full check compares what Claude remembers with what really happened, and proposes fixes.', art: illoDreamCheck, alt: 'Memory notes checked against test runs and commits',
     points: [['evidence', 'Evidence', 'Test runs, commits and your own words'], ['decide', 'You decide', 'Apply or Keep, one finding at a time'], ['undo', 'Undo', 'Every Apply can be undone, byte for byte']] },
 ]
 
@@ -93,7 +93,10 @@ async function done($: Dollar): Promise<void> { seenStored = true; forgetMotion(
 export async function replayIntro($: Dollar): Promise<void> { forgetMotion(); await setIntro($, 0) }
 
 /** The intro fills the pane: centered on its height (rows) and width; art beside the words when there's room. */
-export function introPage($: Dollar, els: ElementTable, u: Kit, vw: ViewState, px: number, rows = 40): JSX.Element {
+/** Cortex's own cost per message, the same figure the Overview and Costs pages show (status footprint: the panel tool's
+ * listing, measured at 85, plus any skill the model can see); 85 when an older core sends none */
+export const ownCost = (tokens?: number | null) => `about ${tokens && tokens > 0 ? tokens : 85} tokens a message`
+export function introPage($: Dollar, els: ElementTable, u: Kit, vw: ViewState, px: number, rows = 40, footprint?: number | null): JSX.Element {
   const { Box, Text, Button } = els
   const at = Math.max(0, Math.min(STEPS.length - 1, vw.intro ?? 0))
   const step = STEPS[at]!
@@ -124,7 +127,7 @@ export function introPage($: Dollar, els: ElementTable, u: Kit, vw: ViewState, p
       {/* what Cortex is, said once and plainly: beside Claude, never inside it, and what it costs */}
       <Box key="intro-trust" flexDirection="row" gap={1} alignItems="flex-start" flexWrap="nowrap">
         <Box key="intro-shield-b" flexShrink={0} paddingTop={0}>{u.graphic('intro-shield', SHIELD, 'Shield')}</Box>
-        <Box flexShrink={1} minWidth={10}><Text size="caption" color={K.label}><Text weight="semibold" color={K.text}>Beside Claude, never inside it.</Text>{' Your model, prompts and answers stay as they are; Cortex adds about 250 tokens a message.'}</Text></Box>
+        <Box flexShrink={1} minWidth={10}><Text size="caption" color={K.label}><Text weight="semibold" color={K.text}>Beside Claude, never inside it.</Text>{` Your model, prompts and answers stay as they are; Cortex adds ${ownCost(footprint)}.`}</Text></Box>
       </Box>
       <Box key="intro-nav" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2} rowGap={1} flexWrap="wrap">
         <Box key="intro-prog" flexDirection="row" alignItems="center" gap={1} flexShrink={0}>

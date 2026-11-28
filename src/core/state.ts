@@ -6,6 +6,7 @@ import { repoPaths, type RepoPaths } from "./paths.ts";
 import { type GitInfo, gitInfo, verifyCommands } from "./gitinfo.ts";
 import { computeMission, pinKey, readMissionRecord, writeMissionRecord, type MissionRecord } from "./mission.ts";
 import { renderMission } from "./mission-view.ts";
+import { missionRun, proofOf, tickClaims } from "./mission-steps.ts";
 import { chatTitle } from "./history.ts";
 import { checkouts } from "./worktree.ts";
 import { openItems, readExchanges } from "./exchanges.ts";
@@ -102,12 +103,14 @@ export function renderStateFull(p: RepoPaths, inp: StateInput, gi: GitInfo | nul
   const asst = inp.lastAssistant ? scrub(inp.lastAssistant).text : "";
   const carried = carry(p, inp.session, readTurns(p, inp.session));
   const mission = missionFor(p, inp, carried, handoff, gi, now);
+  mission.mission.steps = tickClaims(p, mission.mission, inp.lastAssistant ?? "", inp.session, () => readTurns(p, inp.session).at(-1)?.ts ?? now.toISOString(), mission.lineage.hop); // "Step 2 is done" in Claude's reply
   const brief = buildBrief(p, { session: inp.session, lastAssistant: inp.lastAssistant, handoff, heading: firstHeading(p.root), now, carry: carried, mission: mission.mission.status === "active" && mission.lineage.hop > 1 ? mission.mission.goal : "" });
   const { goal, next } = brief;
   const max = budgets(p).state;
   const lean = !budgets(p).lastReply;
   // the contract is never cut: it takes the room it needs (up to 40% of the packet, pins shortened past that)
-  const contract = renderMission(mission, { chat: (s) => chatTitle(p, s), room: Math.max(2_400, Math.round(max * 0.4)), head: gi?.head, branch: gi?.branch, worktree: gi?.worktree });
+  const eps = mission.mission.steps?.some((x) => x.state === "done") ? readEpisodes(p, 60) : [] // a tick's proof: the checks run since
+  const contract = renderMission(mission, { chat: (s) => chatTitle(p, s), room: Math.max(2_400, Math.round(max * 0.4)), head: gi?.head, branch: gi?.branch, worktree: gi?.worktree, proof: (x) => proofOf(x, eps, TEST, now.getTime(), { sessions: [inp.session], abs: true }), run: mission.mission.steps?.length ? missionRun() : undefined });
   const pinned = new Set(mission.mission.pins.map((x) => pinKey(x.text)));
   const tiers = buildTiers(p, { session: inp.session, goal, handoff, recentTurns: lean ? 1 : 3, git: !!gi, carry: carried, pinned, room: { pinned: Math.max(1_500, Math.round(max * 0.14)), trail: Math.max(1_200, Math.round(max * 0.18)) } });
   const sections = [
@@ -184,12 +187,12 @@ export function previousInput(p: RepoPaths, session: string): StateInput | null 
 
 /** Re-render the newest session's STATE (e.g. after /cortex-handoff recorded a goal and next action): the newest real
  * chat of this checkout, rendered against its own checkout (another worktree's chat gets its own branch and diff). */
-export function rerenderNewest(p: RepoPaths): boolean {
+export function rerenderNewest(p: RepoPaths, snapshot = true): boolean {
   const newest = newestSession(p, p.root);
   if (!newest) return false;
   try {
     const root = newest.input.checkout && existsSync(newest.input.checkout) ? newest.input.checkout : p.root;
-    refreshState(realPath(root) === realPath(p.root) ? p : repoPaths(root), newest.input, { snapshot: true });
+    refreshState(realPath(root) === realPath(p.root) ? p : repoPaths(root), newest.input, { snapshot }); // a mission tick needs no snapshot of your changes
     return true;
   } catch {
     return false;

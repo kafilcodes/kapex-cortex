@@ -70,7 +70,7 @@ test("v3 Dream safety: Apply refuses if a file changed since the Dream; a left-o
   const { root, p } = project();
   const r = await runDream(p, { model: false });
   writeFileSync(join(root, "CLAUDE.md"), CLAUDE_MD + "- A line you added meanwhile.\n");
-  assert.match(applyDream(p, r.id), /^Not applied: CLAUDE\.md changed since this Dream/);
+  assert.match(applyDream(p, r.id), /^Not applied: CLAUDE\.md changed since this check/);
   const again = await runDream(p, { model: false });
   assert.equal(listDreams(p).find((d) => d.id === r.id)?.status, "replaced", "a newer Dream replaces the older proposal");
   const stale = again.findings.find((f) => f.kind === "stale")!;

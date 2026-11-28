@@ -5,11 +5,11 @@
 // How each one moves, and how Motion (on, follow the Mac, still) works, is in look-svg.ts.
 
 import { facets } from './look-scenes-2'
-import { beat, breathe, f1, frame, GLOW, GLOW2, H, LINE, LINE2, pulse, rnd, swing, tk, W, type Motion, type Scene } from './look-svg'
+import { beat, beatScale, breathe, f1, frame, GLOW, GLOW2, H, LINE, LINE2, pulse, rnd, swing, tk, W, type Motion, type Scene } from './look-svg'
 
 export type { Motion } from './look-svg'
 export type Backdrop = 'prism' | 'facets' | 'contour' | 'mesh' | 'aurora' | 'none'
-export const BACKDROPS: [Backdrop, string][] = [['prism', 'Prism lattice'], ['facets', 'Crystal facets'], ['contour', 'Contour field'], ['mesh', 'Signal mesh'], ['aurora', 'Aurora glow'], ['none', 'None']]
+export const BACKDROPS: [Backdrop, string][] = [['contour', 'Contour field'], ['prism', 'Prism lattice'], ['facets', 'Crystal facets'], ['mesh', 'Signal mesh'], ['aurora', 'Aurora glow'], ['none', 'None']]
 
 const hex = (cx: number, cy: number, R: number, rot = 0) => Array.from({ length: 6 }, (_, i) => { const a = ((-90 + 60 * i + rot) * Math.PI) / 180; return [cx + R * Math.cos(a), cy + R * Math.sin(a)] as const })
 
@@ -36,8 +36,12 @@ const prism: Scene = {
     + `<g opacity="0.78">${m ? breathe('opacity', 0.55, 1, 18) : ''}${prismMark(70, 700, 90, 0.8)}</g></g>`,
 }
 
-// Contour: the two ring sets drift, and a pulse ripples out through the large set (every 12 s at slow speed), like a sonar
-// ping from the corner: each ring brightens one step after the one inside it, then the field rests (and redraws nothing).
+// Contour (the default since v4.10): the two ring sets drift, and a wave of light rolls out through the large set from
+// the corner (every 12 s at slow speed, 6 s at medium), like a sonar ping: each ring flares one step after the one
+// inside it, a soft glow stroke under it lights with it, then the field rests (and redraws nothing). v4.7–v4.9's ping
+// crossed all 16 rings in 1.3 s on 0.8 px lines and its drift was ~1.5 px a second, so on a real screen it read as
+// still: the wave now takes ~2.6 s, each ring flares to near full and its glow shows, the drift goes twice as far,
+// and the corner's glow breathes. Still opacity only (no geometry), stepped, so it costs about what it did.
 const ring = (cx: number, cy: number, R: number, ph: number) => {
   let d = ''
   for (let t = 0; t <= 96; t++) {
@@ -49,15 +53,22 @@ const ring = (cx: number, cy: number, R: number, ph: number) => {
 }
 const BIG = Array.from({ length: 16 }, (_, i) => ({ d: ring(1190, 740, 70 + i * 46, 0.6 + i * 0.22), o: 0.55 - i * 0.026, w: i % 4 === 0 }))
 const SMALL = Array.from({ length: 9 }, (_, i) => ({ d: ring(120, 40, 40 + i * 38, 2.1 + i * 0.3), o: 0.3 - i * 0.028 }))
-const PING = 12 // seconds between pulses
+const PING = 12 // seconds between waves at slow speed
+const STEP = 2 / 12 // the wave reaches the next ring this much later (two steps of the 1/12 s grid)
+/** A ring's flare: up fast (the first fifth), down slowly, then rest at its base. A wave never comes more often than
+ * every 6 s (Fast's drift speeds up, its wave doesn't): a wave that never rests costs a moving backdrop's whole budget. */
+const flare = (attr: string, base: number, peak: number, begin: number) =>
+  beat(attr, u => base + (peak - base) * (u < 0.2 ? Math.sin((u / 0.2) * Math.PI / 2) : Math.pow(1 - (u - 0.2) / 0.8, 1.6)), base, PING * Math.max(1, 0.5 / beatScale()), 1.5, begin)
 const contour: Scene = {
-  defs: `<radialGradient id="cg" cx="0.93" cy="0.97" r="0.55"><stop offset="0" stop-color="${GLOW}" stop-opacity="0.18"/><stop offset="1" stop-color="${GLOW}" stop-opacity="0"/></radialGradient>`,
+  defs: `<radialGradient id="cg" cx="0.93" cy="0.97" r="0.55"><stop offset="0" stop-color="${GLOW}" stop-opacity="0.2"/><stop offset="1" stop-color="${GLOW}" stop-opacity="0"/></radialGradient>`,
   body: m => {
-    const big = BIG.map((r, i) => `<path d="${r.d}" stroke-opacity="${r.o.toFixed(3)}"${r.w ? ' stroke-width="1.3"' : ''}>${m ? pulse('stroke-opacity', +r.o.toFixed(3), Math.min(0.95, r.o + 0.4), PING, tk(1) + i / 12, 1.8) : ''}</path>`).join('')
-    const small = SMALL.map((r, i) => `<path d="${r.d}" stroke-opacity="${r.o.toFixed(3)}">${m ? pulse('stroke-opacity', +r.o.toFixed(3), Math.min(0.7, r.o + 0.26), PING, tk(7) + i / 12, 1.8) : ''}</path>`).join('')
-    return `<g class="k-soft"><rect width="${W}" height="${H}" fill="url(#cg)"/>`
-      + `<g fill="none" stroke="${LINE}" stroke-width="0.8">${m ? swing('translate', [0, 0], [-26, -14], 120) : ''}${big}</g>`
-      + `<g fill="none" stroke="${LINE}" stroke-width="0.8">${m ? swing('translate', [0, 0], [18, 10], 88) : ''}${small}</g></g>`
+    const big = BIG.map((r, i) => `<path d="${r.d}" stroke-opacity="${r.o.toFixed(3)}"${r.w ? ' stroke-width="1.3"' : ''}>${m ? flare('stroke-opacity', +r.o.toFixed(3), Math.min(1, r.o + 0.5), tk(1) + i * STEP) : ''}</path>`).join('')
+    // the wave's glow: a wide soft stroke under each ring, dark at rest, lit as the wave passes (fading outward)
+    const glow = m ? BIG.map((r, i) => `<path d="${r.d}" stroke="${LINE2}" stroke-width="8" stroke-opacity="0">${flare('stroke-opacity', 0, +(0.28 - i * 0.011).toFixed(3), tk(1) + i * STEP)}</path>`).join('') : ''
+    const small = SMALL.map((r, i) => `<path d="${r.d}" stroke-opacity="${r.o.toFixed(3)}">${m ? flare('stroke-opacity', +r.o.toFixed(3), Math.min(0.8, r.o + 0.36), tk(7) + i * STEP) : ''}</path>`).join('')
+    return `<g class="k-soft"><rect width="${W}" height="${H}" fill="url(#cg)">${m ? breathe('opacity', 0.65, 1, 30) : ''}</rect>`
+      + `<g fill="none" stroke="${LINE}" stroke-width="0.8">${m ? swing('translate', [0, 0], [-52, -28], 120) : ''}${glow}${big}</g>`
+      + `<g fill="none" stroke="${LINE}" stroke-width="0.8">${m ? swing('translate', [0, 0], [36, 20], 88) : ''}${small}</g></g>`
   },
 }
 

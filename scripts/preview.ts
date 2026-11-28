@@ -8,37 +8,43 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const OUT = join(ROOT, "docs/preview");
+const OUT = process.env.PREVIEW_OUT ? resolve(process.env.PREVIEW_OUT) : join(ROOT, "docs/preview"); // PREVIEW_OUT: another folder (a mock beside the real thing)
 const cols = process.argv.slice(2).map(Number).filter(Boolean);
 const COLS = cols.length ? cols : [70, 160];
 
 // PREVIEW_PROJECT: draw another project's status instead (the README shots use the benchmark's dummy project)
 // PREVIEW_STATUS: a status JSON file to draw instead (a state that is hard to reach for real, e.g. a Dream waiting for you)
-const status = process.env.PREVIEW_STATUS ? readFileSync(process.env.PREVIEW_STATUS, "utf8").trim() : spawnSync(process.execPath, [join(ROOT, "src/cli.ts"), "status", "--json"], { cwd: process.env.PREVIEW_PROJECT || ROOT, encoding: "utf8" }).stdout.trim();
+// PREVIEW_FROM: draw element trees saved earlier (a mock edited from real trees) instead of running the harness
+const fromFile = process.env.PREVIEW_FROM;
+const status = fromFile ? "" : process.env.PREVIEW_STATUS ? readFileSync(process.env.PREVIEW_STATUS, "utf8").trim() : spawnSync(process.execPath, [join(ROOT, "src/cli.ts"), "status", "--json"], { cwd: process.env.PREVIEW_PROJECT || ROOT, encoding: "utf8" }).stdout.trim();
 const mod = mkdtempSync(join(tmpdir(), "cortex-preview-"));
 cpSync(join(ROOT, "claude-plugin"), mod, { recursive: true });
 rmSync(join(mod, "tests"), { recursive: true, force: true });
 mkdirSync(join(mod, "tests"));
 writeFileSync(join(mod, "tests/preview.test.tsx"), readFileSync(join(ROOT, "scripts/preview/preview.test.tsx"), "utf8").replace("__STATUS__", status).replace("__COLS__", JSON.stringify(COLS)));
-const run = spawnSync("claude", ["plugin", "test", mod], { encoding: "utf8", maxBuffer: 64 << 20 });
+const run = fromFile ? { stdout: "", stderr: "" } : spawnSync("claude", ["plugin", "test", mod], { encoding: "utf8", maxBuffer: 64 << 20 });
 rmSync(mod, { recursive: true, force: true });
-const shots = (run.stdout + run.stderr).split("\n").filter((l) => l.startsWith("@@PREVIEW ")).map((l) => JSON.parse(l.slice(10)) as { name: string; tree: El });
+const shots = fromFile ? JSON.parse(readFileSync(fromFile, "utf8")) as { name: string; tree: El }[] : (run.stdout + run.stderr).split("\n").filter((l) => l.startsWith("@@PREVIEW ")).map((l) => JSON.parse(l.slice(10)) as { name: string; tree: El });
 if (!shots.length) { console.error(run.stdout + run.stderr); process.exit(1); }
+if (process.env.PREVIEW_DUMP) writeFileSync(process.env.PREVIEW_DUMP, JSON.stringify(shots.filter((x) => x.name.startsWith(process.env.PREVIEW_DUMP_PREFIX ?? "strip")))); // the strip trees, for a side-by-side mock
 
 type El = { type: string; props?: Record<string, unknown>; children?: (El | string)[] } | string | null;
 // PREVIEW_LOOK=kapex: the Kapex look's grounds (claude-plugin/hooks/look-colors.ts), as people with it on see the panel:
 // Obsidian and Mist, on surface-2 (the app frosts its side panes in surface-2). Otherwise Claude's stock grounds.
-const THEMES = process.env.PREVIEW_LOOK === "kapex" ? {
-  dark: { bg: "#101714", text: "#E8F1EC", subtle: "#B4C3BB", inactive: "#8E9D96", border: "rgba(232,241,236,0.13)", btn: "rgba(232,241,236,0.06)" },
-  light: { bg: "#FBFDFC", text: "#0B1912", subtle: "#33473D", inactive: "#52645A", border: "rgba(11,25,18,0.14)", btn: "rgba(11,25,18,0.04)" },
+// success / warning / error are the text colours the look's builder derives (vendor/make-colors.js text-*), not the role hexes.
+const LOOK = process.env.PREVIEW_LOOK ?? "";
+// PREVIEW_LOOK=amoled: the AMOLED ground (pure black panes, the v4.6 default dark look); kapex: Obsidian
+const THEMES = LOOK === "kapex" || LOOK === "amoled" ? {
+  dark: { bg: LOOK === "amoled" ? "#000000" : "#101714", text: "#E8F1EC", subtle: "#B4C3BB", inactive: "#8E9D96", border: "rgba(232,241,236,0.13)", btn: "rgba(232,241,236,0.06)", success: "#00A247", warning: "#E18F06", error: "#F37689" },
+  light: { bg: "#FBFDFC", text: "#0B1912", subtle: "#33473D", inactive: "#52645A", border: "rgba(11,25,18,0.14)", btn: "rgba(11,25,18,0.04)", success: "#0E612D", warning: "#81390F", error: "#96112F" },
 } : {
-  dark: { bg: "#262624", text: "#ECEBE6", subtle: "#A9A79F", inactive: "#7C7A73", border: "rgba(255,255,255,0.14)", btn: "rgba(255,255,255,0.06)" },
-  light: { bg: "#FAF9F5", text: "#1F1E1D", subtle: "#62615C", inactive: "#94928B", border: "rgba(0,0,0,0.14)", btn: "rgba(0,0,0,0.04)" },
+  dark: { bg: "#262624", text: "#ECEBE6", subtle: "#A9A79F", inactive: "#7C7A73", border: "rgba(255,255,255,0.14)", btn: "rgba(255,255,255,0.06)", success: "#4EBA65", warning: "#FFC107", error: "#FF6B80" },
+  light: { bg: "#FAF9F5", text: "#1F1E1D", subtle: "#62615C", inactive: "#94928B", border: "rgba(0,0,0,0.14)", btn: "rgba(0,0,0,0.04)", success: "#2C7A39", warning: "#966C1E", error: "#AB2B3F" },
 };
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const CELL = 7.2, ROW = 20, UNIT = 8;
 const len = (v: unknown, unit: number) => (typeof v === "number" ? `${v * unit}px` : typeof v === "string" ? v : "");
-const color = (v: unknown) => (typeof v !== "string" ? "" : ["text", "subtle", "inactive"].includes(v) ? `var(--${v})` : v);
+const color = (v: unknown) => (typeof v !== "string" ? "" : ["text", "subtle", "inactive", "success", "warning", "error"].includes(v) ? `var(--${v})` : v);
 
 function draw(e: El): string {
   if (e === null || e === undefined || e === false as unknown) return "";
@@ -71,7 +77,8 @@ function draw(e: El): string {
       set("color", color(p.color)); set("font-size", p.size === "caption" ? "12px" : p.size === "heading" ? "15px" : p.size === "title" ? "20px" : "");
       set("font-weight", p.weight === "semibold" ? "600" : p.weight === "bold" ? "700" : p.weight === "medium" ? "500" : p.size === "heading" || p.size === "title" ? "600" : "");
       if (p.wrap === "truncate-end") css.push("white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0");
-      if (p.italic) css.push("font-style:italic");
+      if (p.italic) css.push("font-style:italic")
+      if (p.strikethrough) css.push("text-decoration:line-through");
       return `<span class="t" style="${css.join(";")}">${kids}</span>`;
     }
     case "Button": {

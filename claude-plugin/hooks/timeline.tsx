@@ -16,15 +16,15 @@ import { companion } from './blocky'
 
 // The Timeline page: the activity chart (swimlanes over time: replies, commits, handoffs, Dreams), then every event
 // newest first, grouped by day, as tiles joined by a connector on the left, that open for the details (a turn's numbers and files, a commit's tags,
-// a handoff's goal, what a Dream found).
+// a handoff's goal, what a full check found).
 const KIND: Record<string, { icon: string; label: string; lane: number }> = {
   turn: { icon: 'turn', label: 'Reply', lane: 0 },
   commit: { icon: 'commit', label: 'Commit', lane: 1 }, merge: { icon: 'merge', label: 'Merge', lane: 1 },
   handoff: { icon: 'link', label: 'Handoff', lane: 2 },
-  dream: { icon: 'dream', label: 'Dream', lane: 3 },
+  dream: { icon: 'dream', label: 'Memory check', lane: 3 },
 }
 // one colour per row (failures in rose); amber is kept for warnings, so handoffs get the deep emerald
-const LANES: [string, string][] = [['Replies', K.emerald], ['Commits', K.silver], ['Handoffs', K.pine], ['Dreams', '#14B8A6']]
+const LANES: [string, string][] = [['Replies', K.emerald], ['Commits', K.silver], ['Handoffs', K.pine], ['Memory checks', '#14B8A6']]
 /** Events per page. The list shows one page at a time (Older / Newer move it), never a list that keeps growing: the
  * desktop app drops a pane whose drawing gets too big (~150 KB a page; 160 events at once were ~750 KB and blanked it). */
 export const PAGE = 24
@@ -43,13 +43,16 @@ function leadOf(ev: TimelineEventView, res: { color: string; text: string } | nu
   if (ev.kind === 'commit') return ev.tags.some(x => /^tag /.test(x)) ? { kind: 'commit-tag', alt: 'A commit with a release tag', tint } : { kind: 'commit', alt: 'A commit', tint }
   if (ev.kind === 'merge') return { kind: 'merge', alt: 'Two branches merging', tint }
   if (ev.kind === 'handoff') return { kind: 'handoff', alt: 'A note passing from one chat to another' }
-  if (ev.kind === 'dream') return ev.tone === 'bad' ? { kind: 'dream-bad', alt: 'A Dream that failed' } : ev.tone === 'ok' ? { kind: 'dream-ok', alt: 'A Dream that found nothing wrong' } : { kind: 'dream', alt: 'A Dream checking notes' }
+  if (ev.kind === 'dream') return ev.tone === 'bad' ? { kind: 'dream-bad', alt: 'A memory check that failed' } : ev.tone === 'ok' ? { kind: 'dream-ok', alt: 'A memory check that found nothing wrong' } : { kind: 'dream', alt: 'A memory check reading notes' }
   const c = res?.color ?? TONE[ev.tone] ?? K.silver
   if (c === K.rose) return { kind: 'reply-bad', alt: 'A reply whose checks failed' }
   if (c === K.amber) return { kind: 'reply-warn', alt: res?.text === 'Interrupted' ? 'A reply that was interrupted' : 'A reply with tool errors' }
   if (c === K.emerald) return { kind: 'reply-ok', alt: 'A reply whose checks passed' }
   return { kind: 'reply-none', alt: 'A reply with no checks run' }
 }
+/** A reply's title when you didn't type one: what set it off, said as a quiet badge, while what Claude did leads */
+const TRIGGER: [RegExp, string][] = [[/^Claude continued on its own$/, 'On its own'], [/^A background task finished$/, 'Background task'], [/^Carried on where it stopped$/, 'Picked up again']]
+export const triggerOf = (title: string): string | null => TRIGGER.find(([re]) => re.test(title.trim()))?.[1] ?? null
 const time = (iso: string) => (Number.isFinite(Date.parse(iso)) ? new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '')
 const base = (f: string) => f.split(/[\\/]/).slice(-2).join('/')
 
@@ -149,11 +152,14 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
     const res = ep ? outcome(ep) : null
     // what people typed is tidied for the closed tile (no prompt marks, one sentence); the open tile shows it all
     const open = vw.expanded.includes(ev.id), typed = ev.kind === 'turn' || ev.kind === 'handoff'
+    // a reply nobody typed leads with what Claude did; what set it off is a quiet badge. The kind is said by the
+    // drawing (and its alt) and the title, so no "Reply" / "Commit" / "Handoff" badge repeats it.
+    const trig = ev.kind === 'turn' && ev.detail ? triggerOf(ev.title) : null
     return t.tile({
-      id: ev.id, icon: kind.icon, color: TONE[ev.tone] ?? K.silver, lead: leadOf(ev, res), title: typed ? tidy(ev.title, 90, open) || ev.title : ev.title, time: time(ev.ts),
+      id: ev.id, icon: kind.icon, color: TONE[ev.tone] ?? K.silver, lead: leadOf(ev, res), title: trig ? tidy(ev.detail!, 90, open) || ev.detail! : typed ? tidy(ev.title, 90, open) || ev.title : ev.title, time: time(ev.ts),
       // the outcome badge already says how the checks went: don't repeat it as a tag
-      badges: [[kind.label, TONE[ev.tone] ?? K.label], res ? [res.text, res.color, res.icon] : null, ...ev.tags.filter(x => !(res && (/^tests /.test(x) || x.toLowerCase() === res.text.toLowerCase()))) /* say it once: no tag repeating the outcome badge */.slice(0, ep ? 2 : 4).map(x => [x] as [string])],
-      preview: ev.detail && typed ? tidy(ev.detail, 140, open) : ev.detail,
+      badges: [trig ? [trig] : null, res ? [res.text, res.color, res.icon] : null, ...ev.tags.filter(x => !(res && (/^tests /.test(x) || x.toLowerCase() === res.text.toLowerCase()))) /* say it once: no tag repeating the outcome badge */.slice(0, ep ? 2 : 4).map(x => [x] as [string])],
+      preview: trig ? undefined : ev.detail && typed ? tidy(ev.detail, 140, open) : ev.detail,
       body: ep && busy(ep) ? [
         t.stats(`tm-${ev.id}`, [
           { icon: 'file', value: String(ep.files.length), label: ep.files.length === 1 ? 'file changed' : 'files changed' },
@@ -162,7 +168,7 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
           { icon: 'spark', value: k(ep.outTokens), label: 'tokens Claude wrote' },
         ]),
         ep.files.length ? u.tag(`tfl-${ev.id}`, 'file', K.silver, `${ep.files.slice(0, 8).map(base).join('  ·  ')}${ep.files.length > 8 ? `  ·  ${ep.files.length - 8} more` : ''}`, K.muted) : null,
-        ep.next ? u.tag(`tnx-${ev.id}`, 'pending', K.amber, `Next: ${ep.next}`, K.label) : null,
+        ep.next ? u.tag(`tnx-${ev.id}`, 'next', K.amber, `Next: ${ep.next}`, K.label) : null,
       ] : ev.tags.length > 4 ? [<Text key={`ttg-${ev.id}`} size="caption" color={K.muted}>{ev.tags.join(' · ')}</Text>] : [],
     })
   }
@@ -191,13 +197,13 @@ export function timelinePage($: Dollar, els: ElementTable, u: Kit, s: StatusView
     <Box flexDirection="column" gap={1}>
       {u.intro('tl-in', pageScene('timeline', 100), 'Cortex at the timeline', 'What happened, newest first', 'Every reply, commit, handoff and memory check in this project.', companion('idle', px))}
       {u.card('tl-act', '100%', [
-        u.head('tl-act-h', now - from > 36 * 3_600_000 ? 'The last 7 days' : 'Today', `${shown.length} event${shown.length === 1 ? '' : 's'}`),
-        shown.length ? u.graphic('g-lanes', chart, `${shown.length} events: ${LANES.map(([l], i) => `${shown.filter(e => (KIND[e.kind] ?? KIND.turn!).lane === i).length} ${l.toLowerCase()}`).join(', ')}`) : u.tag('tl-none', 'turn', K.silver, 'Nothing yet. Each reply, commit, handoff and Dream shows up here.'),
+        u.head('tl-act-h', now - from > 36 * 3_600_000 ? 'The last 7 days' : 'Today', shown.length ? `${shown.length} event${shown.length === 1 ? '' : 's'}` : undefined),
+        shown.length ? u.graphic('g-lanes', chart, `${shown.length} events: ${LANES.map(([l], i) => `${shown.filter(e => (KIND[e.kind] ?? KIND.turn!).lane === i).length} ${l.toLowerCase()}`).join(', ')}`) : u.tag('tl-none', 'turn', K.silver, all.length ? 'Nothing in the last 7 days: older events are below.' : 'Nothing yet: your first reply in this project starts it.'),
       ])}
       {top}
       {days.map(([day, list]) => (
         <Box key={`day-${day}`} flexDirection="column" gap={1}>
-          {t.groupHead(`dh-${day}`, 'pending', K.emerald, day, `${list.length} event${list.length === 1 ? '' : 's'}`)}
+          {t.groupHead(`dh-${day}`, 'calendar', K.emerald, day, `${list.length} event${list.length === 1 ? '' : 's'}`)}
           {t.railed(`dl-${day}`, list.map(ev => {
             const open = vw.expanded.includes(ev.id), ep = open ? eps.get(ev.id) : undefined
             return { tile: tileOf(ev), lines: previewLines(ev.detail, px, open) + (ep && busy(ep) ? bodyLines(px, !!ep.files.length, !!ep.next) : open && ev.tags.length > 4 ? 1 : 0) }

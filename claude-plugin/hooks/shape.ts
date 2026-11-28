@@ -3,7 +3,7 @@ import type { LiveView, StatusView } from '../types'
 /** A status the panel can draw: the sections every page reads are there. `kc status` that printed `{}` or `[]`, or a
  * copy saved by an older version in another shape, fails this and is treated as no status (a message, never a blank
  * pane). */
-/** The status with anything a page can't draw left out: a Dream report without its findings list (a half-written or
+/** The status with anything a page can't draw left out: a full check report without its findings list (a half-written or
  * older report) is dropped rather than trusted. Returns a new object; the one given is never changed. */
 export function usable(s: StatusView): StatusView {
   const recent = s.dream.recent.filter(d => !!d && typeof d === 'object' && Array.isArray(d.findings))

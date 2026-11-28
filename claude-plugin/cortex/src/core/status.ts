@@ -1,3 +1,6 @@
+import { contractOf, withSteps, type ContractView } from "./mission-view.ts";
+import { readMissionRecord } from "./mission.ts";
+import { proofOf } from "./mission-steps.ts";
 import { spawnSync } from "node:child_process";
 import { gitDirOf } from "./worktree.ts";
 import { cachedGit, gitKey } from "./gitcache.ts";
@@ -7,12 +10,13 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { dreaming, listDreams, type DreamReport } from "./dream.ts";
 import { readMemoryCheck } from "./tiers.ts";
-import { compactEpisode, readEpisodes, type EpisodeView } from "./episodes.ts";
+import { compactEpisode, readEpisodes, TEST, type EpisodeView } from "./episodes.ts";
 import { computeHistory, type History } from "./history.ts";
 import { firstName } from "./identity.ts";
 import { nativeSummary, type NativeFile } from "./native.ts";
 import type { RepoPaths } from "./paths.ts";
 import { readPrefs, type Prefs } from "./prefs.ts";
+import { opencodeInfo, type OpencodeInfo } from "./opencode.ts";
 import { shortCommand, statePath } from "./state.ts";
 import { buildTimeline, chatLabel, type TimelineEvent } from "./timeline.ts";
 import { toolUsage, type Usage } from "./usage.ts";
@@ -34,14 +38,14 @@ export interface Status {
   /** older events exist than the timeline carries (the panel's Show older fetches them) */
   timelineMore: boolean;
   /** what a new chat will know after /cortex-resume, and what that costs */
-  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; /** the chat it came from, in a few words */ chat?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal: string; next: string; instructions: number; decisions: number; trail: number; commits: number; flagged: number } };
+  handoff: { exists: boolean; ageMinutes: number | null; ready: boolean; from: string; session?: string; /** the chat it came from, in a few words */ chat?: string; preview?: { exchanges: number; files: number; openItems: number; tokens: number; lastCheck: string; goal: string; next: string; instructions: number; decisions: number; trail: number; commits: number; flagged: number; contract?: ContractView | null } };
   /** Claude Code's own memory files: what loads into every session, and what each costs */
   native: { files: NativeFile[]; alwaysTokens: number; alwaysLines: number; autoMemory: { dir: string; enabled: boolean } };
   /** Dreams: one running now, and the recent ones (newest first) */
   dream: { running: { since: string } | null; recent: DreamReport[] };
   git: { branch: string; dirty: number; untracked: number; wip: { ref: string; sha: string; at: string } | null } | null;
   hooks: { p95: number | null; samples: number; cap: number; recent?: number[] };
-  opencode: { installed: boolean; plugin: boolean };
+  opencode: OpencodeInfo;
   footprint: { tokens: number; skills: number; duplicates: number };
   safety: SafetyView;
   history: History;
@@ -132,7 +136,7 @@ export function computeStatus(p: RepoPaths): Status {
       preview: head ? {
         exchanges: (head.match(/^### You /gm) ?? []).length,
         files: (/^Edited in the last turns: (.+)$/m.exec(head)?.[1]?.match(/`/g)?.length ?? 0) / 2,
-        openItems: (head.match(/^- \[ \] /gm) ?? []).length,
+        openItems: (/^## Open items\n((?:- .*\n?)+)/m.exec(head)?.[1]?.match(/^- \[ \] /gm) ?? []).length, // never the mission's steps
         tokens: Math.round(head.length / 4),
         lastCheck: (/^## Last check\n(.+)$/m.exec(head)?.[1] ?? "").replace(/^`([^`]*)`/, (_, c: string) => shortCommand(c)).replace(/`/g, "").slice(0, 90),
         goal: (/^## Goal\n(.+)$/m.exec(head)?.[1] ?? "").slice(0, 300),
@@ -143,13 +147,14 @@ export function computeStatus(p: RepoPaths): Status {
         trail: (head.match(/^- T\d+ /gm) ?? []).length + Number(/^- … (\d+) earlier turn/m.exec(head)?.[1] ?? 0),
         commits: (/^\*\*Commits this session\*\*.*$/m.exec(head)?.[0]?.match(/`[^`]+`/g) ?? []).length,
         flagged: readMemoryCheck(p)?.open.length ?? 0,
+        contract: ((sess) => withSteps(contractOf(head), readMissionRecord(p, sess), (x) => proofOf(x, journal, TEST, Date.now(), { sessions: [sess] }), p))(/· session ([^\s·]+)/.exec(head.split("\n")[0] ?? "")?.[1] ?? "-"),
       } : undefined,
     },
     native: nativeSummary(p.root),
     dream: { running: dreaming(p), recent },
     git: gitStatus(p),
-    hooks: { ...hookP95(p), cap: 150 },
-    opencode: { installed: existsSync(join(homedir(), ".opencode", "bin", "opencode")), plugin: existsSync(join(p.root, ".opencode", "plugins", "kapex-cortex.ts")) },
+    hooks: { ...hookP95(p), cap: 60 }, // the Stop-hook budget the README and the tests hold (150 before v4.5)
+    opencode: opencodeInfo(p.root),
     footprint: cortexFootprint(),
     safety: auditSafety(p),
     history,
@@ -184,7 +189,7 @@ export function statusMarkdown(s: Status): string {
     `| **Handoff** | ${s.handoff.exists ? `${ago(s.handoff.ageMinutes)}${s.handoff.from ? ` from ${s.handoff.from}` : ""}${s.handoff.ready ? " · **ready to resume**" : ""} · about ${s.prefs.tokens.handoff.toLocaleString()} tokens to start` : "none yet"} |`,
     `| **Memory in every session** | ${s.native.alwaysLines} lines · about ${s.native.alwaysTokens.toLocaleString()} tokens · auto memory ${s.native.autoMemory.enabled ? "on" : "off"} |`,
     `| **Too long** | ${over.length ? over.map((f) => `${f.label} (${f.over})`).join("; ") : "nothing"} |`,
-    `| **Last Dream** | ${s.dream.running ? "running now" : last ? `${last.status} · ${last.findings.length} finding${last.findings.length === 1 ? "" : "s"} · ${ago(Math.round((Date.now() - Date.parse(last.ts)) / 60_000))}` : "none yet (kc dream)"} |`,
+    `| **Last memory check** | ${s.dream.running ? "running now" : last ? `${last.status} · ${last.findings.length} finding${last.findings.length === 1 ? "" : "s"} · ${ago(Math.round((Date.now() - Date.parse(last.ts)) / 60_000))}` : "none yet (kc dream)"} |`,
   ].join("\n");
 }
 

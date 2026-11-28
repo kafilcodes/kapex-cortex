@@ -291,7 +291,7 @@ test('notify: the chip fits a narrow strip (30 to 200 cells), the terminal strip
   await start($) // no pane mounted from here on
   running = false
   await open($) // the Dream that was running has ended: "Dream done · N to review"
-  expect(toasts.filter(t => /Dream done/.test(t)).length, `toasts: ${JSON.stringify(toasts)}`).toBe(1)
+  expect(toasts.filter(t => /Memory check done/.test(t)).length, `toasts: ${JSON.stringify(toasts)}`).toBe(1)
   const bad: string[] = []
   for (const cols of [0, 30, 44, 60, 84, 120, 200]) {
     const strip: any = await $.ui.mount({ ...band(cols || undefined), surface: 'desktop' } as any)
@@ -299,14 +299,14 @@ test('notify: the chip fits a narrow strip (30 to 200 cells), the terminal strip
     for (const p of problems(tree)) bad.push(`desktop strip @${cols}: ${p}`)
     const chip = await strip.find({ key: 'kc-flash' })
     if (!chip) bad.push(`desktop strip @${cols}: no chip while a notification shows`)
-    else if (!/^Dream done/.test(chip.text)) bad.push(`desktop strip @${cols}: chip says "${chip.text}"`)
+    else if (!/^Memory check done/.test(chip.text)) bad.push(`desktop strip @${cols}: chip says "${chip.text}"`)
     // every drawing in the strip keeps a real width (the page lays it out from these numbers)
     for (const g of see(tree).svgs) { const w = Number(/width="([^"]*)"/.exec(g.source)?.[1]); if (!(w > 0) || w > 2000) bad.push(`desktop strip @${cols}: a drawing ${w} px wide (alt "${g.alt.slice(0, 40)}")`) }
     await strip.unmount()
     const term: any = await $.ui.mount({ ...band(cols || undefined), surface: 'terminal' } as any)
     const tt = see(await term.drawn())
     for (const p of problems(await term.drawn())) bad.push(`terminal strip @${cols}: ${p}`)
-    if (!tt.texts.some(t => /Dream done/.test(t))) bad.push(`terminal strip @${cols}: the notification's words are missing`)
+    if (!tt.texts.some(t => /Memory check done/.test(t))) bad.push(`terminal strip @${cols}: the notification's words are missing`)
     await term.unmount()
   }
   for (const b of bad) console.log(`QA-FINDING ${JSON.stringify({ test: 'notify narrow strip', what: b, count: 1, where: [] })}`)
@@ -347,7 +347,7 @@ test('notify: a Dream that ends with an error says so with the alert sound; one 
   await start($)
   st = { ...quiet(), dream: { running: null, recent: [dream(0, 2, 'failed', { error: 'model timed out' })] } }
   await open($)
-  expect(toasts).toEqual(['Dream stopped · see Memory'])
+  expect(toasts).toEqual(['Memory check stopped · see Memory'])
   expect(sounds).toEqual(['sounds/alert.wav'])
   st = { ...quiet(), dream: { running: { since: new Date().toISOString() }, recent: [] } }; await open($)
   st = quiet(); await open($)

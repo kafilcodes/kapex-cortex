@@ -23,7 +23,7 @@ export const NO_ASK = 'Claude continued on its own'
 export function outcome(e: EpisodeView): { icon: string; color: string; text: string } {
   if (e.tests.ran && e.tests.failed && e.tests.lastOk) return { icon: 'check', color: K.emerald, text: `Checks passed · ${e.tests.failed} fixed` }
   if (e.tests.ran && e.tests.failed) return { icon: 'cross', color: K.rose, text: e.tests.lastOk === false ? 'Last check failed' : `${e.tests.failed} of ${e.tests.ran} checks failed` }
-  if (e.interrupted) return { icon: 'pending', color: K.amber, text: 'Interrupted' }
+  if (e.interrupted) return { icon: 'pause', color: K.amber, text: 'Interrupted' }
   if (e.tests.ran) return { icon: 'check', color: K.emerald, text: 'Checks passed' }
   if (e.errors) return { icon: 'alert', color: K.amber, text: `${e.errors} tool error${e.errors === 1 ? '' : 's'}` }
   return { icon: 'check', color: K.silver, text: 'Done' }
@@ -88,7 +88,7 @@ export function lastTurnCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: 
     </Box>,
     auto ? null : said(els, u, 'ls-ask', side ? 'spark' : 'turn', K.silver, side ? 'Started by' : 'You asked', ask, open),
     e.done ? said(els, u, 'ls-done', 'check', K.emerald, auto ? `${NO_ASK}, and finished with` : 'Claude did', e.done, open) : auto ? u.tag('ls-auto', 'turn', K.silver, NO_ASK, K.label) : null,
-    e.next ? said(els, u, 'ls-next', 'pending', K.amber, 'Next', e.next, open) : null,
+    e.next ? said(els, u, 'ls-next', 'next', K.amber, 'Next', e.next, open) : null,
     // no summary from Claude (an interrupted turn, a limit): what changed is the next most useful thing to show
     !e.done && !e.next && e.files.length ? <Text key="ls-files" size="caption" color={K.muted}>{`Files: ${e.files.slice(0, 6).map(f => f.split(/[\\/]/).slice(-2).join('/')).join(', ')}${e.files.length > 6 ? ` and ${e.files.length - 6} more` : ''}`}</Text> : null,
     // the facts sit at the bottom edge, like the buttons of the card beside it
@@ -104,7 +104,7 @@ export function lastTurnCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: 
 
 /** Overview's Handoff card: is it saved, what a new chat costs to start, what it carries. `offered` = the headline
  * above already asks to hand off, so this card doesn't repeat the button. */
-export function handoffCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: StatusView, l: LiveView | null, width: string, offered: boolean, art = false): JSX.Element {
+export function handoffCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: StatusView, l: LiveView | null, width: string, offered: boolean, art = false, /** the headline above already says the notes are flagged */ quietMem = false): JSX.Element {
   const { Box, Text, Button } = els
   const pv = s.handoff.preview
   if (!s.handoff.exists || !pv) return u.card('ready', width, [u.illo('or-none', illoHandoff(150), 'No handoff yet', [<Text key="or-none-t" weight="semibold" color={K.text}>Handoff</Text>, u.muted('or-none-d', 'After the first reply here, Cortex saves where you are, so a new chat can pick it up.')])])
@@ -133,7 +133,7 @@ export function handoffCard($: Dollar, els: ElementTable, u: Kit, t: Tiles, s: S
       </Box>
       {art && u.Svg ? <Box key="or-art" flexShrink={0}>{u.graphic('g-handoff', illoHandoff(130), 'A full chat handing a small packet to a fresh one')}</Box> : null}
     </Box>,
-    flagged ? u.tag('or-mem', 'alert', K.amber, `${plural(flagged, 'memory note')} flagged: the new chat is told not to rely on ${flagged === 1 ? 'it' : 'them'}`, K.label) : null,
+    flagged && !quietMem ? u.tag('or-mem', 'alert', K.amber, `${plural(flagged, 'memory note')} flagged: the new chat is told not to rely on ${flagged === 1 ? 'it' : 'them'}`, K.label) : null,
     <Box key="or-t" flexGrow={1} flexDirection="column" justifyContent="flex-end"><Box flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={1} rowGap={1} flexWrap="wrap">
       <Button key="or-go" variant="secondary" onPress={() => { void setTab($, 'handoff') }}>See what's saved</Button>
       {offered ? null : <Button key="or-hand" variant="secondary" onPress={() => { void (flagged ? setFlow($, 'confirm') : handOff($)) }}>Hand off now</Button>}
@@ -157,7 +157,7 @@ export function readyToSwitch($: Dollar, els: ElementTable, u: Kit, t: Tiles, s:
     </Box>,
     s.handoff.chat ? <Text key={`${key}-from`} weight="medium" color={K.text}>{`From “${tidy(s.handoff.chat, 80)}”`}</Text> : null,
     pv.goal ? said(els, u, `${key}-goal`, 'star', K.emerald, 'Goal', pv.goal, false, 140) : null,
-    pv.next && !/^Continue from the last assistant message/.test(pv.next) ? said(els, u, `${key}-next`, 'pending', K.amber, 'Next', pv.next, false, 140) : null,
+    pv.next && !/^Continue from the last assistant message/.test(pv.next) ? said(els, u, `${key}-next`, 'next', K.amber, 'Next', pv.next, false, 140) : null,
     <Box key={`${key}-g`} flexDirection="row" gap={1} flexWrap="wrap">
       {t.metric(`${key}-p`, 'star', pinned ? K.emerald : K.silver, String(pinned), pinned === 1 ? 'instruction or decision of yours' : 'of your instructions and decisions', '40%')}
       {t.metric(`${key}-x`, 'turn', K.sage, String(pv.exchanges || 1), (pv.exchanges || 1) === 1 ? 'last exchange, word for word' : 'last exchanges, word for word', '40%')}

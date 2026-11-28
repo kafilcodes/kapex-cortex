@@ -1,7 +1,7 @@
 import { clock, k, prettyModel } from './charts'
 import type { Ctx } from './tabs'
 import { HEAT, heat, K } from './theme'
-import type { Tiles } from './tiles'
+import { ink, type Tiles } from './tiles'
 import { paceTrack, splitBar, toolBlocks, waffle } from './viz-plan'
 
 // Costs → "Right now": the 5-hour plan, and what used it. The plan is shared by every chat in every project, so the
@@ -62,7 +62,7 @@ export function planCard(o: Ctx, t: Tiles, w: number): JSX.Element {
     : pace.early ? (used > 0 ? { c: K.muted, t: 'Too early in the window to tell the pace.' } : null)
     : pace.out ? { c: HEAT.bad, t: `At this pace you run out at ${clock(pace.out)}, ${dur(reset - pace.out)} before the reset.` }
     : pace.atReset >= 0.8 ? { c: HEAT.high, t: `At this pace about ${Math.round(pace.atReset * 100)}% by the reset: close. A handoff to a fresh chat slows it.` }
-    : used > 0 ? { c: K.emerald, t: `At this pace about ${Math.round(pace.atReset * 100)}% by the reset at ${clock(reset)}: room to spare.` } : null
+    : used > 0 ? { c: K.emerald, t: `At this pace about ${Math.round(pace.atReset * 100)}% by the reset: room to spare.` } : null
   const mPct = (v: number) => pct((100 * v) / Math.max(1, total))
   const blocks = toolList.length ? toolBlocks({ width: w, items: toolList.map(([n, c]) => ({ label: n, n: c })) }) : null
 
@@ -73,11 +73,11 @@ export function planCard(o: Ctx, t: Tiles, w: number): JSX.Element {
         <Text size="caption" color={K.muted}>{rows.length ? `What used it since ${clock(start)}, across all your projects` : 'Shared by every chat, in every project'}</Text>
       </Box>
       <Box flexDirection="column" gap={0} alignItems={side ? 'flex-end' : 'flex-start'}>
-        <Text size="title" weight="semibold" tabular color={color}>{used !== null ? `${used}%` : '–'}</Text>
-        <Text size="caption" color={K.muted}>{used !== null ? `used${Number.isFinite(reset) ? ` · resets ${clock(reset)} (in ${dur(reset - now)})` : ''}` : 'shows after a reply'}</Text>
+        <Text size="title" weight="semibold" tabular color={ink(color)}>{used !== null ? `${used}%` : '–'}</Text>
+        <Text size="caption" color={K.muted}>{used !== null ? `used${Number.isFinite(reset) ? ` · resets in ${dur(reset - now)}` : ''}` : 'shows after a reply'}</Text>
       </Box>
     </Box>,
-    verdict ? <Text key="d-now-v" size="caption" weight="medium" color={verdict.c}>{verdict.t}</Text> : null,
+    verdict ? <Text key="d-now-v" size="caption" weight="medium" color={ink(verdict.c)}>{verdict.t}</Text> : null,
     pace ? u.graphic('d-plan-pace', pace.svg, `${used}% of the 5-hour plan used. ${verdict?.t ?? ''}`) : null,
     legend.length ? <Box key="d-now-lg" flexDirection="column" gap={0}>
       {legend.map(([name, c, v], i) => (
@@ -90,7 +90,8 @@ export function planCard(o: Ctx, t: Tiles, w: number): JSX.Element {
       ))}
     </Box> : u.muted('d-now-none', 'Nothing used yet in this window.'),
     // side by side where there's room (the model bar takes its column's whole width), stacked where narrow
-    rows.length ? <Box key="d-now-mix" flexDirection={side ? 'row' : 'column'} columnGap={4} rowGap={2} paddingTop={1}>
+    rows.length && models.length === 1 && !helpers ? <Text key="d-now-one" size="caption" color={K.label}>{`All on ${models[0]![0]}, no subagents`}</Text> : null,
+    rows.length && !(models.length === 1 && !helpers) ? <Box key="d-now-mix" flexDirection={side ? 'row' : 'column'} columnGap={4} rowGap={2} paddingTop={1}>
       <Box key="d-mx-m" flexDirection="column" gap={1} {...(side ? { width: '60%' } : {})} flexShrink={0}>
         <Text size="caption" weight="semibold" color={K.label}>By model</Text>
         {u.graphic('d-mx-mg', splitBar({ width: side ? Math.round(w * 0.6) - 16 : w, items: models.map(([m, v], i) => ({ label: m, value: v.weight, color: /fable/i.test(m) ? K.amber : i ? '#14B8A6' : K.emerald })) }), models.map(([m, v]) => `${m} ${mPct(v.weight)}`).join(', '))}

@@ -34,6 +34,11 @@ const LEAD_ALT: Record<string, string> = {
   'f-orphan': 'A note missing from the index', 'f-lesson': 'A note with a tick: a verified lesson',
 }
 const ORDER = { high: 0, medium: 1, low: 2 }
+/** The load-bearing guard's words at the start of a finding's why (src/core/dream-model.ts): the note is a rule, a record
+ * under a guardrail heading or your task's own rule, so the page never offers to remove it (Ask Claude and Keep stay). */
+const HELD = /^(?:Load-bearing \(([^)]+)\), so Cortex won't offer to remove(?: or rewrite)? it\.|A rule, not a fact: the code may have drifted from it\.)\s*/
+export const heldBy = (f: FindingView): string | null => { const m = HELD.exec(f.why); return m ? m[1] ?? 'a rule' : null }
+const whyOf = (f: FindingView) => f.why.replace(HELD, '') || f.why
 const STATUS: Record<string, string> = { applied: 'Applied', proposed: 'Waiting for you', discarded: 'Discarded', undone: 'Undone', failed: 'Failed', replaced: 'Replaced' }
 const doing = (f: FindingView) => f.action.op === 'delete' ? 'Remove the line' : f.action.op === 'replace' ? `Rewrite as: "${f.action.text}"` : f.action.op === 'move' ? `Move to ${f.action.to} (loads only for ${(f.action.paths ?? []).join(', ')})` : f.action.op === 'add-index' ? `Add to MEMORY.md: ${f.action.text}` : f.action.op === 'add-lesson' ? `Add to auto memory: "${f.action.text}"` : 'Yours to decide: remove the line, keep it, or ask Claude to rewrite it'
 /** What "Ask Claude" sends: you press it, so it's your prompt; Claude edits the note with its own tools, as you'd ask. */
@@ -47,7 +52,8 @@ export function suggestFor(d: DreamView, f: FindingView): { pick: 'apply' | 'rem
     const a = f.action
     return { pick: 'apply', text: a.op === 'delete' ? 'remove the line.' : a.op === 'replace' ? `rewrite it as “${a.text ?? ''}”` : a.op === 'move' ? `move it to ${a.to} (it loads only for ${(a.paths ?? []).join(', ')}).` : a.op === 'add-index' ? 'list it in MEMORY.md, so Claude knows to read it.' : 'add it to auto memory as a lesson.' }
   }
-  const canRemove = !!f.line && d.files.some(x => x.path === f.file)
+  const held = heldBy(f), canRemove = !held && !!f.line && d.files.some(x => x.path === f.file)
+  if (held && f.entry) return { pick: 'ask', text: 'ask Claude to update it if it changed, or keep it. Cortex never removes a load-bearing note.' }
   if (canRemove && ['false', 'duplicate', 'visible', 'broken-link'].includes(f.kind)) return { pick: 'remove', text: f.kind === 'duplicate' ? 'remove the line: another note already says it.' : f.kind === 'visible' ? 'remove the line: the project files already say it.' : 'remove the line: it no longer matches the project.' }
   if (f.entry || f.kind === 'over-cap') return { pick: 'ask', text: f.kind === 'over-cap' ? 'ask Claude to shorten it, keeping every rule that still applies.' : 'ask Claude to rewrite it: part of it may still hold.' }
   return { pick: 'keep', text: 'keep it: there is nothing here to fix by itself.' }
@@ -89,7 +95,8 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
   const running = s.dream?.running
   const be = s.prefs?.dreamBackend ?? 'claude'
   const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1)
-  const model = be === 'off' ? '' : be === 'claude' ? cap(s.prefs?.dreamModel || 'sonnet') : s.prefs?.dreamModel || (be === 'opencode' ? 'an OpenCode model' : 'your model')
+  // the judge as the cost line says it: your own key's model (with Claude as its stand-in), or Claude's model on your plan
+  const model = be === 'off' ? '' : be === 'api' ? `${s.prefs?.dreamApiModel || 'your own key\'s model'} (or ${cap(s.prefs?.dreamModel || 'sonnet')} if it fails)` : cap(s.prefs?.dreamModel || 'sonnet')
   const n = s.prefs?.dreamTranscripts ?? 10
 
   const dec = (d: DreamView, f: FindingView | 'all', what: string, label: string) => { void act($, label, ['dream', 'decide', d.id, f === 'all' ? 'all' : f.id, what]) }
@@ -100,7 +107,7 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
     const pick = suggestFor(d, f).pick
     const keep = btn(`fk-${f.id}`, 'Keep', () => dec(d, f, 'keep', 'Kept'), pick === 'keep')
     if (f.action.op !== 'none' && !f.skip) return [btn(`fa-${f.id}`, 'Apply', () => dec(d, f, 'apply', 'Applied'), true), keep]
-    const canRemove = !!f.line && d.files.some(x => x.path === f.file)
+    const canRemove = !heldBy(f) && !!f.line && d.files.some(x => x.path === f.file) // the guard: never offer to remove a load-bearing note
     const all = [
       canRemove ? { k: 'remove', b: btn(`fr-${f.id}`, 'Remove line', () => dec(d, f, 'remove', 'Removed'), pick === 'remove') } : null,
       f.entry || f.kind === 'over-cap' ? { k: 'ask', b: btn(`fc-${f.id}`, 'Ask Claude', () => { void ask($, `fix-${f.id}`, `Ask Claude to fix ${f.label}${f.line ? ` line ${f.line}` : ''}`, askFix(f)) }, pick === 'ask') } : null,
@@ -113,13 +120,13 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
     const k = KIND[f.kind] ?? { label: f.kind, icon: 'spark', color: K.silver }
     const ev = new Map(d.evidence.map(e => [e.id, e]))
     const lk = (`f-${f.kind}` in LEAD_ALT ? `f-${f.kind}` : 'f-stale') as Lead
-    const sug = suggestFor(d, f)
+    const sug = suggestFor(d, f), held = heldBy(f)
+    // where the note is said once, as file:line on one chip; how sure Cortex is, last; the kind's colour says how serious
     return t.tile({
       id: `${d.id}-${f.id}`, icon: k.icon, color: f.skip ? K.muted : k.color,
-      lead: { kind: lk, alt: LEAD_ALT[lk]!, muted: !!f.skip }, accent: f.severity === 'high' && !f.skip ? `${k.color}66` : undefined,
-      title: f.entry ? f.entry.replace(/^\s*[-*+]\s+/, '').replace(/\s*\n\s*/g, ' ') : f.why, wrap: true, preview: f.entry ? `Why: ${f.why}` : undefined,
-      time: f.line ? `line ${f.line}` : undefined,
-      badges: [[k.label, k.color, k.icon], [f.label, K.label, 'file'], [f.by === 'check' ? 'Proven by a check' : 'The model\'s judgement'], f.skip ? ['Left out', K.muted] : null],
+      lead: { kind: lk, alt: LEAD_ALT[lk]!, muted: !!f.skip },
+      title: f.entry ? f.entry.replace(/^\s*[-*+]\s+/, '').replace(/\s*\n\s*/g, ' ') : whyOf(f), wrap: true, preview: f.entry ? `Why: ${whyOf(f)}` : undefined,
+      badges: [[k.label, k.color, k.icon], [`${f.label}${f.line ? `:${f.line}` : ''}`, K.label, 'file'], held ? [held === 'a rule' ? 'Load-bearing rule' : 'Load-bearing', K.emerald, 'lock'] : null, [f.by === 'check' ? 'Proven by a check' : 'The model\'s judgement'], f.skip ? ['Left out', K.muted] : null],
       body: [
         ...f.evidence.map(id => { const e = ev.get(id); return e ? u.tag(`fe-${f.id}-${id}`, e.kind === 'run' ? (e.ok ? 'check' : 'cross') : e.kind === 'commit' ? 'commit' : e.kind === 'note' ? 'save' : 'turn', e.kind === 'run' ? (e.ok ? K.emerald : K.rose) : K.silver, `${e.ts.slice(5, 16).replace('T', ' ')} · ${e.text}`, K.label) : null }),
       ],
@@ -166,27 +173,29 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
 
   // the summary: a ring of how much of the memory holds up, what is waiting, and what each recent check found
   const total = last?.entryCount ?? 0
-  const sw = Math.max(160, px - 64) // the strip and the check line span the page
+  const sw = Math.max(160, px - 16) // the strip spans the page, edge to edge with the buttons above it
   const strip = noteStrip({ total, open: openList.length, fixed: appliedN, kept: keptN, width: sw })
   const dots = checkDots({ checks: recent.slice(0, 12).reverse().map(dotOf), width: Math.min(sw, 520) })
   const holdUp = Math.max(0, total - openList.length - appliedN - keptN)
-  const legend = ([[holdUp, NOTE_COLORS.ok, 'hold up'], [openList.length, NOTE_COLORS.open, 'waiting for you'], [appliedN, NOTE_COLORS.fixed, 'fixed'], [keptN, NOTE_COLORS.kept, 'kept']] as [number, string, string][]).filter(([v]) => v > 0)
-  const clearW = Math.round(Math.max(96, Math.min(140, px * 0.2))) // the all-clear robot grows with the pane, within reason
-  const headline = !last ? 'Not checked yet' : last.error ? 'The last check failed' : total ? `${holdUp} of ${total} notes hold up` : 'Nothing to check yet'
-  const when = running ? `Dreaming… started ${ago(minsSince(running.since))}` : last ? `Last checked ${ago(minsSince(last.ts))}${last.model ? ` · judged by ${last.model.replace(/^claude · /, '')}` : ' · quick check'}` : 'Press a button below to run the first check'
+  // the key skips "hold up": the headline says it
+  const legend = ([[openList.length, NOTE_COLORS.open, 'waiting for you'], [appliedN, NOTE_COLORS.fixed, 'fixed'], [keptN, NOTE_COLORS.kept, 'kept']] as [number, string, string][]).filter(([v]) => v > 0)
+  const clean = !!last && !last.error && !last.findings.length, allDone = live && !openList.length && decided.length > 0
+  const headline = !last ? 'Not checked yet' : last.error ? 'The last check failed' : !total ? 'Nothing to check yet' : clean || holdUp === total ? `All ${total} notes hold up` : `${holdUp} of ${total} notes hold up`
+  // a failure is said once: the headline in red, the reason under it (no second card further down)
+  const when = last?.error && !running ? `${last.error.replace(/^./, c => c.toUpperCase())} · ${ago(minsSince(last.ts))}` : running ? `Checking… started ${ago(minsSince(running.since))}` : last ? `Last checked ${ago(minsSince(last.ts))}${last.model ? ` · judged by ${last.model.replace(/^claude · /, '')}` : ' · quick check'}${clean ? ' · nothing to fix' : ''}` : 'Run a check to see which notes still hold'
   const head = (
     <Box key="dr-head" flexDirection="column" gap={1} paddingX={1}>
       <Box key="dr-hr" flexDirection="row" justifyContent="space-between" alignItems="flex-end" columnGap={3} rowGap={1} flexWrap="wrap">
         <Box flexDirection="column" gap={0} flexShrink={1} minWidth={20}>
-          <Text size="title" weight="semibold" color={openList.length ? K.amber : K.text}>{headline}</Text>
+          <Text size="title" weight="semibold" color={last?.error ? 'error' : K.text}>{headline}</Text>
           <Text size="caption" color={K.muted}>{when}</Text>
         </Box>
         <Box key="dr-btns" flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
           <Button key="kc-dream-checks" variant="secondary" onPress={() => { void act($, 'Checked', ['dream', 'run', '--no-model']) }}>Quick check (free)</Button>
-          <Button key="kc-dream" variant="primary" onPress={() => { void act($, 'Dream started', ['dream']) }}>{running ? 'Dreaming…' : 'Dream now (1–2 min)'}</Button>
+          <Button key="kc-dream" variant="primary" onPress={() => { void act($, 'Full check started', ['dream']) }}>{running ? 'Checking…' : 'Run full check (1–2 min)'}</Button>
         </Box>
       </Box>
-      {total ? u.graphic('dr-strip', strip, `${total} memory notes: ${legend.map(([v, , w]) => `${v} ${w}`).join(', ')}`) : null}
+      {total && !last?.error ? u.graphic('dr-strip', strip, `${total} memory notes: ${legend.map(([v, , w]) => `${v} ${w}`).join(', ')}`) : null}
       {/* a key only when there is more than one kind to tell apart: one kind would repeat the headline */}
       {legend.length > 1 ? <Box key="dr-lg" flexDirection="row" columnGap={3} rowGap={0} flexWrap="wrap">{legend.map(([v, c, w]) => <Text key={`dr-lg-${w}`} size="caption" color={K.label}><Text color={c}>■ </Text><Text weight="semibold" color={K.text}>{String(v)}</Text>{` ${w}`}</Text>)}</Box> : null}
       {/* one check is already said by "Last checked" above: the history line starts at two (never "The last 1 checks") */}
@@ -194,14 +203,15 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
         <Text size="caption" weight="semibold" color={K.label}>{`The last ${Math.min(12, recent.length)} checks`}</Text>
         {u.graphic('dr-dots', dots, `The last ${Math.min(12, recent.length)} checks: ${recent.slice(0, 12).map(d => d.findings.length).join(', ')} found, newest first`)}
       </Box> : null}
-      {u.muted('dr-cost', model ? `A Dream reads your last ${n} chats, test runs and commits, and asks ${model} to judge: about 10–25k tokens of your plan. A quick check is free and instant. Nothing changes until you choose.` : 'Both are free: with no model chosen in Settings, a Dream only flags what Cortex can prove.')}
+      {allDone ? <Text key="dr-done" size="caption" color={K.text}>{`All decided: ${appliedN ? `${appliedN} applied` : ''}${appliedN && keptN ? ', ' : ''}${keptN ? `${keptN} kept` : ''}. Each one can be undone below.`}</Text> : null}
+      {u.muted('dr-cost', model ? `Quick check: free and instant, for broken links, missing files and repeats. Full check: reads your last ${n} chats, test runs and commits and asks ${model} to judge, about 10–25k tokens${be === 'api' ? ', billed by your provider' : ' of your plan'}.` : 'Both are free: with no model chosen in Settings, a full check only flags what Cortex can prove.')}
     </Box>
   )
 
-  // the earlier Dreams whose fixes still stand (Undo works); the rest live in the history bars
+  // the earlier checks whose fixes still stand (Undo works); the rest live in the history bars
   const earlier = recent.slice(1).filter(d => d.status === 'applied').slice(0, 5)
   const openActs = openList.length
-    ? <Box key="dr-act" flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={1} rowGap={1} flexWrap="wrap">
+    ? <Box key="dr-act" flexDirection="row" alignItems="center" columnGap={1} rowGap={1} flexWrap="wrap">
         {last!.status === 'proposed' && !decided.length ? btn('kc-dream-discard', 'Discard all', () => { void act($, 'Discarded', ['dream', 'discard', last!.id]) }) : null}
         {applicable > 1 ? btn('kc-dream-apply', `Apply all ${applicable}`, () => dec(last!, 'all', 'apply', 'Applied'), true) : null}
       </Box>
@@ -210,30 +220,29 @@ export function dreamBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
 
   return (
     <Box flexDirection="column" gap={1}>
-      {u.intro('dr-in', pageScene('dream', 100), 'Cortex dreaming over notes', 'Memory check: is what Claude remembers still true?', `A Dream is a deep check that Claude's notes still match what really happened. A quick check is a free, instant check for broken links, missing files and repeats.`, companion('sleepy', px))}
+      {/* the mascots answer the page's state: reading over notes, cheering when all is clear or decided, worried on a failure */}
+      {u.intro('dr-in', clean || allDone ? clearSvg(100) : pageScene('dream', 100), clean || allDone ? 'Cortex cheering beside a tick: nothing waiting' : 'Cortex reading over notes', 'Is what Claude remembers still true?', 'Cortex compares Claude\'s memory notes with what really happened and suggests fixes. Nothing changes until you choose.', companion(clean || allDone ? 'happy' : last?.error ? 'worried' : 'sleepy', px))}
       {head}
-      {last?.error ? u.card('dr-err', '100%', [u.tag('dr-err-t', 'cross', K.rose, `The last Dream failed: ${last.error}`, K.text)], K.rose) : null}
       {last?.modelError ? u.tag('dr-merr', 'alert', K.amber, `The model step failed, so only Cortex's own checks ran: ${last.modelError}`, K.label) : null}
+      {/* your own key failed and Claude on your plan judged instead: said once, with the reason, so the key can be fixed */}
+      {last?.fallback && !last.modelError ? u.tag('dr-mfb', 'alert', K.amber, `Your own key's model (${last.fallback.from.replace(/^api · /, '')}) failed: ${last.fallback.why}. ${last.model?.replace(/^claude · /, '').replace(/^./, c => c.toUpperCase()) ?? 'Claude'} on your plan judged instead.`, K.label) : null}
       {last?.rejected?.length ? t.tile({
         id: `rj-${last.id}`, icon: 'cross', color: K.silver, lead: { kind: 'f-rejected', alt: 'Suggestions Cortex turned down' }, title: `Cortex turned down ${last.rejected.length} suggestion${last.rejected.length === 1 ? '' : 's'} from the model`, preview: 'The model wasn\'t sure enough, had no evidence, or it was about your own files outside this project.',
         badges: [['Proven by a check']],
         body: last.rejected.map((r, i) => <Text key={`rjt-${i}`} size="caption" color={K.muted}>{r}</Text>),
       }) : null}
-      {last && !last.error && !last.findings.length ? u.illo('dr-ok-i', clearSvg(clearW), 'Cortex cheering beside a tick: nothing to fix', [<Text key="dr-ok-t" weight="semibold" color={K.text}>Nothing to fix</Text>, u.muted('dr-ok-d', 'Claude\'s memory matches what really happened.')], true) : null}
-      {live && !openList.length && decided.length ? u.illo('dr-done-i', clearSvg(clearW), 'Cortex cheering beside a tick: all decided', [<Text key="dr-done-t" weight="semibold" color={K.text}>All decided</Text>, u.muted('dr-done-d', `${appliedN ? `${appliedN} applied` : ''}${appliedN && keptN ? ', ' : ''}${keptN ? `${keptN} kept` : ''}. Each one can be undone below.`)], true) : null}
       {last && last.status === 'undone' ? u.tag('dr-un', 'turn', K.silver, `Undone ${ago(minsSince(last.undone ?? last.ts))}: every file is back as it was.`, K.label) : null}
-      {openList.length ? t.groupHead('dr-fh', 'dream', K.amber, 'Waiting for you', String(openList.length)) : null}
-      {openActs}
+      {openList.length ? t.groupHead('dr-fh', 'dream', K.amber, 'Waiting for you', String(openList.length), openActs) : null}
       {openList.length ? t.stack('dr-fl', openList.map(f => findingTile(last!, f))) : null}
       {last?.kept ? u.muted('dr-kept', `${last.kept} note${last.kept === 1 ? '' : 's'} you kept before ${last.kept === 1 ? 'was' : 'were'} not flagged again.`) : null}
       {undoCount ? <Box key="dr-uh" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1} rowGap={1} flexWrap="wrap">
         {t.groupHead('dr-uhh', 'check', K.emerald, 'Fixes you can undo', String(undoCount))}
         {decided.length > 1 ? btn('kc-dream-undo', 'Undo all from this check', () => dec(last!, 'all', 'undo', 'Undone')) : null}
       </Box> : null}
-      {/* fixes you can undo: rows on one card (craft: lists are rows), this check's first, then earlier Dreams' */}
+      {/* fixes you can undo: rows on one card (craft: lists are rows), this check's first, then earlier checks' */}
       {decided.length || earlier.length ? t.rows('dr-ul', [...decided.map(f => decidedTile(last!, f)), ...earlier.map(d => t.tile({
         flat: true, id: `dh-${d.id}`, icon: 'dream', color: K.emerald,
-        lead: { kind: 'dream-ok', alt: 'A Dream whose fixes were applied' }, title: oneFix(d) ? outcomeText(oneFix(d)!) : `${d.findings.filter(f => f.done === 'applied').length || d.findings.length} fixes applied`, time: ago(minsSince(d.ts)),
+        lead: { kind: 'dream-ok', alt: 'A memory check whose fixes were applied' }, title: oneFix(d) ? outcomeText(oneFix(d)!) : `${d.findings.filter(f => f.done === 'applied').length || d.findings.length} fixes applied`, time: ago(minsSince(d.ts)),
         badges: [[STATUS[d.status] ?? d.status, K.emerald], [d.model ? `Judged by ${d.model.replace(/^claude · /, '')}` : 'Quick check']],
         body: [t.twig(`dht-${d.id}`, d.findings.slice(0, 8).map(f => ({ el: fixLine(`dhf-${d.id}-${f.id}`, f), lines: fixLines(f) })), K.emerald, 22)], // the wire starts at the tile's Applied badge
         quick: [btn(`kc-undo-${d.id}`, 'Undo', () => { void act($, 'Undone', ['dream', 'undo', d.id]) })],

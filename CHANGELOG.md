@@ -2,6 +2,48 @@
 
 All notable changes to Kapex Cortex. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). Numbers are measured on an Apple M4 (macOS, Node 26) with `node scripts/benchmark.ts` unless marked otherwise.
 
+## [4.6.0] - 2026-11-28
+
+Positioning and precision: Cortex says plainly what it adds to Claude Code's own memory, and its handoff keeps only what you really said.
+
+### Changed
+- **AMOLED black is the default dark theme** (Settings → Look; light and dark still follow the app). A ground you saved earlier is kept.
+- **The strip leaves the 5-hour and weekly plan to Claude Code**, whose prompt box now shows both; the amber "5h plan 70%" tip is gone too. Cortex still speaks up at 90%, with a move (hand off and continue in OpenCode). The Overview and Costs pages keep the plan cards.
+- **Dream is now the Memory check.** A *quick check* (no model, no tokens) and a *full check* (reads your recent chats, asks a model) everywhere you read it: panel, strip, notifications, CLI, docs. `kc c` and `kc check` are new; `kc d`, `kc dream`, the pref keys and `.vault/dreams/` are unchanged.
+- **README: how Cortex differs** from auto memory and `/doctor prompt-audit`.
+- **Overview names the real memory limit**: auto memory past 200 lines or 25 KB is cut silently by Claude Code; a long `CLAUDE.md` loads whole but is followed less well. It used to say "first 200 lines" for both.
+- **Contour is the default backdrop**, and no icon sits in a circle (both from v4.10, as decided then).
+
+### Added
+- **Mission steps, ticked against your tests.** A numbered list in your own message (typed or pasted; never a reply you quote) becomes the mission's steps, word for word, carried through every handoff. Claude ticks a step with `kc mission done <n>` when it is finished; Cortex calls a tick *verified* only while the newest check run at or after it passed, says *check failing* when a later one fails, and *not verified* when none ran. You can tick, untick or drop any step on the Handoff page; the mission never closes by itself: when every step is done, one press closes it. `kc mission` lists them (`add`, `drop`, `open`, `close`, `reopen`). Ticks live in `.vault/private/mission-marks.jsonl`, keyed by mission, so a contract rebuilt from the transcript keeps them.
+- **Claude's own "Step 2 is done" ticks the step**, so a first chat (which has never seen the tick command) still checks off what it finished. Strict: the sentence must start with the step and say it is done; "once step 2 is done", "step 3 is not finished" and questions never count; one reply ticks once, even if you untick it later.
+- **Ticks name their mission** (`--mission <id>`, given in STATE.md's Steps line and by every panel press), so two chats or worktrees never tick each other's steps; STATE.md spells the exact command that works from the chat's shell (an older `kc` on the PATH has no `mission`), and OpenCode's `/cortex-resume` explains the steps too. Found by an end-to-end run Claude Code → OpenCode → Claude Code.
+- **The Mission card** on the Handoff page (Stageshow pass): one progress ring, the north star as the title, what's left first, finished steps folded with their proof, your rules folded into one line.
+- **Rules keep their reason.** The sentence right after a rule that says why ("Never run docker here. It eats the 16 GB.") rides with it into the mission contract (`— why: …`), so a later chat or another model knows what the guardrail protects.
+- **Load-bearing notes are never offered for removal.** Neither Cortex's own checks nor the model's judgment offer to delete or rewrite a rule, a note under a "Tried and failed"-style heading, or a note that is mostly your current task's own rules; they show it instead. A duplicate copy can still go, since the other copy keeps the guardrail.
+- **Full-check judge** (from v4.10): Claude on your plan (Haiku, Sonnet or Opus, with a thinking level) or your own key; when your key fails, Claude judges instead and the report says why.
+- **Carry on in OpenCode** card on the Handoff page (from v4.10), with OpenCode found on Windows too (`opencode.exe`, npm's `.cmd`).
+
+### Fixed
+- **The strip no longer suggests a handoff you just made.** After Hand off it says "Handoff saved · paste /cortex-resume in a new chat" with Copy again, until a reply in this chat; the Overview's mascot calms down too.
+- **The header chip clears itself** and says what changed ("Dark mode: AMOLED black", "Suggest a fresh chat at: 70% full", "Handoff saved"), never a bare "Saved" that stayed up for good; a failure says so and stays 15 s; a chip whose timer died with a plugin reload stops showing anyway.
+- **The 5-hour plan's "now" marker is labelled and keeps up.** Clock times sit on the hour boundaries (start … reset) instead of under each block, where the current block's start time in emerald read as "the time now"; the marker says "now" and moves in 10-minute steps even while the chat sits idle with a cold cache.
+- **The intro's Undo drawing** is the usual undo arrow, drawn whole inside its frame (its arc ran past the edge and was clipped).
+- **Copy again** shows a chip in the strip too.
+- **The memory check never calls a runtime or main-checkout path stale.** A path counts as gone only when it is missing from every checkout of the repo (a worktree's notes often name files in the main checkout), and files a program makes as it runs (`.vault/private/`, `*.log`, `*.jsonl`, `*.lock`, `*.pid`) never count: an `errors.log` that doesn't exist until the first error once got a hard-limit rule offered for removal.
+- **Open items** in the Handoff preview count only the packet's open items, never the mission's steps.
+- **`package.json`** says memory check, not Dreams.
+- **README: no "0 tokens added" badge.** Cortex injects nothing into your prompts, but its panel tool's name costs about 85 tokens a message (measured); the badge and intro now say exactly that.
+- **A `!command`'s output is never a rejection.** Git printing `! [rejected]` after a push you typed no longer lands under *Rejected* in the contract.
+- **An earlier reply quoted inline** (`…for context: {` … `}`) is quoted text, not your standing instructions.
+- **Pleas and cut-off dictation never bind**: "don't make mistakes" or a sentence that stops at "and." or "the." is no longer a never-rule taking a slot from a real one ("…unless I say so." and "…until I tell you to." stay rules). Contracts inherited from older chats shed these once; every other pin is carried as it was.
+- **An inline quote ends where it really ends**: a `}` inside the quoted reply's own code block no longer closes it early, and Windows line endings quote too.
+- **Your own key's model survives split settings**: switching to your key in one settings file while the model name sits in the other no longer resets it to Sonnet.
+- **OpenCode installed through npm on Windows** (`opencode.cmd`) reports its version, so set-up picks the right command folder.
+- **Set-up never removes your own OpenCode command**: only a file whose front matter names Kapex Cortex.
+
+Measured: 138 core + 166 panel tests; memory check 6/6 with 0 false positives; handoff 10/10 (~1.1k tokens); telephone 13/13 probes, 7/7 facts (v4.0.0: 3/7); Stop hook p95 55.6–58.4 ms on a quiet machine (main: 56.9–57.4), and per turn across the 5-chat script, main vs v4.6 interleaved: p50 73.9 vs 72.0 ms, p95 93.3 vs 84.6 ms.
+
 ## [4.5.2] - 2026-11-25
 
 Handoff reliability: nothing in the contract or the handoff note is lost or contradicted without saying so.

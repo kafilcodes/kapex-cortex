@@ -2,8 +2,8 @@ import type { Hook } from 'claude-code'
 
 import type { StatusView, Tab } from '../types'
 import { prettyModel } from './charts'
-import { act, chooseProject, planLimits, readFail, readOff, refresh, refreshNow, refreshSoon, setSub, setTab, snapshot, statusOrSaved, toReview, type Dollar } from './data'
-import { healthRing, icon } from './icons'
+import { act, chooseProject, noteTone, planLimits, readFail, readOff, refresh, refreshNow, refreshSoon, setSub, setTab, snapshot, statusOrSaved, toReview, type Dollar } from './data'
+import { icon } from './icons'
 import { introPage, introSeen } from './intro'
 import { kit } from './kit'
 import { LOGO_SIZE, LOGO_SVG } from './logo'
@@ -59,10 +59,11 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
   const px = Math.max(220, Math.min(1400, cols * 7.2))
   const failed = await readFail($)
   const { o, dir } = await readOff($)
-  /** The last action's note as a status chip: an icon that says how it went, then its words (a tick and "Saved",
-   * a pending dot and "Saving the handoff…", an amber alert and the error). Tinted, borderless, like a badge. */
+  /** The last action's note as a status chip: an icon that says how it went, then its words (a tick and "Dark mode:
+   * AMOLED black", a pending dot and "Saving the handoff…", an amber alert and the error). Tinted, borderless, like a
+   * badge; it clears itself a few seconds after the outcome (data.ts say). */
   const statusChip = (m: string) => {
-    const working = /…$/.test(m), failed = !working && /^(?:Couldn'?t|Could not)|: (?!done$).+/.test(m) && !/^(?:Handoff saved|Refreshed at|Turned (?:off|on))/.test(m)
+    const tone = noteTone(m), working = tone === 'working', failed = tone === 'failed'
     const [ic, c] = working ? ['pending', K.silver] : failed ? ['alert', K.amber] : ['check', K.emerald]
     return (
       <Box key="kc-status" flexDirection="row" gap={1} alignItems="center" backgroundColor={`${c}1F`} paddingX={1} flexShrink={1}>
@@ -136,7 +137,7 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
   const tip = tipFor(s, l, cv, limits, switchDue(s, l, cv, vw)) // derived from inputs already in the key: computed only on a real redraw
   const ctx = { els, u, s, l, current: page, wip: s.git?.wip, five: limits.find(x => x.kind === 'five_hour'), px, vw, asked }
   // a page that throws shows why and a way back, never a blank pane (the other tabs keep working)
-  const built = safely(() => intro ? introPage($, els, u, vw, px, bodyRows)
+  const built = safely(() => intro ? introPage($, els, u, vw, px, bodyRows, s?.footprint?.tokens)
     : page === 'timeline' ? timelinePage($, els, u, s, vw, px, older)
     : page === 'data' ? dataPage($, ctx)
     : page === 'handoff' ? handoffPage($, ctx)
@@ -173,7 +174,7 @@ export async function renderPane($: Dollar, e: PaneEvent): Promise<JSX.Element> 
           </Box>
         </Box>
         <Box flexDirection="row" gap={1} alignItems="center">
-          {needs.length && u.Svg ? <u.Svg key="kc-health" source={healthRing(false)} alt="Needs you" width={18} height={18} /> : null}
+          {needs.length && u.Svg ? <u.Svg key="kc-health" source={icon('alert', K.amber, 16)} alt="Needs you" width={16} height={16} /> : null}
           {needs.length ? <Text size="caption" weight="medium" color={K.amber}>{needs.join(' · ')}</Text> : null}
           {msg ? statusChip(msg) : null}
           <Button key="kc-refresh" hotkey="r" variant="secondary" onPress={() => { void refreshNow($) }}>Refresh</Button>

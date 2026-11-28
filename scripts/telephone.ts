@@ -77,6 +77,9 @@ const line = (o: object) => JSON.stringify(o) + "\n";
 /** Runs the five chats against `hook` in the project at `root` (a git repo with Cortex on). Returns chat 5's packet. */
 export function runTelephone(root: string, hook: string, env: NodeJS.ProcessEnv = process.env): { packet: string; perChat: string[]; ms: number[] } {
   clock = Date.parse("2026-11-20T09:00:00Z");
+  // chat 3 ends on a simulated usage limit: the real hook would answer it with a real macOS notification, so this script
+  // never lets one out, whoever calls it (the temp-folder guard in notify-guard.ts would stop it too)
+  env = { ...env, CORTEX_NO_NOTIFY: "1" };
   const run = (event: string, input: object) => {
     const t = performance.now();
     const r = spawnSync(process.execPath, [hook, event, "--plugin"], { input: JSON.stringify(input), env, encoding: "utf8" });

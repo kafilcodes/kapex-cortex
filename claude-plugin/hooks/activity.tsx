@@ -91,7 +91,8 @@ export function workCard(els: ElementTable, u: Kit, s: StatusView, px: number): 
   const hourName = (h: number) => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`
   return u.card('work', '100%', [
     u.head('work-h', 'When and how you work with Claude', `${replies.toLocaleString()} replies${calls ? ` · ${calls.toLocaleString()} tool calls` : ''}`),
-    <Box key="work-r" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={4} rowGap={2}>
+    // both charts hang from the card's top: centring the short grid against the tall radar left an empty band above it
+    <Box key="work-r" flexDirection="row" flexWrap="wrap" alignItems="flex-start" columnGap={4} rowGap={2}>
       {replies >= 10 && hours ? <Box key="work-t" flexDirection="column" gap={1} flexShrink={0}>
         <Text size="caption" weight="medium" color={K.label}>Replies by weekday and hour</Text>
         {u.graphic('work-g', hourGrid({ counts: hours, width: gridW, animate: animateFor('hours', String(replies)) }), `Replies by weekday and hour; busiest ${peak ? `${DAYS[peak.d]} around ${hourName(peak.h)}` : 'unknown'}`)}

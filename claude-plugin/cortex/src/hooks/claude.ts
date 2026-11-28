@@ -4,7 +4,8 @@ import { rotateJsonl } from "../util/atomic.ts";
 import { tryLock } from "../util/lock.ts";
 import { autoDreamDue, cliFromHook, spawnDream, spawnQuick } from "../core/dream-spawn.ts";
 import { quickDue } from "../core/quick.ts";
-import { notifyMac, prepareNotifier } from "../core/notifier.ts";
+import { readPrefs } from "../core/prefs.ts";
+import { notifyMac, prepareNotifier, SOUND } from "../core/notifier.ts";
 import { accumulate, finalize, realReply } from "../core/episodes.ts";
 import { saveExchange } from "../core/exchanges.ts";
 import { migrateV2 } from "../core/migrate.ts";
@@ -68,7 +69,7 @@ export function handleClaude(event: string, p: RepoPaths, input: ClaudeHookInput
   switch (event) {
     case "sessionstart": {
       migrateV2(p); // once, for a project that still has a v2 ledger
-      try { prepareNotifier(cliFromHook()); } catch { /* the Cortex notifier app is built in the background, once */ }
+      try { prepareNotifier(cliFromHook(), p.root); } catch { /* the Cortex notifier app is built in the background, once */ }
       try { refreshOwnSkills(); } catch { /* never break the hook */ }
       capture(p, input);
       if (input.source === "compact") return ""; // Claude Code re-reads CLAUDE.md and rules after a compaction by itself
@@ -107,7 +108,8 @@ export function handleClaude(event: string, p: RepoPaths, input: ClaudeHookInput
       // a usage limit stamps this chat's own packet (never another chat's that happens to be newest)
       updateState(p, { ...input, last_assistant_message: partial ? `${partial}\n\n${note}` : prev ? `${prev}\n\n${note}` : note }, true, false, input.error === "rate_limit" ? "Claude rate limit" : undefined);
       if (input.error === "rate_limit") {
-        notify("Kapex Cortex", "Claude hit its usage limit. Handoff saved: open OpenCode and run /cortex-resume.");
+        // once for every chat that hits the limit together (notify-guard), with the alert sound when Sounds is on
+        notify("Kapex Cortex", "Claude hit its usage limit. Handoff saved: open OpenCode and run /cortex-resume.", { cwd: p.root, sound: readPrefs(p).sound !== false ? SOUND.alert : null });
       }
       return "";
     }

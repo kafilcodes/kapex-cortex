@@ -4,12 +4,15 @@ import { toggleExpanded, type Dollar } from './data'
 import type { Kit } from './kit'
 import { icon } from './icons'
 import { lead as leadSvg, type Lead } from './leads'
-import { K } from './theme'
+import { HEAT, K } from './theme'
 
 // Structured pieces shared by every page: tinted badges, small metrics, a segmented control and the expandable tile
 // (collapsed by default: icon, title, time, badges and a short preview; Expand shows the rest and its actions).
 export type Tiles = ReturnType<typeof tiles>
 const tint = (c: string, a = '24') => (/^#[0-9A-F]{6}$/i.test(c) ? `${c}${a}` : K.pill)
+/** A badge's words: mid-tone status hexes wash out on a light ground (amber on Mist is under 2:1), so the words take
+ * the theme's own success / warning / error keys (AA on Obsidian and Mist); the tint behind them keeps the hex. */
+export const ink = (c: string): string => (c === K.amber || c === HEAT.warn || c === HEAT.high ? 'warning' : c === K.rose ? 'error' : c === K.emerald || c === K.sage ? 'success' : c === K.silver ? K.label : c)
 /** First `n` characters on a word boundary, with … when cut. */
 export const preview = (t: string, n = 140) => (t.length <= n ? t : `${t.slice(0, n).replace(/\s+\S*$/, '').replace(/[\s.…,;:]+$/, '')}…`) // one ellipsis, never "……"
 
@@ -46,7 +49,7 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[], 
   const badge = (key: string, text: string, color: string = K.label, ic?: string) => (
     <Box key={key} flexDirection="row" gap={1} alignItems="center" backgroundColor={tint(color)} paddingX={1}>
       {ic && u.Svg ? <u.Svg key={`${key}-i`} source={icon(ic, color === K.label ? K.silver : color, 11)} alt={`${ic} icon`} width={11} height={11} /> : null}
-      <Text size="caption" weight="medium" color={color}>{text}</Text>
+      <Text size="caption" weight="medium" color={ink(color)}>{text}</Text>
     </Box>
   )
   /** The L-shaped connector beside one tile. Its Box is one row tall and centred on the tile by the layout (the row
@@ -149,7 +152,7 @@ export function tiles($: Dollar, els: ElementTable, u: Kit, expanded: string[], 
       {items.map(([id, label]) => (
         <Box key={`segb-${id}`} paddingX={1} alignItems="center" {...(id === current ? { backgroundColor: `${K.emerald}38` } : {})}>
           <Button key={`sub-${id}`} plain onPress={() => { if (id !== current) pick(id) }}>
-            <Text size="caption" weight={id === current ? 'semibold' : 'medium'} color={id === current ? K.emerald : K.label}>{label}</Text>
+            <Text size="caption" weight={id === current ? 'semibold' : 'medium'} color={id === current ? K.text : K.label}>{label}</Text>
           </Button>
         </Box>
       ))}

@@ -35,7 +35,7 @@ test('preview', async ($, on) => {
   const band: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: { bodyColumns: 80 } } as any)
   out('strip', await band.drawn()); await band.unmount()
   // the strip as the chat fills: warning (65%), high with a suggestion (85%), critical (95%), and narrow
-  for (const [p, cols] of [[65, 80], [85, 80], [95, 80], [85, 56], [85, 112], [95, 112]] as const) {
+  for (const [p, cols] of [[65, 80], [85, 80], [95, 80], [85, 56], [85, 112], [95, 112], [42, 44], [42, 84], [42, 160], [85, 44], [85, 84], [85, 160], [95, 84]] as const) {
     PCT = p
     await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: `h${p}${cols}`, usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 9_700, cache_creation_input_tokens: 200 } } as any)
     const b: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: { bodyColumns: cols } } as any)
@@ -47,7 +47,8 @@ test('preview', async ($, on) => {
     const pane: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'Pane', requestId: 'kapex-cortex', surface: 'desktop', props: { title: 'Kapex Cortex', isFocused: false, bodyColumns: 120, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } } as any)
     try { await pane.press({ key: 'tab-handoff' }); await pane.press({ key: 'kc-hand3' }) } catch {}
     const b2: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: { bodyColumns: 80 } } as any)
-    out('strip-flash', await b2.drawn()); await b2.unmount(); await pane.press({ key: 'tab-overview' }); await pane.unmount()
+    out('strip-flash', await b2.drawn()); await b2.unmount()
+    for (const c of [44, 84, 160]) { const b3: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'AbovePrompt', surface: 'desktop', props: { bodyColumns: c } } as any); out(`strip-flash-${c}`, await b3.drawn()); await b3.unmount() } await pane.press({ key: 'tab-overview' }); await pane.unmount()
   }
   for (const bodyColumns of COLS) {
     const ui: any = await $.ui.mount({ plugin: 'kapex-cortex', component: 'Pane', requestId: 'kapex-cortex', surface: 'desktop', props: { title: 'Kapex Cortex', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } } as any)

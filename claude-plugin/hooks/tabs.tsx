@@ -2,6 +2,7 @@ import type { ElementTable } from 'claude-code'
 
 import type { AskView, LiveView, StatusView, Tab, ViewState } from '../types'
 import { handoffTop } from './handoff-top'
+import { contractCard } from './contract-card'
 import { ago, minsSince, setSub, type Dollar } from './data'
 import { tidy } from './text'
 import type { Kit } from './kit'
@@ -9,6 +10,7 @@ import { dreamBody } from './dream-tab'
 import { filesBody } from './files-tab'
 import { illoHandoff } from './illos'
 import { chainSvg } from './handoff-art'
+import { opencodeCard } from './opencode-card'
 import { k } from './charts'
 import { pageScene } from './mascot'
 import { K } from './theme'
@@ -30,7 +32,7 @@ export type Ctx = {
   asked?: AskView | null
 }
 export const SUBS = ['dream', 'files'] as const
-const FROM: Record<string, string> = { 'claude-code': 'Claude Code', opencode: 'OpenCode', hermes: 'Hermes' }
+const FROM: Record<string, string> = { 'claude-code': 'Claude Code', opencode: 'OpenCode', hermes: 'Hermes', manual: 'kc handoff' }
 
 export function dataPage($: Dollar, o: Ctx): JSX.Element {
   const { s, u, vw } = o
@@ -62,7 +64,7 @@ export function handoffPage($: Dollar, o: Ctx): JSX.Element {
         w.ran ? { icon: 'test', value: `${w.ran - w.failed} of ${w.ran}`, label: 'checks passed', color: w.failed ? K.amber : K.emerald } : { icon: 'test', value: 'none', label: 'checks run' },
         { icon: 'spark', value: k(w.out), label: 'tokens Claude wrote' },
       ]) : null,
-      x.next ? u.tag(`hsn-${id}`, 'pending', K.amber, `Next: ${tidy(x.next, 200)}`, K.label) : null,
+      x.next ? u.tag(`hsn-${id}`, 'next', K.amber, `Next: ${tidy(x.next, 200)}`, K.label) : null,
       x.lastCheck ? u.tag(`hsk-${id}`, /FAILED/.test(x.lastCheck) ? 'cross' : 'test', /FAILED/.test(x.lastCheck) ? K.rose : K.emerald, `Last check: ${x.lastCheck}`, K.label) : null,
       pinned.length ? u.tag(`hsp-${id}`, 'star', K.emerald, `The note pins ${pinned.join(' · ')}`, K.label) : null,
       <Text key={`hss-${id}`} size="caption" color={K.muted}>{`Chat id ${id}${x.continues ? ` · continued ${x.continues.session.slice(0, 8)}` : ''}`}</Text>,
@@ -72,8 +74,9 @@ export function handoffPage($: Dollar, o: Ctx): JSX.Element {
   const oneFrom = (hv?.states.length ?? 0) > 1 && froms.size === 1 ? [...froms][0]! : null
   return (
       <Box flexDirection="column" gap={1}>
-        {u.intro('h-in', pageScene('handoff', 110), 'Cortex handing its note to Blocky, who picks the work up next', 'Handoff: your place, saved so a new chat can pick it up', 'Cortex saves it after every reply. Type /cortex-resume in a new chat and Claude carries on from here.', companion('happy', o.px))}
-        {handoffTop($, o, o.asked ?? null)}
+        {u.intro('h-in', pageScene('handoff', 110), 'Cortex handing its note to Blocky, who picks the work up next', 'Your place, saved so a new chat can pick it up', 'Cortex saves it after every reply. Type /cortex-resume in a new chat and Claude carries on from here.', companion('happy', o.px))}
+        {/* the contract is part of what a new chat gets: right under that card and its buttons, before the Goldfish check */}
+        {(top => [...top.slice(0, 2), contractCard($, o.els, u, s.handoff.preview?.contract, vw, o.px), ...top.slice(2)])(handoffTop($, o, o.asked ?? null))}
         {u.card('h-git', '100%', [
           u.head('h-git-h', 'Your code right now', s.git ? `on ${s.git.branch}` : undefined),
           // one light row of figures (no boxes: the card is the container), then one sentence on what it means
@@ -84,8 +87,8 @@ export function handoffPage($: Dollar, o: Ctx): JSX.Element {
           ]) : u.muted('h-nogit', 'Not a git repo.'),
           s.git ? u.tag('h-git-say', s.git.dirty + s.git.untracked ? 'pending' : 'check', s.git.dirty + s.git.untracked ? K.amber : K.emerald,
             s.git.dirty + s.git.untracked ? 'Uncommitted work: each handoff snapshots it (refs/cortex/wip), so a new chat can see exactly what changed.' : 'Everything is committed: a new chat starts from a clean tree.', K.label) : null,
-          u.muted('h3', 'Hit a usage limit? Type /cortex-resume in OpenCode to carry on with a free model.'),
         ])}
+        {opencodeCard($, o.els, u, s)}
         {!hv || (!hv.states.length && !hv.wips.length) ? u.illo('hh-none', illoHandoff(170), 'No handoffs yet', [<Text key="hh-none-t" weight="semibold" color={K.text}>No earlier handoffs yet</Text>, u.muted('hh-none-d', 'Each chat that ends here leaves one.')]) : (
           <Box key="hh" flexDirection="column" gap={1}>
             {/* say it once: when every handoff came from one tool, the head names it and the rows don't repeat it */}

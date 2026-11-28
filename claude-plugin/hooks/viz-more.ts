@@ -12,14 +12,16 @@ const ease = 'calcMode="spline" keyTimes="0;1" keySplines="0.2 0.8 0.2 1" fill="
 const f1 = (n: number) => n.toFixed(1)
 
 /** A meter cut into `n` equal segments, filled left to right to the share used (the current segment partly). With
- * labels, one under each segment (the current one, `today`, in emerald); with `now`, a small marker above the bar at
- * where "now" is in the window, so use reads against time. The 5-hour plan and the week share this one shape, gap,
- * height and corner, so the two meters line up as a pair. Everything is drawn inside the declared height. */
-function segBar(o: { n: number; share: number; width: number; now?: number; today?: number; labels?: string[]; animate: boolean; step: number }): string {
+ * `labels`, one under each segment (the current one, `today`, in emerald: the week's days); with `edges`, n + 1 clock
+ * times on the boundaries instead (the 5-hour plan: 6:50 … 11:50, so no block reads as "the time now"); with `now`, a
+ * small marker above the bar at where "now" is in the window, and with `nowWord` that word beside it, so use reads
+ * against time. The 5-hour plan and the week share this one shape, gap, height and corner, so the two meters line up
+ * as a pair. Everything is drawn inside the declared height. */
+function segBar(o: { n: number; share: number; width: number; now?: number; today?: number; labels?: string[]; edges?: string[]; nowWord?: string; animate: boolean; step: number }): string {
   const W = Math.round(o.width), n = o.n, gap = 4, bw = (W - gap * (n - 1)) / n
-  const lab = o.labels?.length === n, mark = o.now !== undefined
+  const lab = o.labels?.length === n, edge = !lab && o.edges?.length === n + 1, mark = o.now !== undefined
   // air above the marker (it never touches the value row) and under the labels (they never touch the caption)
-  const top = mark ? 11 : 0, BH = 10, H = top + BH + (lab ? 21 : 4)
+  const top = mark ? 11 : 0, BH = 10, H = top + BH + (lab || edge ? 21 : 4)
   const s = Math.max(0, Math.min(1, o.share)), col = levelColor(s, 0.7, 0.9)
   const segs = Array.from({ length: n }, (_, i) => {
     const x = i * (bw + gap), part = Math.max(0, Math.min(1, s * n - i)), w = part * bw
@@ -28,14 +30,35 @@ function segBar(o: { n: number; share: number; width: number; now?: number; toda
     const t = lab ? `<text x="${f1(x + bw / 2)}" y="${top + BH + 14}" text-anchor="middle" ${FONT} font-size="10" font-weight="${on ? 650 : 450}" fill="${on ? K.emerald : K.ink}">${esc(o.labels![i]!)}</text>` : ''
     return `<rect x="${f1(x)}" y="${top}" width="${f1(bw)}" height="${BH}" rx="3" fill="${K.pill}"/>${fill}${t}`
   }).join('')
+  // boundary times: the first starts at the left edge, the last ends at the right one, the rest centre on their gap;
+  // an inner one that would come within 8 px of its neighbours is left out (the first and last always show)
+  let edges = ''
+  if (edge) {
+    const at = (i: number) => (i === 0 ? 0 : i === n ? W : i * (bw + gap) - gap / 2)
+    const span = (i: number) => { const w = textWidth(o.edges![i]!, 10), x = at(i); return i === 0 ? [x, x + w] : i === n ? [x - w, x] : [x - w / 2, x + w / 2] }
+    const last = span(n)
+    let prevEnd = -Infinity
+    for (let i = 0; i <= n; i++) {
+      const [a, b] = span(i)
+      if (i > 0 && i < n && (a! - prevEnd < 8 || last[0]! - b! < 8)) continue
+      prevEnd = b!
+      edges += `<text x="${f1(at(i))}" y="${top + BH + 14}" text-anchor="${i === 0 ? 'start' : i === n ? 'end' : 'middle'}" ${FONT} font-size="10" font-weight="450" fill="${K.ink}">${esc(o.edges![i]!)}</text>`
+    }
+  }
   const mx = mark ? Math.max(4, Math.min(W - 4, o.now! * W)) : 0
   const marker = mark ? `<path d="M${f1(mx - 4)} 2.5H${f1(mx + 4)}L${f1(mx)} 7.5Z" fill="${K.emerald}" stroke="${K.emerald}" stroke-width="1" stroke-linejoin="round"/>` : ''
-  return svg(W, H, segs + marker)
+  // the word beside the marker, on the side with room
+  const ww = o.nowWord ? textWidth(o.nowWord, 10, 600) : 0
+  const word = mark && o.nowWord ? (mx + 7 + ww <= W
+    ? `<text x="${f1(mx + 7)}" y="8.5" ${FONT} font-size="10" font-weight="600" fill="${K.emerald}">${esc(o.nowWord)}</text>`
+    : `<text x="${f1(mx - 7)}" y="8.5" text-anchor="end" ${FONT} font-size="10" font-weight="600" fill="${K.emerald}">${esc(o.nowWord)}</text>`) : ''
+  return svg(W, H, segs + edges + marker + word)
 }
 
-/** The 5-hour plan as five one-hour blocks; with the window known, each hour's clock time under it and "now" above. */
-export function hours(o: { share: number; width: number; now?: number; today?: number; labels?: string[]; animate: boolean }): string {
-  return segBar({ ...o, n: 5, step: 0.12 })
+/** The 5-hour plan as five one-hour blocks; with the window known, the clock time at each hour's boundary under it
+ * (start … reset) and "now" above, where the time now falls in the window. */
+export function hours(o: { share: number; width: number; now?: number; edges?: string[]; animate: boolean }): string {
+  return segBar({ ...o, n: 5, step: 0.12, nowWord: o.now !== undefined ? 'now' : undefined })
 }
 
 /** The week as the 5-hour meter's sibling: seven day segments, day initials under them from the day the week began,

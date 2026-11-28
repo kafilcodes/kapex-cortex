@@ -37,9 +37,10 @@ const ART: Record<PointArt, (live: boolean, t: number) => string> = {
   evidence: (l, t) => [7, 16, 25].map((y, i) => `${bar(17, y - 1.5, 20)}${rise(l, t + i * 0.15, `<path d="M7 ${y}l2.5 2.5 4.5-5" stroke="${E}" stroke-width="2"/>`)}`).join(''),
   // you decide: Apply and Keep, the choice lighting up
   decide: (l, t) => `<rect x="3" y="10" width="18" height="12" rx="4" fill="${E}">${once(l, 'fill-opacity', 0.3, 1, t + 0.2, 0.4)}</rect><rect x="24" y="10" width="17" height="12" rx="4" stroke="${G}" stroke-opacity="0.6" stroke-width="1.4"/>${bar(7, 14.5, 10, '#fff', 0.9)}${bar(28, 14.5, 9)}`,
-  // undo: a note with an arrow curling back
+  // undo: a note with the usual undo arrow beside it (a hook curling back to an arrowhead pointing left), drawn whole
+  // inside the 44 × 32 frame: x 27–40, y 8–24 (v4.6.0's arc ran past the right edge and was clipped)
   undo: (l, t) => `<rect x="5" y="7" width="18" height="20" rx="3" fill="${G}" fill-opacity="0.1" stroke="${G}" stroke-opacity="0.5" stroke-width="1.5"/>${bar(9, 13, 10)}${bar(9, 19, 7)}`
-    + `<path d="M38 22a8 8 0 1 0-8 -10" stroke="${E}" stroke-width="2" stroke-dasharray="40" stroke-dashoffset="0">${once(l, 'stroke-dashoffset', 40, 0, t, 0.8)}</path><path d="M26.5 9.5L30 12l2-4" stroke="${E}" stroke-width="2"/>`,
+    + `<path d="M28 12h6a5.75 5.75 0 0 1 0 11.5h-4" stroke="${E}" stroke-width="2" stroke-dasharray="29" stroke-dashoffset="0">${once(l, 'stroke-dashoffset', 29, 0, t, 0.8)}</path><path d="M31.2 8.8L28 12l3.2 3.2" stroke="${E}" stroke-width="2"/>`,
 }
 
 const made = new Map<string, string>()

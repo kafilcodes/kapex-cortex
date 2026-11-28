@@ -6,12 +6,12 @@ import { HEAT, K } from './theme'
 // One tip at a time for the status strip and the Overview, from data already on hand, as a traffic light:
 //   act  (rose)   a move worth making now, with what it saves: hand off before a cold re-read or compaction
 //   warn (amber)  something to know, and that it's fine to continue: the cache cooling, context or plan filling up,
-//                 memory to review, tools you never use, a Dream that's due
+//                 memory to review, tools you never use, a full check that's due
 //   ok   (emerald) a fresh chat with a handoff from another chat: continue from it
 // No tip means all is well (the strip says so). Short words in the strip (`text`); in the panel a headline (`head`) and
 // the reason (`detail`), also on hover. A tip with an action is Cortex's recommendation: its head starts "Cortex suggests:"
 // and says the move first; a tip without one says what Cortex noticed. No em dashes.
-export type TipAction = 'handoff' | 'dream' | 'review' | 'costs' | 'resume'
+export type TipAction = 'handoff' | 'dream' | 'review' | 'costs' | 'resume' | 'memory'
 export type Tip = { level: 'act' | 'warn' | 'ok'; icon: string; text: string; /** fewer words for a narrow strip */ short?: string; /** the same as a plain sentence, for the panel's headline */ head?: string; detail: string; color: string; action?: TipAction }
 
 const DAY = 24 * 60
@@ -45,10 +45,13 @@ export function tipFor(s: StatusView, l: LiveView | null, cv: CacheView, limits:
   if (l && l.turns === 0 && other && s.handoff.exists && s.handoff.ageMinutes !== null && s.handoff.ageMinutes < 3 * DAY) return { level: 'ok', icon: 'link', color: K.emerald, action: 'resume', text: `Continue: /cortex-resume · ${ago(s.handoff.ageMinutes)}`, head: 'Cortex suggests: pick up where your last chat left off', detail: `A handoff from ${s.handoff.chat ? `“${s.handoff.chat}”` : s.handoff.from || 'your last session'} is saved.${fresh}` }
 
   // amber: worth knowing, fine to continue
+  // auto memory past the 200 lines / 25 KB Claude Code loads: it cuts the rest silently, every chat (v4.6)
+  const cut = s.native?.files.find(f => f.loads === 'first-200' && f.over)
+  if (cut) return { level: 'warn', icon: 'alert', color: HEAT.warn, action: 'memory', text: `${cut.label} too long · Claude can't see the rest`, short: `${cut.label} too long`, head: `${cut.label} is past what Claude Code loads, so the rest is cut`, detail: `${cut.over}. Claude Code reads only the first 200 lines or 25 KB of it in every chat, without saying so. Move detail into topic files, or let a memory check sort it.` }
   if (cs.state === 'cold' && ctx > 50_000) return { level: 'warn', icon: 'pending', color: HEAT.warn, action: 'handoff', text: `Cache cold · next reply re-reads ${k(ctx)}`, head: 'Cortex suggests: hand off before your next message', detail: `The cache went cold ${ago(Math.round((Date.now() - cs.until!) / 60_000))}, so your next message re-reads ${k(ctx)} tokens at full price. A new chat starts at about ${k(start)}.` }
   if (cs.state === 'cooling' && ctx > 50_000) return { level: 'warn', icon: 'pending', color: HEAT.warn, text: `Cache cools at ${clock(cs.until!)} · reply before`, head: `The cache cools at ${clock(cs.until!)}: reply before then to keep it cheap`, detail: `After that, your next message re-reads ${k(ctx)} tokens at full price. Fine to continue.` }
   if (ctx > 100_000 && pct / 100 >= Math.min(at, compactAt) - 0.15) return { level: 'warn', icon: 'turn', color: HEAT.warn, text: `${pct}% full · fine to continue`, head: `This chat is ${pct}% full, fine to continue`, detail: `Cortex suggests a fresh chat at ${Math.round(at * 100)}%.${fresh}` }
-  if (five >= 70) return { level: 'warn', icon: 'pending', color: HEAT.warn, text: `5h plan ${five}% · fine to continue`, head: `Your 5-hour plan is ${five}% used, fine to continue`, detail: `At 90% Cortex suggests handing off, so you can continue in OpenCode or after the reset.${onFable(l) ? FABLE_NOTE : ''}` }
+  // no amber "5h plan 70%" tip since v4.6: Claude Code's own prompt box shows the plan; Cortex speaks up at 90%, with a move
   const waiting = toReview(s)
   if (waiting) return { level: 'warn', icon: 'dream', color: HEAT.warn, action: 'review', text: `${waiting} memory fix${waiting === 1 ? '' : 'es'} to review`, head: `Cortex suggests: review ${waiting} memory note${waiting === 1 ? '' : 's'}`, detail: `A check found ${waiting === 1 ? 'a note that looks' : 'notes that look'} wrong or out of date. Decide before a new chat trusts ${waiting === 1 ? 'it' : 'them'}.` }
   // the last turn filled this chat with tool output: a subagent would have kept it out (measured from the journal)
@@ -62,11 +65,11 @@ export function tipFor(s: StatusView, l: LiveView | null, cv: CacheView, limits:
   const unused = unusedTools(s, l, 500)
   const waste = unused.reduce((a, x) => a + x.loaded, 0)
   if (waste >= 5000) return { level: 'warn', icon: 'spark', color: HEAT.warn, action: 'costs', text: `Save ~${k(waste)} tokens a message`, head: 'Cortex suggests: turn off tools you never use', detail: `${[...new Set(unused.map(toolName))].join(', ').replace('a connector', 'claude.ai connectors')} add ${k(waste)} tokens to every message and went unused in your recent chats. Turning them off applies to new chats, and one press brings them back.` }
-  // a Dream is due: none in 3 days (or ever) and a good few chats since
+  // a full check is due: none in 3 days (or ever) and a good few chats since
   const last = s.dream.recent[0]?.ts
   const since = (s.episodes ?? []).filter(e => !last || e.end > last)
   const sessions = new Set(since.map(e => e.session)).size
-  if (!s.dream.running && sessions >= 3 && since.length >= 10 && (!last || (minsSince(last) ?? 0) > 3 * DAY)) return { level: 'warn', icon: 'dream', color: HEAT.warn, action: 'dream', text: `Dream due · ${last ? `last ${ago(minsSince(last))}` : 'none yet'}`, head: 'Cortex suggests: check Claude\'s memory', detail: `${last ? `Last checked ${ago(minsSince(last))}` : 'Never checked yet'}, ${sessions} chats since. A Dream checks Claude's notes against what really happened, in the background, and only suggests changes.` }
+  if (!s.dream.running && sessions >= 3 && since.length >= 10 && (!last || (minsSince(last) ?? 0) > 3 * DAY)) return { level: 'warn', icon: 'dream', color: HEAT.warn, action: 'dream', text: `Memory check due · ${last ? `last ${ago(minsSince(last))}` : 'none yet'}`, head: 'Cortex suggests: check Claude\'s memory', detail: `${last ? `Last checked ${ago(minsSince(last))}` : 'Never checked yet'}, ${sessions} chats since. A full check checks Claude's notes against what really happened, in the background, and only suggests changes.` }
 
   return null
 }

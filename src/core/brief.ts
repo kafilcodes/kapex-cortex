@@ -4,6 +4,8 @@ import type { HandoffNote } from "./state.ts";
 import type { Carry } from "./carry.ts";
 import { readTurns, type Turn } from "./turns.ts";
 import { readEpisodes } from "./episodes.ts";
+import { looksLikeReply } from "./mission.ts";
+import { nextYouNamed, questionOnly } from "./mission-signals.ts";
 
 /**
  * The brief (layer 1 of the context pack): what a fresh chat needs to continue, and nothing more.
@@ -27,7 +29,8 @@ export function requestText(t: Turn): string {
   if (segs.some((s) => s.source === "command")) return "";
   const brief = segs.find((s) => s.source === "brief");
   if (brief) return /\nTask:\s*\n([\s\S]+)/.exec(brief.text)?.[1]?.trim() ?? "";
-  return segs.filter((s) => s.source === "you").map((s) => s.text).join(" ").trim();
+  // a paste or a quote between two parts of your text is a break: the words on either side are separate sentences
+  return segs.filter((s) => s.source === "you").map((s) => s.text.trim()).filter(Boolean).join("\n").trim();
 }
 
 /** `@"path"` and `@path` attachments are file names, not the request. */
@@ -76,16 +79,32 @@ export function withoutLeadIn(text: string): string {
   return t;
 }
 
+/** How an approval opens: "Sure,", "Got it.", "Perfect.", "Looks good,", "The Strip mockup is a big upgrade." */
+const OPENER = /^(?:(?:sure|ok(?:ay)?|got it|perfect|great|awesome|excellent|nice|cool|thanks|thank you|lgtm|approved|love it|beautiful|well done|looks (?:good|great|perfect|fine)|(?:great|nice) (?:work|job))\s*[,.!:;—–-]+\s*|(?:the|this|that|your)\s+[^.!?\n]{1,60}?\s+(?:is|looks|are|reads|feels)\s+(?:a\s+|so\s+|really\s+|much\s+)?(?:big|huge|great|good|nice|clear|solid|perfect|amazing|excellent|clean|better|upgrade|approved|fine|beautiful)\b[^.!?\n]*[.!?]+\s*)/i;
+const NAMED = /^(?:the\s+)?goal\s*(?:[:：-]|is\b)/i;
+/** The part of a message that can become the detected goal (v4.6). Your own words lose an approval opener ("Perfect.
+ * Now port Settings" → "Now port Settings"). Something you pasted that reacts to work shown (an approval or a status
+ * reply) never does: the goal it serves is already set. "Goal: …" and "The goal is …" always count. */
+export function taskText(raw: string): string | null {
+  const pasted = raw.startsWith("(pasted) ");
+  let t = raw.replace(/^\(pasted\)\s*/, "").trim();
+  if (NAMED.test(t)) return t;
+  if (pasted && (OPENER.test(t) || looksLikeReply(t))) return null;
+  if (questionOnly(t)) return null; // "Don't edit anything. What is the next task?": a question has no task to become the goal
+  for (let i = 0; i < 3 && OPENER.test(t); i++) t = t.replace(OPENER, "").trim();
+  return t.length >= 15 ? t : null;
+}
+
 export function buildBrief(p: RepoPaths, a: { session: string; lastAssistant?: string; handoff: HandoffNote | null; heading: string; now: Date; carry?: Carry | null; /** the mission contract's north star */ mission?: string }): Brief {
   const all = readTurns(p, a.session).map((t) => ({ ts: t.ts, text: askOf(t) })).filter((t) => t.text.length >= 15);
   // a continuation keeps the goal it continues: what a message says after its lead-in ("Continue: the limit reset.")
   // is what can become the goal, and a message that is only a continuation never does
-  const asks = all.map((t) => ({ ts: t.ts, text: withoutLeadIn(t.text.replace(/^\(pasted\)\s*/, "")) })).filter((t) => t.text.length >= 15);
+  const asks = all.flatMap((t) => { const x = taskText(t.text); return x ? [{ ts: t.ts, text: withoutLeadIn(x) }] : []; }).filter((t) => t.text.length >= 15);
   const first = asks[0];
   const latest = all.at(-1);
   // the current goal is the most recent real task statement ("Yes, do it" replies don't count), else the first ask
   // …unless you named it: an explicit "Goal: …" wins over the longest recent message
-  const named = [...asks].reverse().find((t) => /^(?:the )?goal\s*[:：-]/i.test(t.text));
+  const named = [...asks].reverse().find((t) => NAMED.test(t.text));
   const task = named ?? [...asks].reverse().find((t) => t.text.length >= 60) ?? first;
   const h = a.handoff;
   // no turns recorded yet (kc handoff run on its own): the handoff you just wrote is this session's goal and next step
@@ -105,10 +124,13 @@ export function buildBrief(p: RepoPaths, a: { session: string; lastAssistant?: s
   else goal = a.heading || "_Not set. Run /cortex-handoff to record one._";
 
   const fromReply = nextFromReply(a.lastAssistant ?? "");
+  // the step you named yourself in your newest message ("Next time: add modulo the same way") outranks the reply's
+  const youNamed = latest ? nextYouNamed(latest.text.replace(/^\(pasted\)\s*/, "")) : null;
   // the newest step a reply in this chat stated ("Next: …"): small follow-ups after it don't replace the plan
   const stated = readEpisodes(p, 200).find((e) => e.session === a.session && e.next);
   let next: string;
   if (thisSession && h?.next && (!latest || h.ts >= latest.ts)) next = h.next;
+  else if (youNamed) next = youNamed;
   else if (fromReply) next = fromReply;
   else if (stated) next = `${oneLine(stated.next, 300)}${latest && latest.ts > stated.end ? ` _(stated earlier in this chat; since then you asked: “${oneLine(latest.text, 120)}”)_` : ""}`;
   else if (latest && latest.ts !== task?.ts) next = `Continue: ${oneLine(latest.text, 300)}`; // by time: asks are copies of all

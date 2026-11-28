@@ -1,6 +1,6 @@
 // The small drawing that leads every list tile (Timeline, Dream findings, Memory files, Handoffs): one per kind of
 // thing, so the kind reads at a glance without words. Built from the mascot's vocabulary (the emerald robot's face,
-// notes, the moon, the lens, sparkles, a round badge with a white mark), on a 48×48 grid so it scales. Static, no
+// notes, the moon, the lens, sparkles, a tick or cross drawn in its colour), on a 48×48 grid so it scales. Static, no
 // animation; neutral parts are grey at part opacity, so they read on light and dark. Each drawing is built once per
 // kind, size and tint and kept in a small bounded cache.
 import { K } from './theme'
@@ -21,15 +21,16 @@ const cache = new Map<string, string>()
 const note = (x: number, y: number, w = 22, h = 28, c: string = G, lines = [0.62, 0.78, 0.48]) =>
   `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${c}" fill-opacity="${c === G ? 0.12 : 0.14}" stroke="${c}" stroke-opacity="${c === G ? 0.6 : 1}" stroke-width="1.6"/>`
   + lines.map((f, i) => `<path d="M${x + 4.5} ${y + 7.5 + i * 5.5}H${(x + 4.5 + (w - 9) * f).toFixed(1)}" stroke="${c}" stroke-opacity="${c === G ? 0.65 : 0.8}" stroke-width="2"/>`).join('')
-/** a round badge with a white mark, the mascot's tick disc */
-const MARK: Record<string, (x: number, y: number) => string> = {
-  tick: (x, y) => `<path d="M${x - 3.4} ${y + 0.2}l2.3 2.3 4.5-4.8" stroke="${W}" stroke-width="2"/>`,
-  cross: (x, y) => `<path d="M${x - 2.6} ${y - 2.6}l5.2 5.2M${x + 2.6} ${y - 2.6}l-5.2 5.2" stroke="${W}" stroke-width="2"/>`,
-  clock: (x, y) => `<path d="M${x} ${y - 3.2}V${y}l2.4 1.6" stroke="${W}" stroke-width="1.8"/>`,
-  bang: (x, y) => `<path d="M${x} ${y - 3.4}v3.6" stroke="${W}" stroke-width="2.2"/><circle cx="${x}" cy="${y + 3}" r="1.2" fill="${W}"/>`,
-  link: (x, y) => `<path d="M${x - 1.2} ${y + 1.2}l2.4-2.4M${x - 2} ${y - 0.2}l-1 1a1.8 1.8 0 0 0 2.6 2.6l1-1M${x + 2} ${y + 0.2}l1-1a1.8 1.8 0 0 0-2.6-2.6l-1 1" stroke="${W}" stroke-width="1.4"/>`,
+/** a status mark drawn straight onto the drawing in its colour, the way a reviewer ticks a page: no disc or halo
+ * behind it (an icon in a tinted circle read as generated UI). Placed where nothing else is drawn, so it never needs
+ * a backing. `s` scales it (1 = about 11 units across on the 48 grid). */
+const MARK: Record<string, (x: number, y: number, c: string) => string> = {
+  tick: (x, y, c) => `<path d="M${x - 5} ${y + 0.4}l3.4 3.4 6.8-7.2" stroke="${c}" stroke-width="2.8"/>`,
+  cross: (x, y, c) => `<path d="M${x - 4} ${y - 4}l8 8M${x + 4} ${y - 4}l-8 8" stroke="${c}" stroke-width="2.8"/>`,
+  bang: (x, y, c) => `<path d="M${x} ${y - 6}v6.4" stroke="${c}" stroke-width="2.8"/><circle cx="${x}" cy="${y + 4.6}" r="1.6" fill="${c}"/>`,
+  link: (x, y, c) => `<path d="M${x - 1.8} ${y + 1.8}l3.6-3.6M${x - 3} ${y - 0.4}l-1.5 1.5a2.7 2.7 0 0 0 3.9 3.9l1.5-1.5M${x + 3} ${y + 0.4}l1.5-1.5a2.7 2.7 0 0 0-3.9-3.9l-1.5 1.5" stroke="${c}" stroke-width="2.1"/>`,
 }
-const badge = (x: number, y: number, c: string, mark: keyof typeof MARK, r = 7.5) => `<circle cx="${x}" cy="${y}" r="${r + 1.6}" fill="${c}" fill-opacity="0.18"/><circle cx="${x}" cy="${y}" r="${r}" fill="${c}"/>${MARK[mark]!(x, y)}`
+const badge = (x: number, y: number, c: string, mark: keyof typeof MARK) => MARK[mark]!(x, y, c)
 const star = (x: number, y: number, s: number, c: string = S) => `<path d="M${x} ${y - s}L${x + s * 0.3} ${y - s * 0.3}L${x + s} ${y}L${x + s * 0.3} ${y + s * 0.3}L${x} ${y + s}L${x - s * 0.3} ${y + s * 0.3}L${x - s} ${y}L${x - s * 0.3} ${y - s * 0.3}Z" fill="${c}"/>`
 const moon = (x: number, y: number, r: number, c: string = E) => `<path d="M${x} ${y - r}a${r} ${r} 0 1 0 ${r * 1.08} ${r * 1.3}a${r * 0.8} ${r * 0.8} 0 0 1-${r * 1.08}-${r * 1.3}z" fill="${c}" fill-opacity="0.9"/>`
 const lens = (x: number, y: number, r = 6.5, c: string = E) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${c}" fill-opacity="0.14" stroke="${c}" stroke-width="2.2"/><path d="M${x + r * 0.72} ${y + r * 0.72}l4.6 4.6" stroke="${c}" stroke-width="2.8"/>`
@@ -77,8 +78,8 @@ const DRAW: Record<Lead, (tint: string) => string> = {
     + `<path d="M8 11Q22 1 37 10" stroke="${c}" stroke-width="1.8" stroke-dasharray="0.5 3.5"/><path d="M33.6 9.2l3.6 1 -1.4 3.4" stroke="${c}" stroke-width="1.8"/>`
     + `<rect x="17.5" y="22" width="13" height="16" rx="2.6" fill="${c}" fill-opacity="0.9"/><path d="M20.5 27H27.5M20.5 31H25.5" stroke="${W}" stroke-width="1.6"/>${star(39.5, 34, 2.6, c)}`,
   dream: c => `${moon(14, 13, 8.5, c)}${star(28, 7, 2.6)}${note(16, 16, 22, 27)}${lens(36, 33, 6, c)}`,
-  'dream-ok': c => `${moon(14, 13, 8.5)}${star(28, 7, 2.6)}${note(16, 16, 22, 27)}${badge(37, 37, c, 'tick')}`,
-  'dream-bad': c => `${moon(14, 13, 8.5, G)}${note(16, 16, 22, 27)}${badge(37, 37, c, 'cross')}`,
+  'dream-ok': c => `${moon(14, 13, 8.5)}${star(28, 7, 2.6)}${note(14, 16, 20, 25)}${badge(40, 39, c, 'tick')}`,
+  'dream-bad': c => `${moon(14, 13, 8.5, G)}${note(14, 16, 20, 25)}${badge(40, 39, c, 'cross')}`,
   'mem-user': c => `${note(9, 7, 24, 32)}${star(35, 34, 8, c)}${star(40, 13, 2.6)}`,
   'mem-parent': c => `${folder(4, 16, 40, 27, c)}<path d="M24 12V3.5M20 7.2l4-4 4 4" stroke="${c}" stroke-width="2"/>`,
   'mem-project': c => `<rect x="13" y="8" width="20" height="22" rx="3.5" fill="${G}" fill-opacity="0.12" stroke="${G}" stroke-opacity="0.6" stroke-width="1.6"/><path d="M17 14H28M17 19H25" stroke="${G}" stroke-opacity="0.65" stroke-width="2"/>${folder(4, 18, 40, 25, c)}${star(40, 10, 2.6)}`,
@@ -86,22 +87,22 @@ const DRAW: Record<Lead, (tint: string) => string> = {
   'mem-auto': c => `<path d="M21 9V4.6" stroke="${c}" stroke-width="1.6"/><circle cx="21" cy="3.4" r="2.3" fill="${S}"/>`
     + `<rect x="8" y="9" width="26" height="33" rx="5" fill="${G}" fill-opacity="0.12" stroke="${G}" stroke-opacity="0.6" stroke-width="1.6"/><rect x="12" y="13" width="18" height="10" rx="3.6" fill="${SCREEN}"/><circle cx="17.5" cy="18" r="1.7" fill="${GLOW}"/><circle cx="24.5" cy="18" r="1.7" fill="${GLOW}"/>`
     + `<path d="M12.5 29H29M12.5 34H24" stroke="${G}" stroke-opacity="0.65" stroke-width="2"/>${star(39, 33, 5.5, c)}${star(41, 15, 2.6)}`,
-  'f-false': c => `${note(8, 7, 24, 32)}<path d="M11 33L29 13" stroke="${c}" stroke-width="2.2"/>${badge(35, 36, c, 'cross')}`,
-  'f-stale': c => `${note(8, 7, 24, 32)}<circle cx="35" cy="35" r="9.1" fill="${c}" fill-opacity="0.18"/><circle cx="35" cy="35" r="7.5" fill="${W}" stroke="${c}" stroke-width="2"/><path d="M35 31v4l2.6 1.8" stroke="${c}" stroke-width="1.8"/>`,
-  'f-contradiction': c => `<g transform="rotate(-8 14 24)">${note(3, 9, 18, 26)}</g><g transform="rotate(8 34 24)">${note(25, 9, 18, 26)}</g>${badge(24, 38, c, 'bang')}`,
+  'f-false': c => `${note(5, 5, 23, 31)}<path d="M8 31L25 11" stroke="${c}" stroke-width="2.2"/>${badge(38, 39, c, 'cross')}`,
+  'f-stale': c => `${note(5, 5, 23, 31)}<circle cx="37" cy="37" r="7.2" stroke="${c}" stroke-width="2.2"/><path d="M37 33v4l2.8 1.9" stroke="${c}" stroke-width="2.2"/>`,
+  'f-contradiction': c => `<g transform="rotate(-8 14 20)">${note(3, 5, 18, 26)}</g><g transform="rotate(8 34 20)">${note(25, 5, 18, 26)}</g>${badge(24, 39, c, 'bang')}`,
   'f-duplicate': c => `<path d="M19 9V7a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v20a3 3 0 0 1-3 3h-2" stroke="${G}" stroke-opacity="0.6" stroke-width="1.6"/>${note(9, 11, 23, 30)}${star(41, 39, 2.8)}`,
-  'f-visible': c => `<path d="M12 19V9a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v10" fill="${G}" fill-opacity="0.12" stroke="${G}" stroke-opacity="0.6" stroke-width="1.6"/><path d="M16 11.5H26M16 15.5H23" stroke="${G}" stroke-opacity="0.65" stroke-width="2"/>${folder(4, 17, 36, 25, G)}${badge(37, 37, c, 'tick')}`,
+  'f-visible': c => `<path d="M12 19V9a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v10" fill="${G}" fill-opacity="0.12" stroke="${G}" stroke-opacity="0.6" stroke-width="1.6"/><path d="M16 11.5H26M16 15.5H23" stroke="${G}" stroke-opacity="0.65" stroke-width="2"/>${folder(3, 17, 31, 25, G)}${badge(40.5, 39, c, 'tick')}`,
   'f-scope': c => `${note(4, 8, 20, 26)}<path d="M25 21h8M30 17.5l3.6 3.5-3.6 3.5" stroke="${c}" stroke-width="2"/>${folder(26, 28, 19, 15, c)}`,
   'f-replace': c => `${note(5, 7, 20, 30, G, [0.85, 0.9, 0.75])}<path d="M27 22h5M29.5 19.5l2.5 2.5-2.5 2.5" stroke="${c}" stroke-width="1.8"/>`
     + `<rect x="34" y="14" width="11" height="16" rx="3" fill="${c}" fill-opacity="0.16" stroke="${c}" stroke-width="1.6"/><path d="M37 20H42M37 24.5H40.5" stroke="${c}" stroke-width="1.8"/>${star(40, 38, 3)}`,
   'f-over-cap': c => `<rect x="10" y="4" width="24" height="40" rx="4" fill="${G}" fill-opacity="0.12" stroke="${G}" stroke-opacity="0.6" stroke-width="1.6"/>`
     + [10, 15.5, 21, 26.5].map((y, i) => `<path d="M14.5 ${y}H${[29, 26, 30, 24][i]}" stroke="${G}" stroke-opacity="0.65" stroke-width="2"/>`).join('')
-    + `<path d="M14.5 37H28M14.5 41H23" stroke="${c}" stroke-width="2"/><path d="M4 32H44" stroke="${c}" stroke-width="1.8" stroke-dasharray="3 2.6"/>${badge(40, 22, c, 'bang', 6)}`,
+    + `<path d="M14.5 37H28M14.5 41H23" stroke="${c}" stroke-width="2"/><path d="M4 32H44" stroke="${c}" stroke-width="1.8" stroke-dasharray="3 2.6"/>${badge(40.5, 22, c, 'bang')}`,
   'f-broken-link': c => `<path d="M21 17l-3-3a6 6 0 0 0-8.5 8.5l3 3" stroke="${G}" stroke-opacity="0.75" stroke-width="3.2"/><path d="M27 31l3 3a6 6 0 0 0 8.5-8.5l-3-3" stroke="${G}" stroke-opacity="0.75" stroke-width="3.2"/>`
-    + `<path d="M22 26l-5 4M26 22l4-5M20.5 22.5l-6-.8M27.5 25.5l6 .8" stroke="${c}" stroke-width="2"/>${badge(37, 39, c, 'cross', 6)}`,
-  'f-orphan': c => `${note(8, 7, 24, 32)}${badge(35, 36, c, 'link')}`,
-  'f-lesson': c => `${note(8, 7, 24, 32)}${badge(35, 36, c, 'tick')}${star(40, 12, 3)}`,
-  'f-rejected': c => `${note(8, 7, 24, 32)}${badge(35, 36, c, 'cross')}`,
+    + `<path d="M22 26l-5 4M26 22l4-5M20.5 22.5l-6-.8M27.5 25.5l6 .8" stroke="${c}" stroke-width="2"/>${badge(40, 41, c, 'cross')}`,
+  'f-orphan': c => `${note(5, 5, 23, 31)}${badge(38, 39, c, 'link')}`,
+  'f-lesson': c => `${note(5, 5, 23, 31)}${badge(38, 39, c, 'tick')}${star(39, 12, 3)}`,
+  'f-rejected': c => `${note(5, 5, 23, 31)}${badge(38, 39, c, 'cross')}`,
 }
 const NATURAL: Partial<Record<Lead, string>> = {
   'reply-bad': R, 'reply-warn': A, 'reply-none': G, 'dream-bad': R, handoff: E,

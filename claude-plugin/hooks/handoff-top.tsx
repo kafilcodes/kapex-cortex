@@ -29,7 +29,7 @@ export function handoffTop($: Dollar, o: Ctx, asked: AskView | null): (JSX.Eleme
           <Text size="caption" color={K.label}>Based on Google's open-source Elephant–Goldfish Model (EGM). A reviewer that knows nothing of this chat often spots what the chat that wrote the handoff can't.</Text>
           <Box flexDirection="column" gap={0} paddingTop={1}>
             {([['1', 'A fresh helper (the goldfish) reads only the handoff and the files it names.'], ['2', 'It lists where a stranger would get stuck, then says Ready or Not ready.'], ['3', 'This chat (the elephant) fixes those gaps with /cortex-handoff.']] as const).map(([n, t]) => (
-              <Box key={`h-egm-s${n}`} flexDirection="row" gap={1} alignItems="flex-start"><Text size="caption" weight="semibold" color={K.amber}>{n}</Text><Text size="caption" color={K.text}>{t}</Text></Box>
+              <Box key={`h-egm-s${n}`} flexDirection="row" gap={1} alignItems="flex-start"><Text size="caption" weight="semibold" color={K.label}>{n}</Text><Text size="caption" color={K.text}>{t}</Text></Box>
             ))}
           </Box>
         </Box>
@@ -48,8 +48,6 @@ export function handoffTop($: Dollar, o: Ctx, asked: AskView | null): (JSX.Eleme
   const failed = /FAILED/.test(pv.lastCheck)
   // the packing list: what the note carries, in words; each a check mark, none a box of its own
   const packed: [string, string, string][] = [
-    ['star', pv.goal ? 'The goal' : 'No goal written down yet', pv.goal ? K.emerald : K.silver],
-    ['pending', pv.next && !/^Continue from the last assistant message/.test(pv.next) ? `Next: ${tidy(pv.next, 140)}` : 'Next step: carry on from the last reply', K.emerald],
     ['star', pinned ? `${plural(pinned, 'instruction')} and decisions of yours` : 'No instructions pinned yet', pinned ? K.emerald : K.silver],
     ['turn', `${plural(pv.exchanges || 1, 'last exchange')}, word for word`, K.emerald],
     ['commit', `${plural(pv.trail ?? 0, 'earlier turn')} in short${pv.commits ? `, ${plural(pv.commits, 'commit')}` : ''}`, pv.trail ? K.emerald : K.silver],
@@ -71,9 +69,14 @@ export function handoffTop($: Dollar, o: Ctx, asked: AskView | null): (JSX.Eleme
         </Box>
       </Box>
       {here > 20_000 ? u.graphic('h-xfer', transferSvg({ here, start: pv.tokens, width: w }), `This chat re-reads ${k(here)} tokens with each message; a new chat starts with about ${k(pv.tokens)}`) : null}
-      {pv.goal ? <Box key="h-goal" flexDirection="row" gap={1} alignItems="flex-start" paddingTop={1}><Box flexShrink={0}><Text size="caption" weight="semibold" color={K.emerald}>Goal</Text></Box><Box flexShrink={1} minWidth={10}><Text size="caption" color={K.text}>{tidy(pv.goal, 220)}</Text></Box></Box> : null}
+      {([['Goal', pv.goal ? tidy(pv.goal, 220) : 'Not written down yet: say “Goal: …” in the chat'], ['Next', pv.next && !/^Continue from the last assistant message/.test(pv.next) ? tidy(pv.next, 220) : 'Carry on from the last reply']] as const).map(([l, v], i) => (
+        <Box key={`h-gl${i}`} flexDirection="row" gap={1} alignItems="flex-start" {...(i ? {} : { paddingTop: 1 })}>
+          <Box flexShrink={0} width={5}><Text size="caption" weight="semibold" color="success">{l}</Text></Box>
+          <Box flexShrink={1} minWidth={10}><Text size="caption" color={K.text}>{v}</Text></Box>
+        </Box>
+      ))}
       <Box key="h-pack" flexDirection="row" flexWrap="wrap" columnGap={2} rowGap={0}>
-        {packed.map(([ic, t, c], i) => <Box key={`h-pk-${i}`} {...(half ? { width: '48%' } : {})} flexGrow={1} minWidth={20}>{u.tag(`h-pk-t${i}`, c === K.silver ? 'pending' : ic === 'cross' ? 'cross' : 'check', c, t, c === K.silver ? K.muted : K.text)}</Box>)}
+        {packed.map(([ic, t, c], i) => <Box key={`h-pk-${i}`} {...(half ? { width: '48%' } : { flexGrow: 1 })} minWidth={20}>{u.tag(`h-pk-t${i}`, c === K.silver ? 'pending' : ic === 'cross' ? 'cross' : 'check', c, t, c === K.silver ? K.muted : K.text)}</Box>)}
       </Box>
       {flagged ? u.tag('h-mem', 'alert', K.amber, `${plural(flagged, 'memory note')} flagged: the new chat is told not to rely on ${flagged === 1 ? 'it' : 'them'}`, K.label) : null}
     </Box>,
@@ -81,9 +84,9 @@ export function handoffTop($: Dollar, o: Ctx, asked: AskView | null): (JSX.Eleme
       <Box flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" columnGap={1} rowGap={1}>
         <Text size="caption" color={K.label}>Hand off now saves it and copies /cortex-resume to paste in a new chat.</Text>
         <Box flexDirection="row" gap={1} flexWrap="wrap">
-          <Button key="kc-resume" variant="secondary" onPress={() => { void ask($, 'resume', 'Load the handoff into this chat', RESUME) }}>← Load into this chat</Button>
-          <Button key="kc-hand2" variant="secondary" onPress={() => { void act($, 'Handoff saved', ['h']) }}>↓ Save now</Button>
-          <Button key="kc-hand3" variant="primary" onPress={() => { void setTab($, 'overview'); void (flaggedNotes(s) ? setFlow($, 'confirm') : handOff($)) }}>Hand off now →</Button>
+          <Button key="kc-resume" variant="secondary" onPress={() => { void ask($, 'resume', 'Load the handoff into this chat', RESUME) }}>Load into this chat</Button>
+          <Button key="kc-hand2" variant="secondary" onPress={() => { void act($, 'Handoff saved', ['h']) }}>Save now</Button>
+          <Button key="kc-hand3" variant="primary" onPress={() => { void setTab($, 'overview'); void (flaggedNotes(s) ? setFlow($, 'confirm') : handOff($)) }}>Hand off now</Button>
         </Box>
       </Box>
       {askRow($, o.els, asked, 'resume')}

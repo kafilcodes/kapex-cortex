@@ -51,14 +51,14 @@ flowchart TB
 
 Each chat writes its own packet first, outside any lock, so two chats ending a reply at the same moment never lose a turn. A `/clear` or a resume starts the strip's numbers over for the new chat at once.
 
-## 2. Dream and Quick check: memory that matches the code
+## 2. Memory check (quick and full): memory that matches the code
 
 ```mermaid
 flowchart LR
     Mem["CLAUDE.md · .claude/rules/ · auto memory"]
     Ev["Evidence by program<br/>test runs · your words · commits · when each note was written"]
     Q["Quick check<br/>(program only, 0 tokens,<br/>runs when files change)"]
-    D["Dream<br/>(+ an optional model judge,<br/>every claim must cite evidence)"]
+    D["Full check<br/>(+ an optional model judge,<br/>every claim must cite evidence)"]
     F["Findings<br/>false · stale · duplicate · broken link<br/>over Claude's limit · drift from a rule"]
     You{"You"}
     Mem --> Q
@@ -94,7 +94,7 @@ sequenceDiagram
 ```
 
 - **0 tokens injected into normal chats** by default. The handoff is pull-only: it reaches a chat only when you run `/cortex-resume` or press Resume. The old one-line "a handoff exists" note is opt-in (`kc prefs set startNotice on`).
-- Cortex's skills (`/cortex-resume`, `/cortex-handoff`, `/cortex-init`, `/kc`) are things you start yourself, so they are marked `disable-model-invocation`: their descriptions stay out of Claude's context. Measured with `/context`: about 250 tokens per chat before v4.5, 0 after.
+- Cortex's skills (`/cortex-resume`, `/cortex-handoff`, `/cortex-init`, `/kc`) are things you start yourself, so they are marked `disable-model-invocation`: their descriptions stay out of Claude's context. Measured with `/context`: about 250 tokens per chat before v4.5, 0 after. The API input still carries the deferred `open_panel` tool's name: about 85 tokens a message (measured 2026-11-27, the same on v4.5.2 and v4.6).
 - **Stop hook:** about 40 ms median, 55.6 ms at p95 (bar 60) (whole process, Apple M4). It always exits 0 and logs errors to `.vault/private/errors.log`.
 - **Panel refresh:** about 62 ms median (pre-built status file, git answers reused until git's own files change).
 
@@ -104,6 +104,6 @@ sequenceDiagram
 |---|---|---|
 | `.vault/STATE.md` | the handoff packet a new chat reads | no (ignored) |
 | `.vault/private/` | journal, your messages (secrets scrubbed), per-chat packets and contracts | no (ignored) |
-| `.vault/dreams/` | each Dream's before and after copies (for Undo) | no (ignored) |
+| `.vault/dreams/` | each memory check's before and after copies (for Undo) | no (ignored) |
 | `.vault/cortex.json` | marks a project where Cortex is on | yes |
 | `~/.cortex/` | your preferences | n/a |

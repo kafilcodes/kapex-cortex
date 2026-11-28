@@ -3,7 +3,7 @@ import { ago, animateFor, minsSince, setCostsSub, type Dollar } from './data'
 import type { Ctx } from './tabs'
 import { K } from './theme'
 import { parkButton, parkedList, savedCard, spendCard } from './spend'
-import { tiles } from './tiles'
+import { ink, tiles } from './tiles'
 import { area, lollipop, micro, stacked } from './viz'
 import { pageScene } from './mascot'
 import { burnCard, workCard } from './activity'
@@ -44,7 +44,7 @@ export function costsPage($: Dollar, o: Ctx): JSX.Element {
   // a half-width pane: no bar, shorter badges, so each row (and its button) stays on one line
   const narrow = o.px < 900
   const line = (key: string, left: string, right: string, color: string = K.label, ic = '') => (
-    <Box key={key} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>{ic ? u.tag(`${key}-t`, ic, color === K.amber ? K.amber : K.silver, left, color) : <Text size="caption" color={color}>{left}</Text>}<Text size="caption" tabular color={K.text}>{right}</Text></Box>
+    <Box key={key} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>{ic ? u.tag(`${key}-t`, ic, color === K.amber ? K.amber : K.silver, left, color) : <Text size="caption" color={ink(color)}>{left}</Text>}<Text size="caption" tabular color={K.text}>{right}</Text></Box>
   )
   // Usage: what you used over time (Costs is what each message costs now); the same quiet track as Memory's views
   const sub = o.vw.csub === 'usage' ? 'usage' : 'costs'

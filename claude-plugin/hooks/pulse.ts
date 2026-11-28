@@ -1,15 +1,16 @@
 import { atom, read, update } from 'claude-code'
 
 import { cacheState } from './charts'
-import { ensureChat, lastLimits, lastStamp, readCache, refresh, refreshLive, statusOrSaved, vaultStamp, type Dollar } from './data'
+import { ensureChat, lastLimits, lastStamp, readCache, refresh, refreshLive, setTurnRunning, statusOrSaved, vaultStamp, type Dollar } from './data'
 
 // The strip's heartbeat: it keeps the strip true between turns, with no turn, no model call and no redraw that changes
 // nothing (a redraw happens only when `pulse` gets a new value).
 //   while a turn runs   every 4 s: Claude Code's own usage numbers (in-process, no Node), so context climbs live
 //   idle                every 30 s: a few cheap checks, and `pulse` changes only when one changes its answer:
-//                         the cache crossing warm → cooling → cold, a plan window resetting, a new day;
+//                         the cache crossing warm → cooling → cold, a plan window resetting, a new day, a
+//                         10-minute step (the plan's "now" marker);
 //                       and another chat or tool writing here (four file stats) starts a full read
-//   full status read    one Node process (~0.3 s), only when those files changed, while a Dream runs, or every 15 min
+//   full status read    one Node process (~0.3 s), only when those files changed, while a full check runs, or every 15 min
 // One timer per session, rescheduled and never stacked; a plugin reload cancels it with the old copy; session end
 // stops it. Work never overlaps: a beat that finds the last one still running only reschedules.
 export const pulse = atom({ plugin: 'kapex-cortex', key: 'pulse' } as const, '', { shape: 'pulse-1' })
@@ -40,17 +41,19 @@ export function stopPulse(): void { stopped = true; busy = false; timer?.cancel(
 /** For tests and the leak check: whether a beat is scheduled, and whether the heartbeat has stopped for good. */
 export const pulseState = () => ({ scheduled: timer !== null, stopped, busy, running })
 /** A main-thread turn began: fast beats until it ends. */
-export function turnStarted($: Dollar): void { busy = true; busySince = Date.now(); schedule($, FAST) }
+export function turnStarted($: Dollar): void { busy = true; busySince = Date.now(); setTurnRunning(true); schedule($, FAST) }
 /** It ended: back to idle, with a beat soon to catch what the Stop hook writes just after. */
-export function turnEnded($: Dollar): void { busy = false; schedule($, 2_500) }
+export function turnEnded($: Dollar): void { busy = false; setTurnRunning(false); schedule($, 2_500) }
 
 /** What the strip's answer depends on that time alone changes: the cache's state, which plan windows have reset, the
  * day. Pure, so it's tested directly. (Anything else that changes the strip arrives as a new status or live value.) */
 export function signal(o: { lastAt: number | null; ttlMs: number; resets: (string | undefined)[] }, now = Date.now()): string {
   const rolled = o.resets.map(r => (r && Date.parse(r) <= now ? 1 : 0)).join('')
   const c = cacheState(o.lastAt, o.ttlMs, now)
-  // the minutes left in 5-minute steps too, so "Cache 55 min" and its hourglass move with time between turns
-  return [c.state, c.state === 'warm' || c.state === 'cooling' ? Math.ceil(c.leftMin / 5) : '', rolled, new Date(now).toDateString()].join('|')
+  // the minutes left in 5-minute steps too, so "Cache 55 min" and its hourglass move with time between turns; and a
+  // 10-minute step, so the plan's "now" marker and "9 min ago" words keep up while the chat sits idle (v4.6: the marker
+  // stood still for up to an hour once the cache was cold)
+  return [c.state, c.state === 'warm' || c.state === 'cooling' ? Math.ceil(c.leftMin / 5) : '', rolled, new Date(now).toDateString(), Math.floor(now / 600_000)].join('|')
 }
 
 async function beat($: Dollar): Promise<void> {
@@ -60,7 +63,7 @@ async function beat($: Dollar): Promise<void> {
   const mine = runningSince // a stale beat, let go by the watchdog, must not clear a newer beat's flag
   try {
     // a turn whose end never reached us (a crash, a lost worker) stops counting as running after 30 minutes
-    if (busy && Date.now() - busySince > 30 * 60_000) busy = false
+    if (busy && Date.now() - busySince > 30 * 60_000) { busy = false; setTurnRunning(false) }
     if (busy) { await refreshLive($); return }
     if (await ensureChat($)) await refreshLive($) // a new chat in this process that no event announced
     const s = await statusOrSaved($)

@@ -39,16 +39,23 @@ export function pluginInstalled(home = process.env.HOME ?? process.env.USERPROFI
 /** What Kapex Cortex itself adds to every message: the names and descriptions of its skills, which Claude Code lists
  * in each session (the same figure `claude plugin details kapex-cortex` reports, about 280 tokens with /kc), counted twice
  * when an older install also left copies in ~/.claude/skills. Hooks and the panel add nothing to the model's context. */
+/** The open_panel tool's listing in every message: Claude Code defers it (/context shows 0), but its name still goes
+ * to the model. Measured 2026-11-27: the same "Say OK." call in an isolated folder was 30,076 input tokens with the
+ * plugin and 29,991 without (claude -p --setting-sources project,local, Haiku), on main and on v4.6 alike. */
+export const OPEN_TOOL_TOKENS = 85;
+/** What Cortex adds to each message: the panel tool's listing, plus any skill the model can see. A skill marked
+ * disable-model-invocation (all four of Cortex's) loads only when you type it, so its description costs nothing. */
 export function cortexFootprint(skillsDir = join(import.meta.dirname, "..", "..", "..", "skills"), userSkills = join(claudeHome(), "skills")): { tokens: number; skills: number; duplicates: number } {
   const dirs = [skillsDir, join(import.meta.dirname, "..", "skills"), join(import.meta.dirname, "..", "..", "claude-plugin", "skills")].filter((d) => existsSync(d));
   const cost = (f: string) => {
     try {
       const head = /^---\n([\s\S]*?)\n---/.exec(readFileSync(f, "utf8"))?.[1] ?? "";
+      if (/^disable-model-invocation:\s*true\s*$/m.test(head)) return 0; // never listed to the model
       const name = /^name:\s*(.+)$/m.exec(head)?.[1] ?? "", desc = /^description:\s*(.+)$/m.exec(head)?.[1] ?? "";
       return name || desc ? Math.ceil((name.length + desc.length) / 3) + 12 : 0;
     } catch { return 0; }
   };
-  let tokens = 0, skills = 0, duplicates = 0;
+  let tokens = OPEN_TOOL_TOKENS, skills = 0, duplicates = 0;
   for (const name of ["cortex-handoff", "cortex-init", "cortex-resume", "kc"]) { // kc: the plugin's own /kc (never a per-user copy)
     const own = dirs.map((d) => join(d, name, "SKILL.md")).find((f) => existsSync(f));
     if (own) { tokens += cost(own); skills++; }

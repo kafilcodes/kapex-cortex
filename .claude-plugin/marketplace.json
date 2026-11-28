@@ -8,8 +8,8 @@
     {
       "name": "kapex-cortex",
       "source": "./claude-plugin",
-      "description": "Lossless handoffs between chats (a mission contract that survives /clear and new chats), a live status strip and cost/cache panel for Claude Code, and Dreams that check Claude's memory against what really happened. Zero dependencies.",
-      "version": "4.5.2",
+      "description": "Lossless handoffs between chats (a mission contract that survives /clear and new chats), a live status strip and cost/cache panel for Claude Code, and a memory check that tests Claude's memory against what really happened. Zero dependencies.",
+      "version": "4.6.0",
       "keywords": [
         "context-management",
         "session-handoff",
@@ -21,7 +21,7 @@
     }
   ],
   "metadata": {
-    "description": "Kapex Cortex: lossless handoffs, a status strip and cost panel, and memory Dreams for Claude Code.",
-    "version": "4.5.2"
+    "description": "Kapex Cortex: lossless handoffs, a status strip and cost panel, and a memory check for Claude Code.",
+    "version": "4.6.0"
   }
 }

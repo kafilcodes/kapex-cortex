@@ -31,7 +31,7 @@ export function transferSvg(o: { here: number; start: number; width: number }): 
     + `<defs><linearGradient id="hf" x1="0" x2="1"><stop offset="0" stop-color="${K.silver}" stop-opacity="0.16"/><stop offset="1" stop-color="${K.emerald}" stop-opacity="0.22"/></linearGradient></defs>`
     + `<rect x="${xL}" y="${f1(mid - hBig / 2)}" width="${f1(wL)}" height="${hBig}" rx="10" fill="${K.silver}" fill-opacity="0.08" stroke="${K.silver}" stroke-opacity="0.35"/>${lines.join('')}${funnel}${note}`
     + lab(xL, 'start', `${k(big)} tokens`, 'this chat, re-read each message', K.ink)
-    + lab(xR + wR, 'end', `≈${k(small)} tokens`, less ? `the handoff · ${less}% less` : 'the handoff', K.emerald)
+    + lab(xR + wR, 'end', 'the handoff', less ? `${less}% less, every message` : 'a new chat starts here', K.emerald)
     + `</svg>`
 }
 
@@ -91,17 +91,17 @@ export function chainSvg(o: { prev?: { chat: string; id: string }; here: { chat:
   const wide = W >= 440
   if (!wide) stops.splice(2, 1)
   const col = W / stops.length, xs = stops.map((_, i) => col * (i + 0.5))
-  const glyph = (k: string, x: number) => k === 'note'
-    ? `<path d="M${f1(x - 4)} ${y - 5.5}h5.5l3 3v8h-8.5z" fill="none" stroke="${K.emerald}" stroke-width="1.4" stroke-linejoin="round"/><path d="M${f1(x - 2)} ${y + 0.5}h4.5M${f1(x - 2)} ${y + 3}h3" stroke="${K.emerald}" stroke-width="1.2" stroke-linecap="round"/>`
-    : k === 'none' ? `<path d="M${f1(x - 3.5)} ${y}h7" stroke="${K.ink}" stroke-width="1.4" stroke-linecap="round"/>`
-    : `<path d="M${f1(x - 5)} ${y - 4}h10a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1-1.5 1.5h-5l-3 2.5v-2.5h-2a1.5 1.5 0 0 1-1.5-1.5v-5a1.5 1.5 0 0 1 1.5-1.5z" fill="none" stroke="${k === 'here' ? '#05130D' : K.emerald}" stroke-width="1.3" stroke-linejoin="round"/>`
-  const node = (k: string, x: number) => k === 'here'
-    ? `<circle cx="${f1(x)}" cy="${y}" r="${r}" fill="${K.emerald}"/>`
-    : k === 'none' ? `<circle cx="${f1(x)}" cy="${y}" r="${r}" fill="none" stroke="${K.ink}" stroke-width="1.2" stroke-dasharray="2.5 2.5"/>`
-    : `<circle cx="${f1(x)}" cy="${y}" r="${r}" fill="${K.emerald}" fill-opacity="0.12" stroke="${K.emerald}" stroke-width="1.2"/>`
+  // each stop is its own plain mark, no disc behind it: a chat is a speech bubble (filled for this chat, dashed where
+  // no chat is yet), the note a page with a folded corner
+  const BUB = (x: number) => `M${f1(x - 9)} ${y - 8}h18a2.5 2.5 0 0 1 2.5 2.5v8a2.5 2.5 0 0 1-2.5 2.5h-9l-5 4.5v-4.5h-4a2.5 2.5 0 0 1-2.5-2.5v-8a2.5 2.5 0 0 1 2.5-2.5z`
+  const stop = (k: string, x: number) => k === 'note'
+    ? `<path d="M${f1(x - 7)} ${y - 10}h9l5 5v15h-14z" fill="none" stroke="${K.emerald}" stroke-width="1.6" stroke-linejoin="round"/><path d="M${f1(x + 2)} ${y - 10}v5h5M${f1(x - 3.5)} ${y + 1}h7M${f1(x - 3.5)} ${y + 5}h4.5" fill="none" stroke="${K.emerald}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`
+    : k === 'here' ? `<path d="${BUB(x)}" fill="${K.emerald}"/><path d="M${f1(x - 5)} ${y - 3}h10M${f1(x - 5)} ${y + 1}h6" stroke="#05130D" stroke-width="1.6" stroke-linecap="round"/>`
+    : k === 'none' ? `<path d="${BUB(x)}" fill="none" stroke="${K.ink}" stroke-width="1.4" stroke-dasharray="2.5 2.5" stroke-linejoin="round"/>`
+    : `<path d="${BUB(x)}" fill="none" stroke="${K.emerald}" stroke-width="1.6" stroke-linejoin="round"/>`
   const link = (i: number) => {
     const real = stops[i]!.kind !== 'none' && stops[i + 1]!.kind !== 'none'
-    const a = xs[i]! + r + 4, b = xs[i + 1]! - r - 5, c = real ? K.emerald : K.ink
+    const a = xs[i]! + r + 6, b = xs[i + 1]! - r - 6, c = real ? K.emerald : K.ink
     const word = !wide && i === stops.length - 2 ? `<text x="${f1((a + b) / 2)}" y="${y - 7}" text-anchor="middle" ${FONT} font-size="9" fill="${K.ink}">handoff</text>` : ''
     return `${word}<path d="M${f1(a)} ${y}H${f1(b)}" stroke="${c}" stroke-width="1.4" ${real ? '' : 'stroke-dasharray="3 4"'} stroke-linecap="round"/><path d="M${f1(b - 4)} ${y - 3.5}L${f1(b)} ${y}L${f1(b - 4)} ${y + 3.5}" fill="none" stroke="${c}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`
   }
@@ -110,5 +110,5 @@ export function chainSvg(o: { prev?: { chat: string; id: string }; here: { chat:
     + `<text x="${f1(xs[i]!)}" y="${y + r + 30}" text-anchor="middle" ${FONT} font-size="10" fill="${K.ink}">${esc(fit(s.sub, max, 10))}</text>`
     + (s.id ? `<text x="${f1(xs[i]!)}" y="${y + r + 43}" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="9" fill="${K.ink}" fill-opacity="0.8">${esc(s.id)}</text>` : '')).join('')
   const title = `${stops[0]!.title} → ${stops[1]!.title} → handoff note → ${stops[stops.length - 1]!.title}`
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><title>${esc(title)}</title>${stops.slice(1).map((_, i) => link(i)).join('')}${stops.map((s, i) => node(s.kind, xs[i]!) + glyph(s.kind, xs[i]!)).join('')}${labels}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><title>${esc(title)}</title>${stops.slice(1).map((_, i) => link(i)).join('')}${stops.map((s, i) => stop(s.kind, xs[i]!)).join('')}${labels}</svg>`
 }

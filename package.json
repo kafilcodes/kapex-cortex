@@ -1,7 +1,7 @@
 {
   "name": "kapex-cortex",
-  "version": "4.5.2",
-  "description": "Claude Code plugin: lossless handoffs between chats (a mission contract that survives /clear and new chats), a live status strip and cost/cache panel, and Dreams that check CLAUDE.md and memory against what really happened. Zero dependencies.",
+  "version": "4.6.0",
+  "description": "Claude Code plugin: lossless handoffs between chats (a mission contract that survives /clear and new chats), a live status strip and cost/cache panel, mission steps ticked against your tests, and a memory check that tests CLAUDE.md and memory against what really happened. Zero dependencies.",
   "license": "MIT",
   "author": {
     "name": "Mohd. Kafil Khan",

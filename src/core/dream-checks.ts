@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { commandsIn, inRepo, sameCommand, type Evidence } from "./evidence.ts";
 import type { Entry, NativeFile } from "./native.ts";
 import { contentWords, overlap } from "./words.ts";
+import { mainCheckout } from "./native.ts";
 
 /**
  * The checks a Dream runs without any model: facts a program can verify. A model only adds judgment on top
@@ -30,6 +31,8 @@ const NEG = /\b(broken|fails?|failing|doesn'?t work|does not work|not working|sk
 const POS = /\b(passes|passing|works|is green|succeeds)\b/i;
 const LINK = /\]\(([^)\s]+\.md)\)/g;
 const SOURCE = /\.(?:md|ts|tsx|js|jsx|mjs|py|go|rs|toml|ya?ml|sh|css|html)$/;
+/** Files a program makes as it runs: never "stale" for being absent now. */
+const RUNTIME = /(?:^|\/)\.vault\/private\/|\.(?:log|jsonl|lock|pid)$/;
 const RANK: Record<string, number> = { user: 0, parent: 0, project: 1, rules: 2, auto: 3 };
 const short = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
@@ -96,7 +99,10 @@ export function mechanicalChecks(root: string, files: NativeFile[], ents: Entry[
     //    is gone is deleting it the proposal; when some of it still exists, it's yours to decide.
     // a missing source file is stale; a missing log or output file only when its folder is gone too (made on demand)
     const refs = pathRefs(e.text);
-    const gone = refs.filter((r) => { const f = resolveRef(root, r); return !existsSync(f) && !tracked(root).has(r.split("/").pop()!) && (SOURCE.test(r) || !existsSync(dirname(f))); });
+    // gone from every checkout of this repo (a worktree's .vault and a path named from the main checkout live there),
+    // and never a file made at run time (.vault/private/, logs): "errors.log" is missing until the first error (v4.6)
+    const roots = [root, mainCheckout(root) ?? root];
+    const gone = refs.filter((r) => !RUNTIME.test(r) && !tracked(root).has(r.split("/").pop()!) && roots.every((R) => { const f = resolveRef(R, r); return !existsSync(f) && (SOURCE.test(r) || !existsSync(dirname(f))); }));
     const hexes = [...new Set((e.text.match(/#[0-9A-Fa-f]{6}\b/g) ?? []).map((c) => c.toUpperCase()))];
     const colours = hexes.filter((c) => !inRepo(root, c));
     if (gone.length || colours.length) {

@@ -11,7 +11,10 @@ import { backdropSvg, type Backdrop, type Motion } from './look-scenes'
 // The terminal draws no look, so this is the desktop (and mobile) app only. Kept in the plugin's own store, so it
 // applies at session start, before Cortex has read the project.
 
-export const LOOK_DEFAULT: LookView = { on: true, ground: 'obsidian', backdrop: 'prism', motion: 'medium', chosen: false }
+// Contour is the default since v4.10 (it reads calmest behind the words and its wave is the clearest motion); a saved
+// choice is kept as it was
+// AMOLED black is the dark default since v4.6 (Kafil, 2026-11-28). Light and dark still follow the app's own setting.
+export const LOOK_DEFAULT: LookView = { on: true, ground: 'amoled', backdrop: 'contour', motion: 'medium', chosen: false }
 export const look = atom({ plugin: 'kapex-cortex', key: 'look' } as const, LOOK_DEFAULT, { shape: 'look-1' })
 const STORE = 'look'
 const DROPS = new Set(['prism', 'facets', 'contour', 'mesh', 'aurora', 'none']) // Orbit (v4.2) dropped: a saved choice of it shows Prism
@@ -21,8 +24,9 @@ export function cleanLook(x: unknown): LookView {
   const o = (x && typeof x === 'object' ? x : {}) as Partial<LookView>
   return {
     on: typeof o.on === 'boolean' ? o.on : LOOK_DEFAULT.on,
-    ground: o.ground === 'amoled' ? 'amoled' : 'obsidian', // Graphite (v4.1) was dropped: a saved choice of it shows Obsidian
-    backdrop: DROPS.has(o.backdrop as string) ? o.backdrop! : LOOK_DEFAULT.backdrop,
+    // a saved ground is kept (Graphite, v4.1, was dropped: it shows Obsidian); none saved, or an unknown one, is the default
+    ground: o.ground === 'amoled' ? 'amoled' : o.ground === 'obsidian' || (o.ground as unknown) === 'graphite' ? 'obsidian' : LOOK_DEFAULT.ground,
+    backdrop: DROPS.has(o.backdrop as string) ? o.backdrop! : (o.backdrop as string) === 'orbit' ? 'prism' : LOOK_DEFAULT.backdrop, // Orbit's nearest is Prism
     motion: cleanMotion(o.motion),
     chosen: o.chosen === true,
   }

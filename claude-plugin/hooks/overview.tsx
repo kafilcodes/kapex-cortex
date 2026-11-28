@@ -6,9 +6,10 @@ import { ago, animateFor, minsSince, setCostsSub, setSub, setTab, toReview, type
 import type { Kit } from './kit'
 import { handoffCard, lastTurnCard } from './cards'
 import { K } from './theme'
+import { MARK_AMBER } from './strip'
 import { tiles } from './tiles'
 import { heroRow } from './hero'
-import { switchDue } from './switch'
+import { flaggedNotes, switchDue } from './switch'
 import { unusedTools, type Tip } from './tips'
 import { area, capsules } from './viz'
 import { gauge } from './viz-pro'
@@ -69,11 +70,11 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
 
   // one meter: its name and value on a line, the drawing under them, one caption. Stacked; the card is the box.
   const barPx = Math.max(80, limPx)
-  const meter = (key: string, icon: string, label: string, value: string, color: string, visual: JSX.Element | null, caption: string) => (
+  const meter = (key: string, icon: string, label: string, value: string, color: string, visual: JSX.Element | null, caption: string, lead = true) => (
     <Box key={key} flexDirection="column" gap={0}>
       <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>
         {u.tag(`${key}-l`, icon, color === K.text ? K.silver : color, label, K.label)}
-        <Text size="heading" weight="semibold" tabular color={color}>{value}</Text>
+        {lead ? <Text size="heading" weight="semibold" tabular color={color}>{value}</Text> : <Text size="body" tabular color={color === K.text ? K.label : color}>{value}</Text>}
       </Box>
       {visual}
       <Text size="caption" color={K.muted}>{caption}</Text>
@@ -84,6 +85,8 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
   const usedRows = rows.filter(r => !/messages|free space|autocompact/i.test(r.name) && r.tokens > 0).sort((a, b) => b.tokens - a.tokens)
   const carried = usedRows.reduce((a, r) => a + r.tokens, 0)
   const sw = switchDue(s, l, cv, vw)
+  // say it once: when the headline is about the flagged notes, the cards below neither repeat them nor their button
+  const heroMem = (vw.flow === 'confirm' && flaggedNotes(s) > 0) || tip?.action === 'review'
   const always = s.native.files.filter(f => f.loads !== 'on-demand')
   const over = always.filter(f => f.over)
   const left = Math.max(0, win - (l?.context.tokens ?? 0) - buffer)
@@ -103,9 +106,9 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
         <Box key="ctx-row" flexGrow={1} flexDirection="row" flexWrap="wrap" alignItems="center" justifyContent={beside ? 'flex-start' : 'center'} columnGap={2} rowGap={1}>
           {u.graphic('g-gauge', gauge({ pct, threshold: compactAt, size: gaugePx, label: 'full', animate: animateFor('gauge', `${pct}`) }), `This chat is ${pct}% full`)}
           <Box flexDirection="column" gap={1} width="34%" flexGrow={1} flexShrink={1} minWidth={18}>
-            {u.tag('ctx-free', 'spark', K.emerald, `${k(left)} tokens of room left`, K.text)}
+            {u.tag('ctx-free', 'spark', K.emerald, `${k(left)} tokens left`, K.text)}
             {turnsLeft ? u.tag('ctx-left', 'pending', K.amber, `about ${turnsLeft} more turn${turnsLeft === 1 ? '' : 's'} at this pace`, K.label) : null}
-            {compactAt ? u.tag('ctx-buf', 'compaction', K.amber, `At ${Math.round(compactAt * 100)}% Claude shortens the chat into a summary`, K.label) : null}
+            {compactAt ? u.tag('ctx-buf', 'compaction', K.amber, `At ${Math.round(compactAt * 100)}% Claude summarizes the chat`, K.label) : null}
           </Box>
         </Box>
       ) : u.tag('ctx-wait', 'pending', K.silver, 'Shows after Claude\'s first reply in this chat.'),
@@ -121,29 +124,30 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
   const nowShare = known ? Math.max(0, Math.min(1, Math.round(((Date.now() - weekStart) / (7 * DAY)) * 168) / 168)) : undefined
   const today = nowShare === undefined ? undefined : Math.min(6, Math.floor(nowShare * 7))
   const dayLabels = known ? Array.from({ length: 7 }, (_, i) => new Date(weekStart + i * DAY + DAY / 2).toLocaleDateString(undefined, { weekday: 'narrow' })) : undefined
-  // the 5-hour window the same way: where "now" is in it (10-minute steps) and each hour's start time under its block
+  // the 5-hour window the same way: where "now" is in it (10-minute steps), and the clock time at each hour's boundary
+  // (start … reset), never a block's start time in emerald, which read as "the time now" (Kafil, 2026-11-28)
   const fiveEnd = five?.resetsAt ? Date.parse(five.resetsAt) : NaN
   const fiveKnown = Number.isFinite(fiveEnd) && !five?.rolled
   const fiveNow = fiveKnown ? Math.max(0, Math.min(1, Math.round(((Date.now() - (fiveEnd - 5 * 3_600_000)) / (5 * 3_600_000)) * 30) / 30)) : undefined
   const hm = (t: number) => { const d = new Date(t); return `${d.getHours() % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}` }
-  const hourLabels = fiveKnown && barPx >= 200 ? Array.from({ length: 5 }, (_, i) => hm(fiveEnd - (5 - i) * 3_600_000)) : undefined
+  const hourLabels = fiveKnown && barPx >= 160 ? Array.from({ length: 6 }, (_, i) => hm(fiveEnd - (5 - i) * 3_600_000)) : undefined
   const cacheColor = { warm: K.sage, cooling: K.amber, cold: K.rose, unknown: K.muted }[cs.state]
   const cacheShare = cs.state === 'unknown' ? 0 : cs.leftMin / (ttlMs / 60_000)
   const planCard = u.card('kpi', wide ? '28%' : mid ? '46%' : '90%', [
       u.head('kpi-h', 'Plan and cache', stale),
       <Box key="cells" flexDirection="column" justifyContent="space-between" rowGap={1} flexGrow={1}>
         {meter('c5', 'pending', '5-hour plan', five ? `${five.percentUsed}%` : '–', five ? attn(five.percentUsed / 100) : K.muted,
-          five ? u.graphic('g5', hours({ share: five.percentUsed / 100, width: barPx, now: fiveNow, today: fiveNow === undefined ? undefined : Math.min(4, Math.floor(fiveNow * 5)), labels: hourLabels, animate: animateFor('p5', `${five.percentUsed}`) }), `${five.percentUsed}% of this 5-hour window used`) : null,
+          five ? u.graphic('g5', hours({ share: five.percentUsed / 100, width: barPx, now: fiveNow, edges: hourLabels, animate: animateFor('p5', `${five.percentUsed}`) }), `${five.percentUsed}% of this 5-hour window used${fiveNow !== undefined ? `; the marker is now, ${Math.round(fiveNow * 300)} minutes into the window` : ''}`) : null,
           five ? (five.rolled ? `a new 5 hours started at ${clock(Date.parse(five.resetsAt!))}` : `of this 5-hour window used${five.resetsAt ? ` · resets ${clock(Date.parse(five.resetsAt))}` : ''}${planRate > 0.01 && five.percentUsed < 100 ? ` · runs out about ${clock(Date.now() + ((100 - five.percentUsed) / planRate) * 60_000)}` : ''}`) : 'shows after a reply')}
         {meter('c7', 'decision', 'This week', wk ? `${wk.percentUsed}%` : '–', wk ? attn(wk.percentUsed / 100) : K.muted,
           wk ? u.graphic('g7', weekBar({ share: wk.percentUsed / 100, width: barPx, now: nowShare, today, labels: dayLabels, animate: animateFor('p7', `${wk.percentUsed}`) }), `${wk.percentUsed}% of this week's limit used${today !== undefined ? `, on day ${today + 1} of 7` : ''}`) : null,
-          wk ? (wk.rolled ? 'a new week just started' : `of your weekly limit used${today !== undefined ? `, day ${today + 1} of 7` : ''}${known ? ` · resets ${new Date(weekEnd).toLocaleDateString(undefined, { weekday: 'short' })} ${clock(weekEnd)}` : ''}`) : 'shows after a reply')}
+          wk ? (wk.rolled ? 'a new week just started' : `of your weekly limit used${today !== undefined ? `, day ${today + 1} of 7` : ''}${known ? ` · resets ${new Date(weekEnd).toLocaleDateString(undefined, { weekday: 'short' })} ${clock(weekEnd)}` : ''}`) : 'shows after a reply', false)}
         <Box key="cc" flexDirection="row" alignItems="center" columnGap={1} flexWrap="nowrap">
           {u.Svg && cs.state !== 'unknown' ? <Box key="cc-g" flexShrink={0}>{u.graphic('gc', hourglass({ share: cacheShare, color: cacheColor, size: 38 }), cs.state === 'cold' ? 'The cache has run out' : `${cs.leftMin} minutes of cache left`)}</Box> : null}
           <Box flexDirection="column" gap={0} flexGrow={1} flexShrink={1} minWidth={16}>
             <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={1}>
               {u.Svg && cs.state !== 'unknown' ? <Text key="cc-l" size="caption" color={K.label}>Cache</Text> : u.tag('cc-l', 'spark', K.silver, 'Cache', K.label)}
-              <Text size="heading" weight="semibold" tabular color={cs.state === 'warm' ? K.text : cacheColor}>{cs.state === 'unknown' ? '–' : cs.state === 'cold' ? 'Cold' : `${cs.leftMin} min`}</Text>
+              <Text size="body" weight={cs.state === 'warm' ? undefined : 'semibold'} tabular color={cs.state === 'warm' ? K.label : cs.state === 'cold' ? 'error' : 'warning'}>{cs.state === 'unknown' ? '–' : cs.state === 'cold' ? 'Cold' : `${cs.leftMin} min`}</Text>
             </Box>
             <Text size="caption" color={K.muted}>{cs.until ? (cs.state === 'cold' ? 'expired: your next message re-reads the whole chat at full price' : `warm until ${clock(cs.until)}: Claude re-reads this chat at a tenth of the price until then`) : 'starts with Claude\'s next reply'}</Text>
           </Box>
@@ -161,10 +165,10 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
       <Box flexShrink={1} minWidth={14}><Text size="caption" color={K.label}>tokens of notes in every chat</Text></Box>
     </Box>,
     <Text key="mem-n" size="caption" color={K.muted}>{`${always.length} file${always.length === 1 ? '' : 's'} load in every chat${onDemand ? ` · ${onDemand} only when needed` : ''}`}</Text>,
-    over.length ? u.tag('mem-over', 'alert', K.amber, `${over.length} file${over.length === 1 ? ' is' : 's are'} too long: Claude only reads the first 200 lines`, K.label) : u.tag('mem-ok', 'check', K.emerald, 'Every file is short enough to load in full', K.label),
-    u.tag('mem-dl', 'dream', waiting ? K.amber : K.emerald, s.dream.running ? 'Checking your notes now…' : lastDream ? `Checked ${ago(minsSince(lastDream.ts))}: ${waiting ? `${waiting} note${waiting === 1 ? '' : 's'} to review` : 'nothing to fix'}` : 'Not checked yet', K.label),
+    over.length ? u.tag('mem-over', 'alert', K.amber, over.length === 1 ? `${over[0]!.label} is too long: ${over[0]!.over}${over[0]!.loads === 'first-200' ? ' (Claude Code cuts it silently)' : ''}` : `${over.length} files are too long${over.some(f => f.loads === 'first-200') ? ': auto memory past 200 lines or 25 KB is cut silently' : ''} (Memory files has each one)`, K.label) : u.tag('mem-ok', 'check', K.emerald, 'Every file is short enough to load in full', K.label),
+    u.tag('mem-dl', 'dream', waiting && !heroMem ? MARK_AMBER : K.emerald, s.dream.running ? 'Checking your notes now…' : lastDream ? `Checked ${ago(minsSince(lastDream.ts))}${heroMem ? '' : `: ${waiting ? `${waiting} note${waiting === 1 ? '' : 's'} to review` : 'nothing to fix'}`}` : 'Not checked yet', K.label),
   ]
-  const memBtn = <Button key="ov-dream" variant={waiting && tip?.action !== 'review' ? 'primary' : 'secondary'} onPress={() => { void setTab($, 'data'); void setSub($, 'dream') }}>{waiting ? `Review ${waiting}` : 'Open memory'}</Button>
+  const memBtn = heroMem ? null : <Button key="ov-dream" variant={waiting && tip?.action !== 'review' ? 'primary' : 'secondary'} onPress={() => { void setTab($, 'data'); void setSub($, 'dream') }}>{waiting ? `Review ${waiting}` : 'Open memory'}</Button>
   const barsW = memAlone ? Math.min(520, Math.round(memPx * 0.46)) : Math.min(memPx, 560)
   const bars = fullest.length ? u.graphic('g-mem', lineBars({ items: fullest, width: barsW, animate: animateFor('mem', fullest.map(f => f.lines).join(',')) }), `Fullest files: ${fullest.map(f => `${f.label} ${f.lines} of ${f.limit} lines`).join(', ')}`) : null
   const memCard = u.card('mem', wide ? '28%' : '90%', memAlone ? [
@@ -196,7 +200,7 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
           <Text key="sv-s" size="heading" weight="bold" tabular color={saved ? K.emerald : K.text}>{`${k(saved)} tokens`}</Text>
           <Text size="caption" color={K.label}>{sp?.resumed ? `not re-read, because ${sp.resumed} chat${sp.resumed === 1 ? '' : 's'} started from a handoff instead of a big old one` : 'saved so far: no chat has started from a handoff yet'}</Text>
         </Box>
-        {u.Svg && pairPx >= 300 ? <Box key="sv-art" flexShrink={0}>{u.graphic('sv-m', sceneSvg('saved', 84), 'Cortex beside a stack of saved tokens')}</Box> : null}
+        {u.Svg && pairPx >= 300 ? <Box key="sv-art" flexShrink={0}>{u.graphic('sv-m', sceneSvg('saved', 140), 'Cortex beside a stack of saved tokens')}</Box> : null}
       </Box>,
       row('sv-w', waste ? 'alert' : 'check', waste >= 5000 ? K.amber : waste ? K.silver : K.emerald, waste ? 'Tools you never use add' : 'Tools you never use', waste ? `${k(waste)} a message` : 'none loaded', waste >= 5000),
       row('sv-c', 'spark', K.silver, 'Cortex itself adds', s.footprint ? `~${k(s.footprint.tokens)} a message` : '–'),
@@ -232,7 +236,7 @@ export function overviewPage($: Dollar, els: ElementTable, u: Kit, o: Overview):
       <Box key="continuity" flexDirection="row" flexWrap="wrap" gap={1}>
         {/* the handoff card holds more text: the wider share keeps both cards about the same height */}
         {lastTurnCard($, els, u, t, s, vw, mid ? wl[0]! : '90%', mid ? inner(pl, 0) : inner([0.9], 0))}
-        {handoffCard($, els, u, t, s, l, mid ? wl[1]! : '90%', !!sw || tip?.action === 'handoff', o.cols >= 110)}
+        {handoffCard($, els, u, t, s, l, mid ? wl[1]! : '90%', !!sw || tip?.action === 'handoff', o.cols >= 110, heroMem)}
       </Box>
       {wide ? null : <Box key="mem-row-o" flexDirection="row">{memCard}</Box>}
       <Box key="diag" flexDirection="row" flexWrap="wrap" gap={1}>{savedCard}{costCard}</Box>

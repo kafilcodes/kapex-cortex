@@ -6,6 +6,8 @@ import { unusedTools } from './tips'
 import { armAnimation } from './anim'
 import { loadout } from './loadout'
 import { dreamFinished, notify } from './notify'
+import { clearNote, readNote, say } from './note'
+export { noteTone, say } from './note'
 import { freshLimits, isStatus, usable } from './shape'
 import { cacheTtl, toReview, vaultStamp } from './chat'
 export { ago, minsSince, toReview, vaultStamp } from './chat'
@@ -17,7 +19,6 @@ export { freshLimits }; export { animateFor } from './anim'
 export const PANE = 'kapex-cortex'
 export const status = atom({ plugin: 'kapex-cortex', key: 'status' } as const, null as StatusView | null, { shape: 'status-4' })
 export const live = atom({ plugin: 'kapex-cortex', key: 'live' } as const, null as LiveView | null, { shape: 'live-1' })
-export const note = atom({ plugin: 'kapex-cortex', key: 'note' } as const, '', { shape: 'note-1' })
 export const tab = atom({ plugin: 'kapex-cortex', key: 'tab' } as const, '' as Tab | '', { shape: 'tab-3' })
 export const history = atom({ plugin: 'kapex-cortex', key: 'history' } as const, [] as number[], { shape: 'history-1' })
 export const planHist = atom({ plugin: 'kapex-cortex', key: 'planHist' } as const, [] as { t: number; p: number }[], { shape: 'plan-1' })
@@ -119,7 +120,7 @@ async function refreshOnce($: Dollar): Promise<void> {
   }
   const sj = JSON.stringify(s)
   if (sj !== lastJson.s) { lastJson.s = sj; await update($, status, () => s) }
-  if (prev?.dream.running && s && !s.dream.running) dreamFinished($, s) // a Dream that was running just ended
+  if (prev?.dream.running && s && !s.dream.running) dreamFinished($, s) // a full check that was running just ended
   await putLive($, l)
   if (s && l) void autoPark($, s, l)
 }
@@ -157,7 +158,7 @@ export async function ensureChat($: Dollar, ended = ''): Promise<boolean> {
   await update($, cache, c => ({ ...c, lastAt: null, read: 0, write: 0, input: 0 }))
   await update($, history, () => [])
   await update($, warned, () => [])
-  await update($, note, () => '')
+  await clearNote($)
   await update($, view, (v): ViewState => ({ ...v, flow: '', expanded: [], editing: '' }))
   await update($, chat, () => (id === ended ? '' : id)) // still the ended id: the heartbeat learns the new one
   return true
@@ -182,16 +183,17 @@ export async function refreshNow($: Dollar): Promise<void> {
   await refresh($)
   const d = new Date()
   armAnimation('refresh') // the fresh data is in: the redraw this note causes animates what changed
-  await update($, note, () => `Refreshed at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`)
+  await say($, `Refreshed at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`)
 }
 
-export async function act($: Dollar, label: string, args: string[], sayOut = false): Promise<void> {
-  await update($, note, () => `${label}…`)
+/** One press that runs a `kc` command: "<working>" while it runs (default "<label>…"), then the label on success or what went wrong. */
+export async function act($: Dollar, label: string, args: string[], sayOut = false, working = `${label}…`): Promise<void> {
+  await say($, working)
   const r = await kc($, args)
   await refresh($)
   if (label === 'Checked' && r.ok) { const s = await read($, status), n = toReview(s); void notify($, 'done', n ? `Quick check · ${n} to look at` : 'Quick check · all clear', s) }
   // the header draws the note as a status chip: done → a tick and the action's own words ("Saved"), else what went wrong
-  await update($, note, () => (r.ok ? (sayOut ? (r.out.split('\n')[0] ?? label).slice(0, 120) : label) : `${label}: ${(r.out.split('\n')[0] ?? '').slice(0, 120)}`)) // sayOut: the command's own words on success
+  await say($, r.ok ? (sayOut ? (r.out.split('\n')[0] ?? label).slice(0, 120).replace(/…+$/, '') || label : label) : `Didn't work: ${(r.out.split('\n')[0] ?? '').slice(0, 120) || 'Cortex gave no answer'}`) // sayOut: the command's own words on success
 }
 
 // transparent: Claude Code's own light or dark canvas shows through, so the panel looks native in both modes
@@ -199,7 +201,7 @@ export function openPane($: Dollar) { armAnimation('open'); void setMore($, 'tim
 
 // Every state read and write goes through these (the validator wants atoms used in the file that declares them).
 export async function snapshot($: Dollar) {
-  return { s: await read($, status), l: await read($, live), cv: await read($, cache), msg: await read($, note), chosen: await read($, tab), hist: await read($, history), ph: await read($, planHist), vw: await read($, view) }
+  return { s: await read($, status), l: await read($, live), cv: await read($, cache), msg: await readNote($), chosen: await read($, tab), hist: await read($, history), ph: await read($, planHist), vw: await read($, view) }
 }
 export async function readStatus($: Dollar) { return read($, status) }
 export async function readCache($: Dollar) { return read($, cache) }
@@ -263,24 +265,11 @@ export async function setFlow($: Dollar, flow: '' | 'confirm' | 'copied'): Promi
 export async function snoozeSwitch($: Dollar, pct: number): Promise<void> {
   await update($, view, (v): ViewState => ({ ...v, flow: '', snooze: { until: Date.now() + 30 * 60_000, pct } }))
 }
-/** What you paste in the new chat: typed by you, so a slash command is fine (the panel itself can't send one). */
-export const RESUME_COMMAND = '/cortex-resume'
-/** Hand off: save the handoff with a snapshot of the working tree, then put /cortex-resume on the clipboard. */
-export async function handOff($: Dollar): Promise<void> {
-  await update($, note, () => 'Saving the handoff…')
-  const r = await kc($, ['handoff'])
-  let copied = false
-  try { copied = !!(await $.ui.copy({ text: RESUME_COMMAND })).isCopied } catch { /* no clipboard on this surface */ }
-  await refresh($)
-  await update($, view, (v): ViewState => ({ ...v, flow: r.ok ? 'copied' : '' }))
-  void notify($, r.ok ? 'done' : 'alert', r.ok ? (copied ? 'Handoff saved · resume copied' : 'Handoff saved') : 'Handoff failed · see Handoff', await read($, status))
-  await update($, note, () => (r.ok ? (copied ? 'Handoff saved · /cortex-resume copied' : 'Handoff saved') : `Handoff: ${(r.out.split('\n')[0] ?? '').slice(0, 120)}`))
-}
-export async function copyResume($: Dollar): Promise<void> {
-  let copied = false
-  try { copied = !!(await $.ui.copy({ text: RESUME_COMMAND })).isCopied } catch { /* no clipboard */ }
-  await update($, note, () => (copied ? '/cortex-resume copied' : 'Couldn\'t copy here: type /cortex-resume in the new chat'))
-}
+export { copyResume, handedOff, handOff, RESUME_COMMAND, setTurnRunning } from './handoff-flow'
+/** The chat's live numbers as last read (the handoff flow reads its turn count). */
+export async function readLive($: Dollar): Promise<LiveView | null> { return read($, live) }
+/** Sets the handoff flow's step and the turn count it was taken at (handoff-flow.ts). */
+export async function setHanded($: Dollar, ok: boolean, turns: number): Promise<void> { await update($, view, (v): ViewState => ({ ...v, flow: ok ? 'copied' : '', flowTurns: ok ? turns : undefined })) }
 
 /** Auto-park: MCP servers that load into every message here but went unused in your recent chats (at least 10 of
  * them), from the next chat on. Never the Claude app's own servers, never one you turned back on, once per server per
@@ -292,7 +281,7 @@ async function autoPark($: Dollar, s: StatusView, l: LiveView): Promise<void> {
   if (!pick.length) return
   for (const x of pick) tried.add(x.server!)
   const r = await kc($, ['park', 'add', ...pick.map(x => x.server!), '--auto', ...pick.flatMap(x => ['--tokens', `${x.server}=${x.loaded}`])])
-  await update($, note, () => (r.ok ? `Turned off unused: ${pick.map(x => x.name).join(', ')} (new chats). Undo in Costs` : 'Couldn\'t turn off unused servers'))
+  await say($, r.ok ? `Turned off unused: ${pick.map(x => x.name).join(', ')} (new chats). Undo in Costs` : 'Couldn\'t turn off unused servers', 12_000)
   if (r.ok) void notify($, 'done', `Turned off ${pick.length} unused tool${pick.length === 1 ? '' : 's'}`, s)
   await refresh($)
 }

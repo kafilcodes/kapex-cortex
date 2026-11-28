@@ -1,6 +1,7 @@
+import { opencodeInfo } from "./core/opencode.ts";
 import { getAsset } from "node:sea";
 import { cmdline, IS_BINARY } from "./core/self.ts";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { atomicWriteIfChanged } from "./util/atomic.ts";
@@ -84,15 +85,21 @@ export function opencodePluginSource(opts: InitOptions): string {
 export function opencodeCommands(opts: InitOptions): Record<string, string> {
   const cli = cmdline(opts.node, opts.cli);
   return {
+    // what a user who hit Claude's limit types in OpenCode: the packet with its age, or a plain "no handoff here";
+    // the shell include works in sh, dash, bash and zsh: GNU stat (-c) first, then BSD (-f); only digits count as a
+    // time, and the packet prints whatever the age line did
     "cortex-resume":
-      "---\ndescription: Continue from the Kapex Cortex handoff packet (.vault/STATE.md)\n---\n" +
-      "You are resuming work handed off from another session or tool. The packet below is authoritative.\n\n" +
-      "!`cat .vault/STATE.md 2>/dev/null || echo 'No .vault/STATE.md yet.'`\n\n" +
-      "Continue from **Next action** (or, if it only says to continue, from the plan in the last assistant message). " +
-      "The verbatim last user message is context: a turn-specific instruction in it such as \"don't edit yet\" applied to that turn, and running this command is the go-ahead. " +
-      "Follow the project's own rules (AGENTS.md or CLAUDE.md). You are done only when the Verify commands pass; report their output. $ARGUMENTS\n",
+      "---\ndescription: Continue from the Kapex Cortex handoff (.vault/STATE.md), e.g. after Claude's usage limit\n---\n" +
+      "You are picking up work another session handed off (often Claude Code, after its usage limit). The packet below is authoritative.\n\n" +
+      "!`f=.vault/STATE.md; if [ -s \"$f\" ]; then m=$(stat -c %Y \"$f\" 2>/dev/null) || m=$(stat -f %m \"$f\" 2>/dev/null); case \"$m\" in ''|*[!0-9]*) m= ;; esac; if [ -n \"$m\" ]; then echo \"(packet saved $(( ($(date +%s) - m) / 60 )) minutes ago)\"; fi; cat \"$f\"; else echo 'NO_HANDOFF: there is no .vault/STATE.md in this folder.'; fi`\n\n" +
+      "1. If it says NO_HANDOFF: tell the user there is no handoff here (open OpenCode in the project folder Claude Code worked in, or save one there with /cortex-handoff), ask what to continue, and stop.\n" +
+      "2. Tell the user in two or three lines: the goal, the next action, the open items, and how old the packet is. Older than a day: run `git log -5 --oneline` and `git status` first, the work may be done.\n" +
+      "3. The **Mission contract**'s binding rules are the user's own words: follow them. Its **Steps** are what the user asked for, item by item: when you finish one and its check passes, tick it with the command its Steps line gives (`" + cli + " mission done <n> --mission <id>`; never one that isn't finished, and never edit STATE.md by hand), and name the steps you ticked in your reply. **Pinned for this session** holds the user's standing instructions and decisions: binding. In **Where we left off**, treat the newest reply as your own previous message: don't redo it. Notes listed as flagged may be wrong: don't rely on them.\n" +
+      "4. If the words after this command only ask something, answer from the packet and don't edit anything. Otherwise, if the packet says **HANDOFF READY** (a usage limit stopped the other tool mid-task), continue from **Next action** (or the open items) at once; if it doesn't, end with the next action as one short question and wait for the user's go before you edit any file. A turn-specific instruction in an earlier message, such as \"don't edit yet\", applied to that turn only.\n" +
+      "5. Don't read old transcripts or .vault/private/. Follow the project's own rules (AGENTS.md or CLAUDE.md).\n" +
+      "6. You are done only when the commands under **Verify** pass; report their output. When you stop, Cortex saves the handoff back by itself (OpenCode 2), so Claude Code continues with /cortex-resume; on OpenCode 1.x, run /cortex-handoff before you stop. $ARGUMENTS\n",
     kc:
-      "---\ndescription: Kapex Cortex status card (handoff, memory loaded every session, last Dream)\n---\n" +
+      "---\ndescription: Kapex Cortex status card (handoff, memory loaded every session, last memory check)\n---\n" +
       "!`\"$HOME/.local/bin/kc\" status --md 2>/dev/null || echo 'Kapex Cortex is not on here. Run kc i.'`\n\n" +
       "Show the card above to the user exactly as written, with nothing added.\n",
     "cortex-handoff":
@@ -141,8 +148,14 @@ export function cortexInit(dir: string, opts: InitOptions): string[] {
     : ".claude/settings.local.json: SessionStart, Stop, StopFailure, PreCompact, SessionEnd hooks");
   note(cleanOpencodeConfig(join(root, "opencode.json")), "opencode.json: removed the old .vault/INVARIANTS.md instruction");
   note(atomicWriteIfChanged(join(root, ".opencode", "plugins", "kapex-cortex.ts"), opencodePluginSource(opts)), ".opencode/plugins/kapex-cortex.ts");
+  // OpenCode 2 reads .opencode/commands (and still the old command/ folder); 1.x reads only command/
+  const cmdDir = opencodeInfo(root).major === 1 ? "command" : "commands", other = cmdDir === "command" ? "commands" : "command";
   for (const [name, body] of Object.entries(opencodeCommands(opts))) {
-    note(atomicWriteIfChanged(join(root, ".opencode", "commands", `${name}.md`), body), `.opencode/commands/${name}.md`);
+    note(atomicWriteIfChanged(join(root, ".opencode", cmdDir, `${name}.md`), body), `.opencode/${cmdDir}/${name}.md`);
+    // OpenCode 2 reads both folders: an older copy of Cortex's own command in the other one would shadow or repeat it
+    const old = join(root, ".opencode", other, `${name}.md`);
+    // only a file Cortex wrote (its front matter names it), never a command of yours that mentions Cortex
+    try { if (/^---\r?\ndescription: [^\n]*Kapex Cortex/.test(readFileSync(old, "utf8"))) { rmSync(old); changes.push(`.opencode/${other}/${name}.md removed (an older copy)`); } } catch { /* none there */ }
   }
 
   return changes;

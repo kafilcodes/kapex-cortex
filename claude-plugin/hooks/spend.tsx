@@ -6,7 +6,7 @@ import { ago, animateFor, minsSince, setParked, type Dollar } from './data'
 import type { Kit } from './kit'
 import { K } from './theme'
 import { sceneSvg } from './mascot'
-import type { Tiles } from './tiles'
+import { ink, type Tiles } from './tiles'
 import { stacked } from './viz'
 import { toolName } from './tips'
 
@@ -46,7 +46,7 @@ export function savedCard(u: Kit, t: Tiles, s: StatusView, px = 900): JSX.Elemen
   const row = (key: string, icon: string, color: string, value: string, label: string) => (
     <Box key={key} flexDirection="row" gap={1} alignItems="center">
       {u.node(`${key}-n`, icon, color, 20)}
-      <Box width={8} flexShrink={0}><Text weight="semibold" tabular color={color === K.silver ? K.text : color}>{value}</Text></Box>
+      <Box width={8} flexShrink={0}><Text weight="semibold" tabular color={color === K.silver ? K.text : ink(color)}>{value}</Text></Box>
       <Box flexGrow={1} flexShrink={1} minWidth={12}><Text size="caption" color={K.label}>{label}</Text></Box>
     </Box>
   )

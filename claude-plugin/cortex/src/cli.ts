@@ -17,9 +17,11 @@ import { setup } from "./setup.ts";
 import { expandAlias, KC_HELP } from "./kc.ts";
 import { computeStatus, statusMarkdown, statusText } from "./core/status.ts";
 import { olderTimeline } from "./core/timeline.ts";
-import { buildNotifier, notifierReady, notifyMac } from "./core/notifier.ts";
+import { buildNotifier, notifierReady, notifyMac, SOUND } from "./core/notifier.ts";
+import { quietReason } from "./core/notify-guard.ts";
 import { installShims, isSetUp, rememberInstall } from "./onboard.ts";
 import { dreamCommand } from "./dream-cli.ts";
+import { missionCommand } from "./mission-cli.ts";
 import { nativeSummary } from "./core/native.ts";
 import { park, parkView, unpark } from "./core/park.ts";
 import { applySafety, auditSafety, undoSafety } from "./core/safety.ts";
@@ -108,6 +110,7 @@ function main(argv: string[]): void {
       console.log(ok ? `Handoff saved to ${statePath(p)}` : `Handoff note saved; ${statePath(p)} will include it after the next turn ends.`);
       return;
     }
+    case "mission": { missionCommand(repoOrDie(), rest); return; }
     case "state": {
       const p = repoOrDie();
       try { process.stdout.write(readFileSync(statePath(p), "utf8")); } catch { console.log("No .vault/STATE.md yet."); }
@@ -154,15 +157,24 @@ function main(argv: string[]): void {
       return;
     }
     case "notify": {
-      // one macOS notification from the panel (top right, Cortex's icon); "notified" only when one was sent, so the
-      // panel falls back to the app's own toast elsewhere (Linux, Windows, CORTEX_NO_NOTIFY)
-      if (process.platform !== "darwin" || process.env.CORTEX_NO_NOTIFY || !rest[1]) { console.log("not sent"); process.exitCode = 2; return; }
-      notifyMac(rest[0] || "Kapex Cortex", rest.slice(1).join(" ")); console.log("notified"); return;
+      // kc notify [--sound done|alert] <title> <words>: one macOS notification from the panel (top right, Cortex's icon,
+      // the sound only when the panel passes it: Sounds on). "notified" when one was sent; "skipped" when notify-guard
+      // held it back (a repeat or a burst: the panel then does nothing more); "not sent" (exit 2) where macOS
+      // notifications can't go (Linux, Windows, a test or throwaway run), so the panel uses the app's own toast
+      const si = rest.indexOf("--sound"), kind = si >= 0 ? rest[si + 1] : undefined, args = si >= 0 ? rest.filter((_, i) => i !== si && i !== si + 1) : rest;
+      const why = process.platform !== "darwin" ? "not macOS" : quietReason();
+      if (why || !args[1]) { console.log(`not sent${why ? ` (${why})` : ""}`); process.exitCode = 2; return; }
+      console.log(notifyMac(args[0] || "Kapex Cortex", args.slice(1).join(" "), { sound: kind === "alert" ? SOUND.alert : kind === "done" ? SOUND.done : null }) ? "notified" : "skipped (said in the last 10 minutes, or a burst)"); return;
     }
     case "notifier": {
       // the macOS notifier app with Cortex's icon (core/notifier.ts): built once in the background at session start
       if (rest[0] === "build") { const ok = buildNotifier(); console.log(ok ? "ready" : "not built (macOS only)"); return; }
-      if (rest[0] === "test") { notifyMac("Kapex Cortex", "Notifications show the Cortex icon."); console.log(notifierReady() ? "sent with the Cortex app" : "sent with osascript (run: kc notifier build)"); return; }
+      if (rest[0] === "test") {
+        // the way a real one looks and sounds (Sounds in Settings, on by default), timestamped so the repeat guard lets it through
+        let on = true; try { on = readPrefs(repoOrDie()).sound !== false; } catch { /* no project here: the default */ }
+        const sent = notifyMac("Kapex Cortex", `Notifications look like this (${new Date().toLocaleTimeString()})${on ? ", with a sound" : ", silent: Sounds is off"}.`, { sound: on ? SOUND.done : null });
+        console.log(!sent ? `not sent: ${quietReason() ?? "a notification went out under 2 s ago"}` : notifierReady() ? `sent with the Cortex app${on ? ` (sound: ${SOUND.done})` : " (silent)"}` : "sent with osascript (run: kc notifier build)"); return;
+      }
       console.log("kc notifier build|test"); return;
     }
     case "hook":

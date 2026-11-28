@@ -111,7 +111,8 @@ test('look: AMOLED black paints pure black in dark mode only; light mode is the 
   expect(a.problems.filter(x => /dark mode/.test(x)).length, 'only borders a touch faint on pure black').toBeLessThanOrEqual(18)
   expect(a.theme.inputs.dark?.['gray-830'], 'the app\'s panel surface is black too, so this panel matches').toBe('#000000')
   expect(cleanLook({ ground: 'amoled' }).ground).toBe('amoled')
-  expect(cleanLook({ ground: 'neon' }).ground).toBe('obsidian')
+  expect(cleanLook({ ground: 'neon' }).ground, 'an unknown ground is the default, AMOLED since v4.6').toBe('amoled')
+  expect(cleanLook({ ground: 'obsidian' }).ground, 'a saved Obsidian is kept').toBe('obsidian')
 })
 
 test('look: Settings offers the dark-mode ground while the theme is on', LONG, async ($, on) => {

@@ -72,7 +72,7 @@ export function filesBody($: Dollar, els: ElementTable, u: Kit, s: StatusView, v
       {t.rows('nf-al', always.map(f => tile(f)))}
       {later.length ? t.groupHead('nf-lh', 'pending', K.silver, 'Loaded only when needed', String(later.length)) : null}
       {later.length ? t.rows('nf-ll', later.map(f => tile(f))) : null}
-      {s.migrated ? u.tag('nf-mig', 'save', K.silver, `Your Cortex v2 memories are kept in ${s.migrated}: copy what you still want into CLAUDE.md, or let a Dream sort it.`, K.muted) : null}
+      {s.migrated ? u.tag('nf-mig', 'save', K.silver, `Your Cortex v2 memories are kept in ${s.migrated}: copy what you still want into CLAUDE.md, or let a full check sort it.`, K.muted) : null}
     </Box>
   )
 }

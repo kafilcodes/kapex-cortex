@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { atomicWriteIfChanged } from "../util/atomic.ts";
 import { tryLock } from "../util/lock.ts";
 import { ulid } from "../util/ulid.ts";
-import { askModel } from "./backends.ts";
+import { judge, judgeName } from "./backends.ts";
 import { mechanicalChecks, scopeHints, type Finding } from "./dream-checks.ts";
-import { DREAM_SCHEMA, DREAM_SYSTEM, dreamPrompt, parseJudgment } from "./dream-model.ts";
+import { DREAM_SCHEMA, DREAM_SYSTEM, dreamPrompt, guardChecks, parseJudgment } from "./dream-model.ts";
 import { commandsIn, gatherEvidence, renderEvidence, transcripts, type Evidence } from "./evidence.ts";
 import { autoMemory } from "./home.ts";
 import { entries, nativeFiles, type Entry } from "./native.ts";
@@ -16,7 +16,7 @@ import { decide, isKept, readKept } from "./dream-decide.ts";
 import { writeMemoryCheck } from "./tiers.ts";
 
 /**
- * A Dream (after Anthropic's "dreaming"): read Claude Code's own memory files next to what really happened
+ * A full check (after Anthropic's "dreaming"): read Claude Code's own memory files next to what really happened
  * (transcripts, test runs, git), and propose fixes. Nothing changes until you Apply; every Dream keeps the files
  * as they were (before/) and as Apply wrote them (after/) in .vault/dreams/<id>/, so Apply and Undo are exact
  * and refuse to run if a file changed in between.
@@ -26,6 +26,8 @@ export interface DreamFile { path: string; label: string; hash: string | null }
 export interface DreamReport {
   id: string; ts: string; status: DreamStatus; ms: number;
   model: string | null; modelError?: string; dropped?: number;
+  /** your own key's model failed and Claude on your plan judged instead: which model failed, and why */
+  fallback?: { from: string; why: string };
   /** what the model claimed that Cortex's checks refused, and why */
   rejected?: string[];
   transcripts: number; evidenceCount: number; entryCount: number;
@@ -59,14 +61,14 @@ export function listDreams(p: RepoPaths, max = 20): DreamReport[] {
   return readdirSync(dir(p)).filter((n) => /^[0-9A-Z]{26}$/.test(n)).sort().reverse().slice(0, max).map((n) => readDream(p, n)).filter((r): r is DreamReport => !!r);
 }
 
-/** Is a Dream running right now (started less than 10 minutes ago)? */
+/** Is a full check running right now (started less than 10 minutes ago)? */
 export function dreaming(p: RepoPaths): { since: string } | null {
   try { const r = JSON.parse(readFileSync(runningPath(p), "utf8")) as { since: string }; return Date.now() - Date.parse(r.since) < 600_000 ? r : null; } catch { return null; }
 }
 
 export async function runDream(p: RepoPaths, o: { model?: boolean; now?: Date } = {}): Promise<DreamReport> {
   const release = tryLock(join(dir(p), "dream.lock"), { waitMs: 0, staleMs: 600_000 });
-  if (!release) throw new Error("A Dream is already running.");
+  if (!release) throw new Error("A full check is already running.");
   const t0 = Date.now(), now = o.now ?? new Date();
   const prefs = readPrefs(p);
   mkdirSync(dir(p), { recursive: true });
@@ -77,14 +79,19 @@ export async function runDream(p: RepoPaths, o: { model?: boolean; now?: Date } 
     // the main checkout's copy of this project's files (a worktree inside it) is the same file: not judged twice
     const ents: Entry[] = files.filter((f) => !f.twin).flatMap((f) => { const t = read(f.path); return t === null ? [] : entries(f.path, f.label, t); });
     const ev = gatherEvidence(p.root, { transcripts: prefs.dreamTranscripts, mentioned: [...new Set(ents.flatMap((e) => commandsIn(e.text)))] });
-    const found = mechanicalChecks(p.root, files, ents, ev);
+    const pins = contractPins(p);
+    const found = guardChecks(mechanicalChecks(p.root, files, ents, ev), ents, pins);
     const hints = scopeHints(p.root, files, ents);
     let judged: Omit<Finding, "id">[] = [];
     if (o.model !== false && prefs.dreamBackend !== "off") {
-      r.model = `${prefs.dreamBackend}${prefs.dreamModel ? ` · ${prefs.dreamModel}` : ""}`;
+      r.model = prefs.dreamBackend === "api" ? judgeName("api", prefs.dreamApiModel) : judgeName("claude", prefs.dreamModel || "sonnet");
       try {
-        const raw = await askModel({ backend: prefs.dreamBackend, model: prefs.dreamModel, api: prefs.dreamApi, url: prefs.dreamUrl }, DREAM_SYSTEM, dreamPrompt(files, ents, renderEvidence(ev), found, hints), DREAM_SCHEMA, { timeoutMs: 240_000, effort: "medium", maxTokens: 4_000 });
-        const parsed = parseJudgment(raw, files, ents, ev, found);
+        // your own key first when chosen; on any failure Claude on your plan judges instead, and the report says why
+        const j = await judge(prefs, DREAM_SYSTEM, dreamPrompt(files, ents, renderEvidence(ev), found, hints), DREAM_SCHEMA, { timeoutMs: 240_000, effort: "medium", maxTokens: 4_000 });
+        r.model = j.by;
+        if (j.fallback) r.fallback = j.fallback;
+        const raw = j.raw;
+        const parsed = parseJudgment(raw, files, ents, ev, found, pins);
         judged = parsed.findings;
         r.dropped = parsed.dropped;
         r.rejected = parsed.rejected;
@@ -125,7 +132,7 @@ export async function runDream(p: RepoPaths, o: { model?: boolean; now?: Date } 
   return r;
 }
 
-/** Every file a Dream's findings would write: the notes' own files, rule files they move to, the lesson file and index. */
+/** Every file a full check's findings would write: the notes' own files, rule files they move to, the lesson file and index. */
 function targets(p: RepoPaths, fs: Finding[]): string[] {
   const out = new Set<string>();
   const mem = autoMemory(p.root).dir;
@@ -151,15 +158,15 @@ export function skipFinding(p: RepoPaths, id: string, fid: string, skip: boolean
 
 export function discardDream(p: RepoPaths, id: string): string {
   const r = readDream(p, id);
-  if (!r) return "No such Dream.";
-  if (r.status !== "proposed") return `This Dream is ${r.status}; only a proposed one can be discarded.`;
+  if (!r) return "No such check.";
+  if (r.status !== "proposed") return `This check is ${r.status}; only a proposed one can be discarded.`;
   r.status = "discarded";
   saveDream(p, r);
   writeMemoryCheck(p, []);
   return "Discarded. Nothing changed.";
 }
 
-/** Apply every open change of a Dream. Refused if a file changed since the Dream. */
+/** Apply every open change of a full check. Refused if a file changed since the Dream. */
 export function applyDream(p: RepoPaths, id: string, now = new Date()): string {
   return decide(p, id, "all", "apply", now);
 }
@@ -168,9 +175,9 @@ export function applyDream(p: RepoPaths, id: string, now = new Date()): string {
 export function undoDream(p: RepoPaths, id: string, now = new Date()): string {
   const r = readDream(p, id);
   if (r?.findings.some((f) => f.done)) return decide(p, id, "all", "undo", now); // decided one by one
-  if (!r || r.status !== "applied" || !r.applied) return "Only an applied Dream can be undone.";
+  if (!r || r.status !== "applied" || !r.applied) return "Only an applied check can be undone.";
   const changed = r.applied.files.filter((f) => hash(read(f.path)) !== f.hash);
-  if (changed.length) return `Not undone: ${changed.map((f) => f.label).join(", ")} changed after Apply. Edit it by hand, or run a new Dream.`;
+  if (changed.length) return `Not undone: ${changed.map((f) => f.label).join(", ")} changed after Apply. Edit it by hand, or run a new check.`;
   r.files.forEach((f, i) => {
     if (f.hash === null) rmSync(f.path, { force: true }); // the Dream created it
     else { const t = read(dreamSnap(p, id, "before", i)); if (t !== null) atomicWriteIfChanged(f.path, t); }
@@ -179,4 +186,13 @@ export function undoDream(p: RepoPaths, id: string, now = new Date()): string {
   r.undone = now.toISOString();
   saveDream(p, r);
   return "Undone: every file is back as it was.";
+}
+
+/** The active task's own words (the newest chat's mission contract): a full check never offers to remove them. */
+function contractPins(p: RepoPaths): string[] {
+  try {
+    const f = readdirSync(p.states).filter((x) => x.endsWith(".mission.json")).map((x) => ({ x, t: statSync(join(p.states, x)).mtimeMs })).sort((a, b) => b.t - a.t)[0];
+    const r = f ? JSON.parse(readFileSync(join(p.states, f.x), "utf8")) as { mission?: { status?: string; pins?: { text?: unknown }[] } } : null;
+    return r?.mission?.status === "active" && Array.isArray(r.mission.pins) ? r.mission.pins.map((x) => String(x.text ?? "")).filter(Boolean) : [];
+  } catch { return []; }
 }

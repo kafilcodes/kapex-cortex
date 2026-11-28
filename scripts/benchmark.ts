@@ -194,7 +194,7 @@ writeFileSync(join(ROOT, "bench", "results", "scorecard.json"), JSON.stringify(c
 const s = card.speedMs;
 const ok = (b: boolean) => (b ? "pass" : "FAIL");
 console.log(`Cortex benchmark · ${card.turns} turns in ${card.chats} chats · ${RUNS} runs per timing · Node ${process.version}
-Dream (Quick check):  precision ${(card.dream.precision * 100).toFixed(0)}%  recall ${(card.dream.recall * 100).toFixed(0)}%  (${tp}/${PLANTED.length} planted, ${fp.length} false positives${fp.length ? `: ${fp.map(key).slice(0, 8).join(", ")}` : ""}; ${advice.length} suggestion${advice.length === 1 ? "" : "s"}${advice.length ? `: ${advice.join(", ")}` : ""})
+Memory check, quick: precision ${(card.dream.precision * 100).toFixed(0)}%  recall ${(card.dream.recall * 100).toFixed(0)}%  (${tp}/${PLANTED.length} planted, ${fp.length} false positives${fp.length ? `: ${fp.map(key).slice(0, 8).join(", ")}` : ""}; ${advice.length} suggestion${advice.length === 1 ? "" : "s"}${advice.length ? `: ${advice.join(", ")}` : ""})
 Apply + Undo:         ${applied} · ${undone} · byte-identical: ${restored ? "yes" : "NO"}
 Handoff answerable:   ${card.handoff.answerable}/${card.handoff.of}${card.handoff.missed.length ? ` (missing: ${card.handoff.missed.join(" | ")})` : ""} · ~${card.handoff.stateTokens} tokens
 5-hop telephone:      ${card.telephone.probes}/${card.telephone.of} probes · chat 1's facts kept in chat 5: ${card.telephone.facts}/${card.telephone.factsOf}${card.telephone.missed.length ? ` (missing: ${card.telephone.missed.join(" | ")})` : ""}  ${ok(card.telephone.probes === card.telephone.of)}

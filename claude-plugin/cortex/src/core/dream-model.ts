@@ -64,6 +64,32 @@ export function isRule(text: string): boolean {
     || /^(?:run|use|update|check|test|lint|bump|rebuild|bundle|commit|push|tag|read|write|add)\b[^.]*\b(?:before|after) (?:every|each|any)\b/i.test(t); // "Run `npm test` before every commit"
 }
 
+/** Headings over notes that record why something must not be done again ("## Tried and failed (do this instead)"). */
+const GUARD_HEAD = /\b(?:tried and failed|failed approach(?:es)?|dead ends?|don'?ts|gotchas?|pitfalls?|never again|hard limits?|guardrails?|rejected)\b/i;
+/** Why a memory line is load-bearing, or null: a rule, a record under a guardrail heading, or the active task's own
+ * words (its mission contract). A full check shows such a line but never offers to delete or rewrite it: removing a
+ * guardrail as "stale" is how a later chat walks back into the dead end it fenced off. */
+export function loadBearing(e: Entry, pins: string[] = []): string | null {
+  if (isRule(e.text)) return "a rule";
+  if (GUARD_HEAD.test(e.heading)) return `kept under “${e.heading.slice(0, 60)}”`;
+  // measured against the note's own words: a short rule ("Never push to main") doesn't cover a long note that merely
+  // shares two of its words; the note has to be mostly the rule
+  const note = new Set(contentWords(e.text));
+  const covered = (pin: string) => { const w = new Set(contentWords(pin)); return note.size > 0 && [...note].filter((x) => w.has(x)).length / note.size >= 0.6; };
+  return pins.some(covered) ? "your own words in this task's mission contract" : null;
+}
+
+/** Cortex's own checks under the same guard: a load-bearing note they would delete or rewrite is shown instead. A
+ * duplicate is still offered (the other copy keeps the guardrail), and so is a note past a file's size limit. */
+export function guardChecks<F extends { kind: string; file: string; line: number; why: string; action: { op: string } }>(found: F[], ents: Entry[], pins: string[] = []): F[] {
+  return found.map((f) => {
+    if (f.kind === "duplicate" || f.kind === "over-cap" || (f.action.op !== "delete" && f.action.op !== "replace")) return f;
+    const e = ents.find((x) => x.file === f.file && x.line === f.line);
+    const held = e ? loadBearing(e, pins) : null;
+    return held ? { ...f, why: `Load-bearing (${held}), so Cortex won't offer to remove it. ${f.why}`.slice(0, 320), action: { op: "none" } } : f;
+  });
+}
+
 export function dreamPrompt(files: NativeFile[], ents: Entry[], evidence: string, found: Finding[], hints: { entry: Entry; dir: string }[]): string {
   const loads = new Map(files.map((f) => [f.path, `${f.loads === "on-demand" ? "when needed" : "every session"}${f.editable ? "" : " · read-only"}`]));
   const id = new Map(ents.map((e, i) => [e, `N${i + 1}`]));
@@ -96,7 +122,7 @@ interface RawFinding { entry?: unknown; kind?: string; why?: string; evidence?: 
 interface RawLesson { text?: string; how?: string; evidence?: unknown; confidence?: unknown }
 
 /** Turn the model's JSON into findings, keeping only what passes every check. */
-export function parseJudgment(raw: string, files: NativeFile[], ents: Entry[], ev: Evidence[], found: Finding[]): { findings: Omit<Finding, "id">[]; dropped: number; rejected: string[] } {
+export function parseJudgment(raw: string, files: NativeFile[], ents: Entry[], ev: Evidence[], found: Finding[], pins: string[] = []): { findings: Omit<Finding, "id">[]; dropped: number; rejected: string[] } {
   let j: { findings?: RawFinding[]; lessons?: RawLesson[] };
   try { j = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as typeof j; } catch { return { findings: [], dropped: 0, rejected: ["the model's answer wasn't JSON"] }; }
   const byId = new Map(ents.map((e, i) => [`N${i + 1}`, e]));
@@ -126,8 +152,10 @@ export function parseJudgment(raw: string, files: NativeFile[], ents: Entry[], e
     const base = { kind, by: "model" as const, file: e.file, label: e.label, line: e.line, end: e.end, entry: e.text, why, evidence: about.length ? about : cites };
     // a rule ("keep files under 300 lines", "never merge before review") is a spec, not a fact: code that drifted from
     // it makes the code wrong, not the rule stale. It's shown, never offered for deletion, whatever the evidence (a run included)
-    if ((kind === "false" || kind === "stale") && isRule(e.text)) {
-      out.push({ ...base, severity: "medium", why: `A rule, not a fact: the code may have drifted from it. ${why}`.slice(0, 300) + " Fix the code, or change the rule on purpose.", action: { op: "none" } });
+    const held = kind === "scope" ? null : loadBearing(e, pins);
+    if (held && (kind === "false" || kind === "stale" || kind === "replace" || f.action === "delete" || f.action === "replace")) {
+      const lead = held === "a rule" ? "A rule, not a fact: the code may have drifted from it." : `Load-bearing (${held}), so Cortex won't offer to remove or rewrite it.`;
+      out.push({ ...base, severity: "medium", why: `${lead} ${why}`.slice(0, 300) + (held === "a rule" ? " Fix the code, or change the rule on purpose." : " Change it on purpose if it no longer holds."), action: { op: "none" } });
       continue;
     }
     if (kind === "scope") {
