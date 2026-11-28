@@ -16,7 +16,9 @@ const noFlag = () => { const e = { ...process.env }; delete e.CORTEX_NO_NOTIFY; 
 test("notify guard: a test run, or any project in the temp folder, is quiet; a real project isn't", () => {
   assert.match(quietReason(homedir(), { CORTEX_NO_NOTIFY: "1" }) ?? "", /CORTEX_NO_NOTIFY/);
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), "nq-")));
-  for (const d of [tmp, join(tmp, "deep", "repo"), "/tmp", "/private/tmp/x"]) { mkdirSync(d, { recursive: true }); assert.match(quietReason(d, {}) ?? "", /temp folder/, d); }
+  // the fixed temp folders of this OS only: /private/tmp exists only on macOS (Linux refuses to create it), /tmp not on Windows
+  const fixed = process.platform === "darwin" ? ["/tmp", "/private/tmp/x"] : process.platform === "linux" ? ["/tmp"] : [];
+  for (const d of [tmp, join(tmp, "deep", "repo"), ...fixed]) { mkdirSync(d, { recursive: true }); assert.match(quietReason(d, {}) ?? "", /temp folder/, d); }
   assert.equal(quietReason(join(homedir(), "Projects", "real"), {}), null);
   assert.equal(notifyMac("Kapex Cortex", "a test"), false, "CORTEX_NO_NOTIFY: nothing sent");
 });

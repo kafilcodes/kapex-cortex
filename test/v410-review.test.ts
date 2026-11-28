@@ -49,6 +49,12 @@ test("review: OpenCode's /cortex-resume include reads GNU stat first, ignores a 
   const root = mkdtempSync(join(tmpdir(), "cortex-oc-stat-"));
   mkdirSync(join(root, ".vault"), { recursive: true });
   writeFileSync(join(root, ".vault", "STATE.md"), "# STATE — demo\n");
+  if (process.platform === "win32") {
+    // Windows: a fake `stat` can't go first on Git Bash's PATH from here (C:\ paths break the ':' list), so the
+    // real one answers: Git for Windows ships GNU stat, and the packet was written just now
+    assert.match(spawnSync("sh", ["-c", sh], { cwd: root, encoding: "utf8" }).stdout, /^\(packet saved [01] minutes? ago\)\n# STATE — demo/);
+    return;
+  }
   const withStat = (body: string) => {
     const bin = mkdtempSync(join(tmpdir(), "cortex-fakestat-"));
     writeFileSync(join(bin, "stat"), `#!/bin/sh\n${body}\n`);

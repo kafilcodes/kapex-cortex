@@ -2,7 +2,17 @@
 
 All notable changes to Kapex Cortex. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). Numbers are measured on an Apple M4 (macOS, Node 26) with `node scripts/benchmark.ts` unless marked otherwise.
 
-## [4.6.0] - 2026-11-28
+## [4.6.1] - 2026-11-28
+
+The first v4.6 release with binaries: the v4.6.0 tag's Linux and Windows test runs failed on two tests that assumed macOS (Cortex's own code was fine), so it has no release. Same features as 4.6.0, plus:
+
+### Fixed
+- Linux: the notification guard's test only checks this OS's own temp folders (`/private/tmp` exists only on macOS, and Linux refused to create it).
+- Windows: the test of OpenCode's `/cortex-resume` age line uses Git for Windows' real `stat`; a stand-in `stat` couldn't be put first on Git Bash's `PATH` from Node, since `C:\` paths break its `:`-separated list.
+
+Measured: 138 core + 166 panel tests, as 4.6.0.
+
+## [4.6.0] - 2026-11-28 (tag only, no release: Linux and Windows CI failed)
 
 Positioning and precision: Cortex says plainly what it adds to Claude Code's own memory, and its handoff keeps only what you really said.
 
